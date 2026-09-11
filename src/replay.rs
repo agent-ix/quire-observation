@@ -60,6 +60,10 @@ pub struct ReplayRequest {
     pub scope_start_nanos: i128,
     pub deadline_nanos: i128,
     pub late_cutoff_nanos: i128,
+    pub expected_progress_definition: Identity,
+    pub expected_progress_digest: Digest,
+    pub expected_source_set: Identity,
+    pub expected_restoration: Identity,
     /// Earlier immutable result that a late contradiction may supersede.
     pub prior_result_identity: Option<Identity>,
     pub trigger: TriggerState,
@@ -82,6 +86,7 @@ pub enum Disposition {
     AmbiguousBoundary,
     Open,
     IncompleteHistory,
+    IncompleteProgress,
     AmbiguousMembership,
     Unsupported,
     Exhausted,
@@ -170,6 +175,16 @@ pub fn replay(request: &ReplayRequest) -> ReplayResult {
     }
     if request.membership_ambiguous {
         return unavailable(request, Disposition::AmbiguousMembership);
+    }
+    if let Some(progress) = &request.progress {
+        if progress.scope_identity != request.scope_identity
+            || progress.definition_identity != request.expected_progress_definition
+            || progress.definition_digest != request.expected_progress_digest
+            || progress.source_set_identity != request.expected_source_set
+            || progress.restoration_identity != request.expected_restoration
+        {
+            return unavailable(request, Disposition::IncompleteProgress);
+        }
     }
     let active_keys: BTreeSet<_> = request
         .observations

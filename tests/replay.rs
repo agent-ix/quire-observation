@@ -16,6 +16,10 @@ fn request() -> ReplayRequest {
         scope_start_nanos: 0,
         deadline_nanos: 30,
         late_cutoff_nanos: 40,
+        expected_progress_definition: id("progress-definition"),
+        expected_progress_digest: digest(1),
+        expected_source_set: id("sources"),
+        expected_restoration: id("restore"),
         prior_result_identity: None,
         trigger: TriggerState::Activated {
             identity: id("trigger:refund-request"),
@@ -90,7 +94,10 @@ fn tc002_quiet_deadline_needs_matching_progress_authority() {
     });
     assert_eq!(replay(&settled).disposition, Disposition::MissedDeadline);
     settled.progress.as_mut().unwrap().scope_identity = id("window:O2");
-    assert_eq!(replay(&settled).disposition, Disposition::Open);
+    assert_eq!(
+        replay(&settled).disposition,
+        Disposition::IncompleteProgress
+    );
 }
 
 #[test]

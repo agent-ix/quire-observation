@@ -102,6 +102,10 @@ fn it001_qualified_assessment_reaches_typed_consumer_without_loss() {
         scope_start_nanos: 0,
         deadline_nanos: 30,
         late_cutoff_nanos: 40,
+        expected_progress_definition: id("progress-definition"),
+        expected_progress_digest: digest(1),
+        expected_source_set: id("sources"),
+        expected_restoration: id("restore"),
         prior_result_identity: None,
         trigger: TriggerState::Activated {
             identity: id("trigger:refund"),
