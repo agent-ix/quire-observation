@@ -41,10 +41,17 @@ identities, or SHALL return a typed refusal or incomplete outcome.
   record identity and compatible anchor in the selected scope.
 - The library SHALL return missing required values, membership, closure, and
   relationships as explicit incomplete reasons rather than Boolean false.
-- The library SHALL treat a member's object identity as caller-opaque.
-- The library SHALL retain the selected membership and closure digests without
-  recomputing them, because recomputing either requires a canonicalization this
-  library does not own.
+- The library SHALL use a member's object identity only as an opaque equality
+  key against the selected membership.
+- The library SHALL NOT parse, normalize, or derive meaning from a member's
+  object identity.
+- The library SHALL retain the selected membership and closure digests with the
+  qualified observation.
+- The library SHALL NOT recompute or compare the selected membership and closure
+  digests.
+
+Recomputing either digest requires the canonicalization that produces it, which
+belongs to the package compiler named under Dependencies, not to this library.
 
 ## Error Conditions
 
@@ -60,9 +67,16 @@ duplicate record, and resource-limit exhaustion are typed refusal conditions.
 | FR-001-AC-2 | Wrong entity, signal, unit, trigger, schema, or producer selection is refused. | Test (TC-001) |
 | FR-001-AC-3 | Missing required valuation, relationship, membership, or closure remains incomplete. | Test (TC-001) |
 | FR-001-AC-4 | Conflicting or ambiguous relationships and one-over resource inputs are refused. | Test (TC-001) |
+| FR-001-AC-5 | An unrecognized member object identity and an unrecomputed membership or closure digest do not block an otherwise qualified admission. | Test (TC-001) |
 
 ## Dependencies
 
 - [US-001](../usecase/US-001-qualify-observations.md) defines the consumer need.
+- **Upstream**: `agent-ix/quire-spec-language` owns semantic package compilation
+  and exports the `native-linked-package/1` selection with its canonical
+  membership and closure digests (its FR-015 and FR-027). This library retains
+  those digests as selected and never recomputes them. `quire-protocol`'s
+  canonicalization governs protocol result identity and is not the owner of
+  population membership or closure.
 - Producer interface 1.2.0 and the selected `native-linked-package/1` artifact
   are caller-provided dependencies, not crate dependencies.

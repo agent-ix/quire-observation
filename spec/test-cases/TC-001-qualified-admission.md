@@ -12,7 +12,9 @@ relationships:
 
 Verify valid qualified admission and independently mutate selected entity,
 source, schema, signal, unit, producer version, relationship, required value,
-closure, clock family, and exact record/member bounds.
+closure, clock family, and exact record/member bounds. Also verify that an
+unrecognized member object identity and an unrecomputed membership or closure
+digest leave an otherwise qualified admission available.
 
 ## Test Procedure
 
