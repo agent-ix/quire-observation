@@ -23,7 +23,8 @@ identities, or SHALL return a typed refusal or incomplete outcome.
 
 ## Outputs
 
-- `Available` records retaining their selections and visibility.
+- An `Available` qualified-observation envelope retaining the selected package,
+  producer, binding, subject, relationship graph, scope, records, and limits.
 - `Incomplete` with one or more missing-premise reasons.
 - `Refused` with the affected identity and typed validation cause.
 
@@ -36,6 +37,8 @@ identities, or SHALL return a typed refusal or incomplete outcome.
 - The library SHALL correlate related instances only through supplied typed
   relationships and SHALL NOT use trace IDs, provider identities, or record
   attributes as a substitute.
+- The library SHALL bind every admitted record to exactly one supplied member
+  record identity and compatible anchor in the selected scope.
 - The library SHALL return missing required values, membership, closure, and
   relationships as explicit incomplete reasons rather than Boolean false.
 

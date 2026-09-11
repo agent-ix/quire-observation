@@ -94,6 +94,7 @@ fn scope(name: &str) -> ScopeFact {
 }
 
 #[test]
+// Trace: IT-001, FR-001-AC-1, FR-002-AC-1, FR-003-AC-1, FR-003-AC-2, NFR-002-AC-2
 fn it001_qualified_assessment_reaches_typed_consumer_without_loss() {
     let admission = admit(admitted_request());
     assert!(matches!(admission, AdmissionOutcome::Available { .. }));
@@ -159,20 +160,21 @@ fn it001_qualified_assessment_reaches_typed_consumer_without_loss() {
         }],
         supersedes: None,
     };
-    let capabilities = ConsumerCapabilities {
-        preserves_activation: true,
-        preserves_participation: true,
-        preserves_completeness: true,
-        preserves_dependencies: true,
-        preserves_late_supersession: true,
-    };
+    let capabilities = ConsumerCapabilities::all();
     assert!(matches!(
         handoff(handoff_result, capabilities),
-        HandoffOutcome::Delivered(value) if value.mapping == MappingState::Preserved
+        HandoffOutcome::Delivered(value)
+            if value.mapping == MappingState::Preserved
+                && value.result.dependencies == vec![ImmutableDependency {
+                    identity: id("package:refund"),
+                    revision: id("1"),
+                    digest: digest(1),
+                }]
     ));
 }
 
 #[test]
+// Trace: IT-001, FR-001-AC-3, FR-002-AC-3, FR-003-AC-1, FR-003-AC-3
 fn it001_incomplete_admission_cannot_reach_passed_handoff() {
     let mut request = admitted_request();
     request.scope.membership_complete = false;

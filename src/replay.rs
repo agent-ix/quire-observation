@@ -207,6 +207,7 @@ pub fn replay(request: &ReplayRequest) -> ReplayResult {
     }
 
     let mut late_records = Vec::new();
+    let mut decision = None;
     for record in &ordered {
         if record.ingestion_time_nanos > request.late_cutoff_nanos
             && record.event_time_nanos <= request.deadline_nanos
@@ -220,60 +221,43 @@ pub fn replay(request: &ReplayRequest) -> ReplayResult {
             continue;
         }
         if record.signal_identity == request.rule.witness_signal {
-            return ReplayResult {
-                assessment_identity: request.assessment_identity.clone(),
-                disposition: Disposition::Satisfied,
-                basis: SettlementBasis::DecisiveWitness,
-                decision_support: vec![record.identity.clone()],
-                progress_identity: request
-                    .progress
-                    .as_ref()
-                    .map(|value| value.identity.clone()),
-                supersedes: request
-                    .prior_result_identity
-                    .clone()
-                    .filter(|_| !late_records.is_empty()),
-                late_records,
-                retained_events: ordered.len(),
-            };
+            decision.get_or_insert((
+                Disposition::Satisfied,
+                SettlementBasis::DecisiveWitness,
+                record.identity.clone(),
+            ));
+        } else if record.signal_identity == request.rule.counterexample_signal {
+            decision.get_or_insert((
+                Disposition::Violated,
+                SettlementBasis::DecisiveCounterexample,
+                record.identity.clone(),
+            ));
         }
-        if record.signal_identity == request.rule.counterexample_signal {
-            return ReplayResult {
-                assessment_identity: request.assessment_identity.clone(),
-                disposition: Disposition::Violated,
-                basis: SettlementBasis::DecisiveCounterexample,
-                decision_support: vec![record.identity.clone()],
-                progress_identity: request
-                    .progress
-                    .as_ref()
-                    .map(|value| value.identity.clone()),
-                supersedes: request
-                    .prior_result_identity
-                    .clone()
-                    .filter(|_| !late_records.is_empty()),
-                late_records,
-                retained_events: ordered.len(),
-            };
-        }
+    }
+
+    if let Some((disposition, basis, support)) = decision {
+        return settled(
+            request,
+            disposition,
+            basis,
+            vec![support],
+            late_records,
+            ordered.len(),
+        );
     }
 
     if let Some(progress) = &request.progress {
         if progress.scope_identity == request.scope_identity
             && progress.covered_through_nanos > request.deadline_nanos
         {
-            return ReplayResult {
-                assessment_identity: request.assessment_identity.clone(),
-                disposition: Disposition::MissedDeadline,
-                basis: SettlementBasis::EligibleDeadline,
-                decision_support: Vec::new(),
-                progress_identity: Some(progress.identity.clone()),
-                supersedes: request
-                    .prior_result_identity
-                    .clone()
-                    .filter(|_| !late_records.is_empty()),
+            return settled(
+                request,
+                Disposition::MissedDeadline,
+                SettlementBasis::EligibleDeadline,
+                Vec::new(),
                 late_records,
-                retained_events: ordered.len(),
-            };
+                ordered.len(),
+            );
         }
     }
 
@@ -292,6 +276,32 @@ pub fn replay(request: &ReplayRequest) -> ReplayResult {
             .filter(|_| !late_records.is_empty()),
         late_records,
         retained_events: ordered.len(),
+    }
+}
+
+fn settled(
+    request: &ReplayRequest,
+    disposition: Disposition,
+    basis: SettlementBasis,
+    decision_support: Vec<Identity>,
+    late_records: Vec<Identity>,
+    retained_events: usize,
+) -> ReplayResult {
+    ReplayResult {
+        assessment_identity: request.assessment_identity.clone(),
+        disposition,
+        basis,
+        decision_support,
+        progress_identity: request
+            .progress
+            .as_ref()
+            .map(|value| value.identity.clone()),
+        supersedes: request
+            .prior_result_identity
+            .clone()
+            .filter(|_| !late_records.is_empty()),
+        late_records,
+        retained_events,
     }
 }
 

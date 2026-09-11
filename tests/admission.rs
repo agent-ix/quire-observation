@@ -87,15 +87,22 @@ fn request() -> AdmissionRequest {
 }
 
 #[test]
-fn tc140_valid_record_retains_provenance() {
+// Trace: TC-001, FR-001-AC-1
+fn tc001_valid_record_retains_all_selected_premises() {
     let outcome = admit(request());
     assert!(
-        matches!(outcome, AdmissionOutcome::Available { records } if records[0].visibility == Visibility::External)
+        matches!(outcome, AdmissionOutcome::Available { observation }
+            if observation.records[0].visibility == Visibility::External
+                && observation.package.identity == id("package:checkout")
+                && observation.producer.configuration_identity == id("config:1")
+                && observation.scope.population_identity == id("population:orders")
+                && observation.limits.max_records == 2)
     );
 }
 
 #[test]
-fn tc140_wrong_signal_unit_and_schema_refuse() {
+// Trace: TC-001, FR-001-AC-2
+fn tc001_wrong_signal_unit_and_schema_refuse() {
     for field in ["signal", "trigger", "unit", "schema"] {
         let mut input = request();
         match field {
@@ -112,7 +119,8 @@ fn tc140_wrong_signal_unit_and_schema_refuse() {
 }
 
 #[test]
-fn tc140_missing_required_value_is_incomplete_not_false() {
+// Trace: TC-001, FR-001-AC-3
+fn tc001_missing_required_value_is_incomplete_not_false() {
     let mut input = request();
     input.records[0].value = ValueState::Missing;
     assert!(
@@ -121,7 +129,8 @@ fn tc140_missing_required_value_is_incomplete_not_false() {
 }
 
 #[test]
-fn tc141_refund_for_other_order_is_a_conflict() {
+// Trace: TC-001, FR-001-AC-4
+fn tc001_refund_for_other_order_is_a_conflict() {
     let mut input = request();
     let refund = Subject {
         kind: SubjectKind::Refund,
@@ -147,7 +156,8 @@ fn tc141_refund_for_other_order_is_a_conflict() {
 }
 
 #[test]
-fn tc141_missing_and_ambiguous_relationships_do_not_match_heuristically() {
+// Trace: TC-001, FR-001-AC-3, FR-001-AC-4
+fn tc001_missing_and_ambiguous_relationships_do_not_match_heuristically() {
     let refund = Subject {
         kind: SubjectKind::Refund,
         identity: id("refund:R1"),
@@ -181,7 +191,8 @@ fn tc141_missing_and_ambiguous_relationships_do_not_match_heuristically() {
 }
 
 #[test]
-fn tc142_scope_closure_clock_and_limits_are_explicit() {
+// Trace: TC-001, FR-001-AC-2, FR-001-AC-3, FR-001-AC-4, NFR-001-AC-1
+fn tc001_scope_closure_clock_and_limits_are_explicit() {
     let mut incomplete = request();
     incomplete.scope.closure_identity = None;
     incomplete.scope.closure_digest = None;
@@ -222,7 +233,8 @@ fn tc142_scope_closure_clock_and_limits_are_explicit() {
 }
 
 #[test]
-fn tc142_clock_families_are_not_interchangeable() {
+// Trace: TC-001, FR-001-AC-2
+fn tc001_clock_families_are_not_interchangeable() {
     let mut fixed = request();
     fixed.scope.range = ClockRange::FixedSample {
         start: 4,
@@ -235,6 +247,7 @@ fn tc142_clock_families_are_not_interchangeable() {
         epoch_nanos: 10,
         period_nanos: 5,
     };
+    fixed.scope.members[0].anchor = fixed.records[0].anchor;
     assert!(matches!(
         admit(fixed.clone()),
         AdmissionOutcome::Available { .. }
@@ -249,7 +262,8 @@ fn tc142_clock_families_are_not_interchangeable() {
 }
 
 #[test]
-fn producer_version_and_subject_mismatch_refuse() {
+// Trace: TC-001, FR-001-AC-2
+fn tc001_producer_version_and_subject_mismatch_refuse() {
     let mut version = request();
     version.producer.interface_version = "1.1.0".into();
     assert!(matches!(
@@ -265,5 +279,26 @@ fn producer_version_and_subject_mismatch_refuse() {
         AdmissionOutcome::Refused {
             cause: RefusalCause::SubjectMismatch { .. }
         }
+    ));
+}
+
+#[test]
+// Trace: TC-001, FR-001-AC-1, FR-001-AC-3
+fn tc001_members_must_bind_exactly_to_accepted_records() {
+    let mut unrelated = request();
+    unrelated.scope.members[0].record_identity = id("record:other");
+    assert!(matches!(
+        admit(unrelated),
+        AdmissionOutcome::Refused {
+            cause: RefusalCause::MemberRecordMismatch { .. }
+        }
+    ));
+
+    let mut missing = request();
+    missing.scope.members.clear();
+    assert!(matches!(
+        admit(missing),
+        AdmissionOutcome::Incomplete { reasons }
+            if matches!(reasons.as_slice(), [IncompleteReason::MissingMembership])
     ));
 }

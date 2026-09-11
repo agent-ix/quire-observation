@@ -24,6 +24,13 @@ limits.
 | Repeated replay result equality | 100% of fixed fixtures | 100% of fixed fixtures | Test (TC-002) |
 | Result dependency retention | 100% of required dependencies | 100% of required dependencies | Test (TC-003) |
 
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+| --- | --- | --- |
+| NFR-002-AC-1 | Repeated replay of the same ordered input returns an equal typed result. | Test (TC-002) |
+| NFR-002-AC-2 | Result handoff retains each required immutable dependency. | Test (TC-003) |
+
 ## Verification
 
 The tests execute each deterministic fixture twice and compare the full typed

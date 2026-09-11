@@ -31,7 +31,9 @@ batch replay and incremental processing for the same admitted history.
   progress authority as separate inputs.
 - When a deadline is silent, the library SHALL settle it only when an eligible,
   matching progress assertion covers that deadline.
-- When a record arrives after settlement, the library SHALL retain it as late.
+- When a record arrives after settlement, the library SHALL inspect the full
+  bounded history and retain it as late even when an earlier record was
+  decisive.
 - When a late record contradicts a result, the library SHALL emit a linked
   supersession or invalidation instead of overwriting the earlier result.
 - The library SHALL preserve open prefix, incomplete history, ambiguous

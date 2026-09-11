@@ -32,6 +32,11 @@ supersession facts, or SHALL report an explicit mapping loss/refusal.
   lossy results into a passed Boolean.
 - The library SHALL retain selected definition/profile identities and digests
   with each result.
+- The consumer capability selection SHALL identify preservation or explicit
+  loss for every independently readable result axis: assessment identity,
+  disposition, settlement, support, progress identity, scope facts, global
+  closure, activation, participation, completeness, provenance, dependencies,
+  and late supersession.
 - The library SHALL preserve prior result bytes when a late contradiction occurs
   and link any superseding/invalidation result to them.
 

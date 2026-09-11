@@ -217,6 +217,20 @@ pub struct AdmissionRequest {
     pub limits: ResourceLimits,
 }
 
+/// A fully qualified observation set with every caller-selected premise retained.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QualifiedObservation {
+    pub package: PackageSelection,
+    pub producer: ProducerSelection,
+    pub binding: ObservationBinding,
+    pub expected_subject: Subject,
+    pub relationships: Vec<Relationship>,
+    pub required_relationships: Vec<RequiredRelationship>,
+    pub scope: ScopeSelection,
+    pub records: Vec<AdmittedRecord>,
+    pub limits: ResourceLimits,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IncompleteReason {
     MissingValuation { record: Identity },
@@ -254,13 +268,26 @@ pub enum RefusalCause {
     DuplicateRecord {
         record: Identity,
     },
+    DuplicateMember {
+        record: Identity,
+    },
+    MemberRecordMismatch {
+        member: Identity,
+        record: Identity,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AdmissionOutcome {
-    Available { records: Vec<AdmittedRecord> },
-    Incomplete { reasons: Vec<IncompleteReason> },
-    Refused { cause: RefusalCause },
+    Available {
+        observation: Box<QualifiedObservation>,
+    },
+    Incomplete {
+        reasons: Vec<IncompleteReason>,
+    },
+    Refused {
+        cause: RefusalCause,
+    },
 }
 
 /// Validates an explicit observation handoff for later consumers.
@@ -278,7 +305,7 @@ pub fn admit(request: AdmissionRequest) -> AdmissionOutcome {
     if !request.producer.document_identity.valid()
         || !request.producer.model_identity.valid()
         || !request.producer.configuration_identity.valid()
-        || !request.binding.identity.valid()
+        || !valid_binding(&request.binding)
         || !request.expected_subject.identity.valid()
         || !request.scope.population_identity.valid()
     {
@@ -302,10 +329,16 @@ pub fn admit(request: AdmissionRequest) -> AdmissionOutcome {
     if !request.scope.membership_complete {
         return incomplete(IncompleteReason::MissingMembership);
     }
+    if !valid_scope(&request.scope) {
+        return refused(RefusalCause::InvalidSelection("scope selection"));
+    }
 
     let mut ids = BTreeSet::new();
     let mut incomplete_reasons = Vec::new();
     for record in &request.records {
+        if !record.identity.valid() || !record.subject.identity.valid() {
+            return refused(RefusalCause::InvalidSelection("record identity"));
+        }
         if !ids.insert(record.identity.clone()) {
             return refused(RefusalCause::DuplicateRecord {
                 record: record.identity.clone(),
@@ -366,6 +399,42 @@ pub fn admit(request: AdmissionRequest) -> AdmissionOutcome {
         }
     }
 
+    let mut member_records = BTreeSet::new();
+    for member in &request.scope.members {
+        if !member.object_identity.valid() || !member.record_identity.valid() {
+            return refused(RefusalCause::InvalidSelection("member identity"));
+        }
+        if !member_records.insert(member.record_identity.clone()) {
+            return refused(RefusalCause::DuplicateMember {
+                record: member.record_identity.clone(),
+            });
+        }
+        let Some(record) = request
+            .records
+            .iter()
+            .find(|record| record.identity == member.record_identity)
+        else {
+            return refused(RefusalCause::MemberRecordMismatch {
+                member: member.object_identity.clone(),
+                record: member.record_identity.clone(),
+            });
+        };
+        if record.anchor != member.anchor || !anchor_compatible(request.scope.range, member.anchor)
+        {
+            return refused(RefusalCause::MemberRecordMismatch {
+                member: member.object_identity.clone(),
+                record: member.record_identity.clone(),
+            });
+        }
+    }
+    if request
+        .records
+        .iter()
+        .any(|record| !member_records.contains(&record.identity))
+    {
+        return incomplete(IncompleteReason::MissingMembership);
+    }
+
     for wanted in &request.required_relationships {
         let matching: Vec<_> = request
             .relationships
@@ -399,13 +468,39 @@ pub fn admit(request: AdmissionRequest) -> AdmissionOutcome {
     }
     if incomplete_reasons.is_empty() {
         AdmissionOutcome::Available {
-            records: request.records,
+            observation: Box::new(QualifiedObservation {
+                package: request.package,
+                producer: request.producer,
+                binding: request.binding,
+                expected_subject: request.expected_subject,
+                relationships: request.relationships,
+                required_relationships: request.required_relationships,
+                scope: request.scope,
+                records: request.records,
+                limits: request.limits,
+            }),
         }
     } else {
         AdmissionOutcome::Incomplete {
             reasons: incomplete_reasons,
         }
     }
+}
+
+fn valid_binding(binding: &ObservationBinding) -> bool {
+    binding.identity.valid()
+        && binding.source_identity.valid()
+        && binding.schema_identity.valid()
+        && binding.signal_identity.valid()
+        && binding.trigger_identity.valid()
+        && binding.unit.valid()
+}
+
+fn valid_scope(scope: &ScopeSelection) -> bool {
+    (match &scope.kind {
+        ScopeKind::Snapshot { snapshot_identity } => snapshot_identity.valid(),
+        ScopeKind::Window { window_identity } => window_identity.valid(),
+    }) && scope.closure_identity.as_ref().is_some_and(Identity::valid)
 }
 
 fn valid_range(range: ClockRange) -> bool {

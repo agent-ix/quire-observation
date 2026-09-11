@@ -62,6 +62,7 @@ fn scope(name: &str) -> ScopeFact {
 }
 
 #[test]
+// Trace: TC-002, FR-002-AC-1
 fn tc002_replay_and_incremental_agree_for_decisive_cases() {
     let mut satisfied = request();
     satisfied
@@ -78,6 +79,17 @@ fn tc002_replay_and_incremental_agree_for_decisive_cases() {
 }
 
 #[test]
+// Trace: TC-002, NFR-002-AC-1
+fn tc002_replay_is_reproducible_for_identical_ordered_input() {
+    let mut input = request();
+    input
+        .observations
+        .push(observation("signal:refund", 10, 11, 1));
+    assert_eq!(replay(&input), replay(&input));
+}
+
+#[test]
+// Trace: TC-002, FR-002-AC-1, FR-002-AC-2
 fn tc002_quiet_deadline_needs_matching_progress_authority() {
     let open = request();
     assert_eq!(replay(&open).disposition, Disposition::Open);
@@ -101,6 +113,7 @@ fn tc002_quiet_deadline_needs_matching_progress_authority() {
 }
 
 #[test]
+// Trace: TC-002, FR-002-AC-3
 fn tc002_non_success_and_late_inputs_stay_explicit() {
     let mut incomplete = request();
     incomplete.history_available = false;
@@ -122,6 +135,20 @@ fn tc002_non_success_and_late_inputs_stay_explicit() {
     assert_eq!(result.disposition, Disposition::Open);
     assert_eq!(result.late_records, vec![id("record:1")]);
     assert_eq!(result.supersedes, Some(id("result:earlier")));
+
+    let mut decisive_then_late = request();
+    decisive_then_late.prior_result_identity = Some(id("result:settled"));
+    decisive_then_late
+        .observations
+        .push(observation("signal:refund", 10, 11, 1));
+    decisive_then_late
+        .observations
+        .push(observation("signal:chargeback", 12, 41, 2));
+    let result = replay(&decisive_then_late);
+    assert_eq!(result.disposition, Disposition::Satisfied);
+    assert_eq!(result.late_records, vec![id("record:2")]);
+    assert_eq!(result.supersedes, Some(id("result:settled")));
+
     let mut exhausted = request();
     exhausted.limits.max_events = 0;
     exhausted
@@ -131,6 +158,7 @@ fn tc002_non_success_and_late_inputs_stay_explicit() {
 }
 
 #[test]
+// Trace: TC-002, NFR-001-AC-2
 fn tc002_incremental_intake_enforces_event_and_active_key_bounds() {
     let mut retained = request();
     retained.limits.max_events = 1;
@@ -150,6 +178,7 @@ fn tc002_incremental_intake_enforces_event_and_active_key_bounds() {
 }
 
 #[test]
+// Trace: TC-002, FR-002-AC-3
 fn tc002_untriggered_and_ambiguous_boundaries_stay_distinct() {
     let mut untriggered = request();
     untriggered.trigger = TriggerState::Untriggered;
@@ -165,6 +194,7 @@ fn tc002_untriggered_and_ambiguous_boundaries_stay_distinct() {
 }
 
 #[test]
+// Trace: TC-003, FR-003-AC-3
 fn tc003_handoff_never_promotes_loss_to_preservation() {
     let mut replay_result = replay(&request());
     replay_result.late_records.push(id("record:late"));
@@ -188,24 +218,15 @@ fn tc003_handoff_never_promotes_loss_to_preservation() {
         }],
         supersedes: Some(id("result:0")),
     };
-    let missing = ConsumerCapabilities {
-        preserves_activation: true,
-        preserves_participation: true,
-        preserves_completeness: true,
-        preserves_dependencies: true,
-        preserves_late_supersession: false,
-    };
+    let mut missing = ConsumerCapabilities::all();
+    missing.preserves_late_supersession = false;
     assert!(matches!(
         handoff(result.clone(), missing),
-        HandoffOutcome::Delivered(value) if value.mapping == MappingState::Unrepresented
+        HandoffOutcome::Delivered(value)
+            if value.mapping == MappingState::Unrepresented
+                && value.lost_axes == vec![ResultAxis::LateSupersession]
     ));
-    let full = ConsumerCapabilities {
-        preserves_activation: true,
-        preserves_participation: true,
-        preserves_completeness: true,
-        preserves_dependencies: true,
-        preserves_late_supersession: true,
-    };
+    let full = ConsumerCapabilities::all();
     assert!(matches!(
         handoff(result, full),
         HandoffOutcome::Delivered(value) if value.mapping == MappingState::Preserved
@@ -213,6 +234,40 @@ fn tc003_handoff_never_promotes_loss_to_preservation() {
 }
 
 #[test]
+// Trace: TC-003, FR-003-AC-2, FR-003-AC-3
+fn tc003_each_consumer_axis_has_explicit_loss() {
+    let result = AssessmentHandoff {
+        result_identity: id("result:axes"),
+        replay: replay(&request()),
+        activation: Activation::Activated,
+        participation: Participation::Complete,
+        completeness: Completeness::Complete,
+        decision_progress: scope("decision"),
+        decision_closure: scope("decision"),
+        surrounding_progress: scope("surrounding"),
+        surrounding_closure: scope("surrounding"),
+        global_closure: GlobalConformanceClosure::NotRequired,
+        source_identity: id("source"),
+        binding_identity: id("binding"),
+        dependencies: vec![ImmutableDependency {
+            identity: id("definition"),
+            revision: id("1"),
+            digest: digest(6),
+        }],
+        supersedes: None,
+    };
+    let mut missing_scope = ConsumerCapabilities::all();
+    missing_scope.preserves_scope_facts = false;
+    assert!(matches!(
+        handoff(result, missing_scope),
+        HandoffOutcome::Delivered(value)
+            if value.mapping == MappingState::Unrepresented
+                && value.lost_axes == vec![ResultAxis::ScopeFacts]
+    ));
+}
+
+#[test]
+// Trace: TC-003, FR-003-AC-2
 fn tc003_scope_cross_wiring_and_duplicate_dependencies_refuse() {
     let replay = replay(&request());
     let mut result = AssessmentHandoff {
@@ -241,13 +296,7 @@ fn tc003_scope_cross_wiring_and_duplicate_dependencies_refuse() {
         supersedes: None,
     };
     result.decision_closure.scope_identity = id("scope:wrong");
-    let caps = ConsumerCapabilities {
-        preserves_activation: true,
-        preserves_participation: true,
-        preserves_completeness: true,
-        preserves_dependencies: true,
-        preserves_late_supersession: true,
-    };
+    let caps = ConsumerCapabilities::all();
     assert_eq!(
         handoff(result.clone(), caps.clone()),
         HandoffOutcome::Refused(HandoffRefusal::ScopeCrossWiring)
@@ -261,14 +310,9 @@ fn tc003_scope_cross_wiring_and_duplicate_dependencies_refuse() {
 }
 
 #[test]
+// Trace: TC-003, FR-003-AC-1, NFR-002-AC-2
 fn tc003_handoff_preserves_each_non_boolean_disposition() {
-    let capabilities = ConsumerCapabilities {
-        preserves_activation: true,
-        preserves_participation: true,
-        preserves_completeness: true,
-        preserves_dependencies: true,
-        preserves_late_supersession: true,
-    };
+    let capabilities = ConsumerCapabilities::all();
     for disposition in [
         Disposition::Satisfied,
         Disposition::Violated,
