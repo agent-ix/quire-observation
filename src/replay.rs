@@ -60,6 +60,8 @@ pub struct ReplayRequest {
     pub scope_start_nanos: i128,
     pub deadline_nanos: i128,
     pub late_cutoff_nanos: i128,
+    /// Earlier immutable result that a late contradiction may supersede.
+    pub prior_result_identity: Option<Identity>,
     pub trigger: TriggerState,
     pub required_history: bool,
     pub history_available: bool,
@@ -102,6 +104,7 @@ pub struct ReplayResult {
     pub decision_support: Vec<Identity>,
     pub progress_identity: Option<Identity>,
     pub late_records: Vec<Identity>,
+    pub supersedes: Option<Identity>,
     pub retained_events: usize,
 }
 
@@ -211,6 +214,10 @@ pub fn replay(request: &ReplayRequest) -> ReplayResult {
                     .progress
                     .as_ref()
                     .map(|value| value.identity.clone()),
+                supersedes: request
+                    .prior_result_identity
+                    .clone()
+                    .filter(|_| !late_records.is_empty()),
                 late_records,
                 retained_events: ordered.len(),
             };
@@ -225,6 +232,10 @@ pub fn replay(request: &ReplayRequest) -> ReplayResult {
                     .progress
                     .as_ref()
                     .map(|value| value.identity.clone()),
+                supersedes: request
+                    .prior_result_identity
+                    .clone()
+                    .filter(|_| !late_records.is_empty()),
                 late_records,
                 retained_events: ordered.len(),
             };
@@ -241,6 +252,10 @@ pub fn replay(request: &ReplayRequest) -> ReplayResult {
                 basis: SettlementBasis::EligibleDeadline,
                 decision_support: Vec::new(),
                 progress_identity: Some(progress.identity.clone()),
+                supersedes: request
+                    .prior_result_identity
+                    .clone()
+                    .filter(|_| !late_records.is_empty()),
                 late_records,
                 retained_events: ordered.len(),
             };
@@ -256,6 +271,10 @@ pub fn replay(request: &ReplayRequest) -> ReplayResult {
             .progress
             .as_ref()
             .map(|value| value.identity.clone()),
+        supersedes: request
+            .prior_result_identity
+            .clone()
+            .filter(|_| !late_records.is_empty()),
         late_records,
         retained_events: ordered.len(),
     }
@@ -284,6 +303,7 @@ fn unavailable(request: &ReplayRequest, disposition: Disposition) -> ReplayResul
             .as_ref()
             .map(|value| value.identity.clone()),
         late_records: Vec::new(),
+        supersedes: None,
         retained_events: request.observations.len().min(request.limits.max_events),
     }
 }

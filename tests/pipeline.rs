@@ -102,6 +102,7 @@ fn it001_qualified_assessment_reaches_typed_consumer_without_loss() {
         scope_start_nanos: 0,
         deadline_nanos: 30,
         late_cutoff_nanos: 40,
+        prior_result_identity: None,
         trigger: TriggerState::Activated {
             identity: id("trigger:refund"),
             event_time_nanos: 0,

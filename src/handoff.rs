@@ -119,7 +119,9 @@ pub fn handoff(result: AssessmentHandoff, capabilities: ConsumerCapabilities) ->
     if let Some(cause) = validate(&result) {
         return HandoffOutcome::Refused(cause);
     }
-    let requires_late_link = !result.replay.late_records.is_empty() || result.supersedes.is_some();
+    let requires_late_link = !result.replay.late_records.is_empty()
+        || result.replay.supersedes.is_some()
+        || result.supersedes.is_some();
     let complete = capabilities.preserves_activation
         && capabilities.preserves_participation
         && capabilities.preserves_completeness

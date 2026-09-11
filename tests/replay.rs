@@ -16,6 +16,7 @@ fn request() -> ReplayRequest {
         scope_start_nanos: 0,
         deadline_nanos: 30,
         late_cutoff_nanos: 40,
+        prior_result_identity: None,
         trigger: TriggerState::Activated {
             identity: id("trigger:refund-request"),
             event_time_nanos: 0,
@@ -107,11 +108,13 @@ fn tc002_non_success_and_late_inputs_stay_explicit() {
         Disposition::AmbiguousMembership
     );
     let mut late = request();
+    late.prior_result_identity = Some(id("result:earlier"));
     late.observations
         .push(observation("signal:refund", 10, 41, 1));
     let result = replay(&late);
     assert_eq!(result.disposition, Disposition::Open);
     assert_eq!(result.late_records, vec![id("record:1")]);
+    assert_eq!(result.supersedes, Some(id("result:earlier")));
     let mut exhausted = request();
     exhausted.limits.max_events = 0;
     exhausted
