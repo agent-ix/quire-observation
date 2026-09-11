@@ -259,3 +259,63 @@ fn tc003_scope_cross_wiring_and_duplicate_dependencies_refuse() {
         HandoffOutcome::Refused(HandoffRefusal::DuplicateDependency)
     );
 }
+
+#[test]
+fn tc003_handoff_preserves_each_non_boolean_disposition() {
+    let capabilities = ConsumerCapabilities {
+        preserves_activation: true,
+        preserves_participation: true,
+        preserves_completeness: true,
+        preserves_dependencies: true,
+        preserves_late_supersession: true,
+    };
+    for disposition in [
+        Disposition::Satisfied,
+        Disposition::Violated,
+        Disposition::Untriggered,
+        Disposition::IncompleteHistory,
+        Disposition::Unsupported,
+    ] {
+        let result = AssessmentHandoff {
+            result_identity: id("result:distinct"),
+            replay: ReplayResult {
+                assessment_identity: id("assessment"),
+                disposition,
+                basis: SettlementBasis::Unavailable,
+                decision_support: vec![],
+                progress_identity: None,
+                late_records: vec![],
+                supersedes: None,
+                retained_events: 0,
+            },
+            activation: if disposition == Disposition::Untriggered {
+                Activation::Untriggered
+            } else {
+                Activation::Activated
+            },
+            participation: Participation::Complete,
+            completeness: if disposition == Disposition::IncompleteHistory {
+                Completeness::Incomplete
+            } else {
+                Completeness::Complete
+            },
+            decision_progress: scope("decision"),
+            decision_closure: scope("decision"),
+            surrounding_progress: scope("surrounding"),
+            surrounding_closure: scope("surrounding"),
+            global_closure: GlobalConformanceClosure::NotRequired,
+            source_identity: id("source"),
+            binding_identity: id("binding"),
+            dependencies: vec![ImmutableDependency {
+                identity: id("definition"),
+                revision: id("1"),
+                digest: digest(4),
+            }],
+            supersedes: None,
+        };
+        assert!(matches!(
+            handoff(result, capabilities.clone()),
+            HandoffOutcome::Delivered(value) if value.result.replay.disposition == disposition
+        ));
+    }
+}
