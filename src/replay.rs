@@ -38,6 +38,20 @@ pub struct DecisionRule {
     pub counterexample_signal: Identity,
 }
 
+/// The activation selection is explicit; absence of an activation is not a
+/// failed assessment, and a boundary ambiguity is not an inferred timestamp.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TriggerState {
+    Activated {
+        identity: Identity,
+        event_time_nanos: i128,
+    },
+    Untriggered,
+    AmbiguousBoundary {
+        identity: Identity,
+    },
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplayRequest {
     pub assessment_identity: Identity,
@@ -45,6 +59,7 @@ pub struct ReplayRequest {
     pub scope_start_nanos: i128,
     pub deadline_nanos: i128,
     pub late_cutoff_nanos: i128,
+    pub trigger: TriggerState,
     pub required_history: bool,
     pub history_available: bool,
     pub membership_ambiguous: bool,
@@ -60,6 +75,8 @@ pub enum Disposition {
     Satisfied,
     Violated,
     MissedDeadline,
+    Untriggered,
+    AmbiguousBoundary,
     Open,
     IncompleteHistory,
     AmbiguousMembership,
@@ -90,6 +107,13 @@ pub struct ReplayResult {
 /// Evaluates one caller-selected rule over a finite, explicitly ordered history.
 #[must_use]
 pub fn replay(request: &ReplayRequest) -> ReplayResult {
+    match &request.trigger {
+        TriggerState::Untriggered => return unavailable(request, Disposition::Untriggered),
+        TriggerState::AmbiguousBoundary { .. } => {
+            return unavailable(request, Disposition::AmbiguousBoundary);
+        }
+        TriggerState::Activated { .. } => {}
+    }
     if !request.profile_supported {
         return unavailable(request, Disposition::Unsupported);
     }

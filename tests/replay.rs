@@ -16,6 +16,10 @@ fn request() -> ReplayRequest {
         scope_start_nanos: 0,
         deadline_nanos: 30,
         late_cutoff_nanos: 40,
+        trigger: TriggerState::Activated {
+            identity: id("trigger:refund-request"),
+            event_time_nanos: 0,
+        },
         required_history: true,
         history_available: true,
         membership_ambiguous: false,
@@ -106,6 +110,21 @@ fn tc002_non_success_and_late_inputs_stay_explicit() {
         .observations
         .push(observation("signal:refund", 10, 11, 1));
     assert_eq!(replay(&exhausted).disposition, Disposition::Exhausted);
+}
+
+#[test]
+fn tc002_untriggered_and_ambiguous_boundaries_stay_distinct() {
+    let mut untriggered = request();
+    untriggered.trigger = TriggerState::Untriggered;
+    assert_eq!(replay(&untriggered).disposition, Disposition::Untriggered);
+    let mut ambiguous = request();
+    ambiguous.trigger = TriggerState::AmbiguousBoundary {
+        identity: id("trigger:boundary"),
+    };
+    assert_eq!(
+        replay(&ambiguous).disposition,
+        Disposition::AmbiguousBoundary
+    );
 }
 
 #[test]
