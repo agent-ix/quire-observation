@@ -10,15 +10,17 @@ relationships:
 
 ## Description
 
-Verify that every assessment disposition and its independent execution,
-progress, closure, truth, support, activation, participation, completeness,
-provenance, dependency, and supersession facts survive a typed consumer handoff.
+Verify that every assessment disposition and its independent execution, decision
+progress, decision closure, surrounding progress, surrounding closure, truth,
+support, activation, participation, completeness, provenance, dependency,
+retained-event, and supersession facts survive a typed consumer handoff.
 
 ## Test Procedure
 
 Map healthy, violating, untriggered, incomplete, unsupported, and late
 superseding results to a typed sink. Independently omit, duplicate, cross-wire,
-or make a target representation unavailable for each required axis.
+or make a target representation unavailable for each required axis, one axis at a
+time, and assert the omission cases cover the declared axis set exhaustively.
 
 ## Expected Results
 

@@ -12,8 +12,9 @@ relationships:
 
 When emitting an assessment result, the library SHALL preserve independently
 readable execution, scope progress/closure, truth, settlement, support,
-activation, participation, completeness, provenance, dependencies, and late
-supersession facts, or SHALL report an explicit mapping loss/refusal.
+activation, participation, completeness, provenance, dependencies, retained
+event, and late supersession facts, or SHALL report an explicit mapping
+loss/refusal.
 
 ## Inputs
 
@@ -34,9 +35,13 @@ supersession facts, or SHALL report an explicit mapping loss/refusal.
   with each result.
 - The consumer capability selection SHALL identify preservation or explicit
   loss for every independently readable result axis: assessment identity,
-  disposition, settlement, support, progress identity, scope facts, global
-  closure, activation, participation, completeness, provenance, dependencies,
-  and late supersession.
+  disposition, settlement, support, progress identity, decision progress,
+  decision closure, surrounding progress, surrounding closure, global closure,
+  activation, participation, completeness, provenance, dependencies, retained
+  events, and late supersession.
+- A single capability SHALL NOT stand for two facts a consumer can represent
+  independently; each scope progress and scope closure fact SHALL carry its own
+  capability and its own typed loss.
 - The library SHALL preserve prior result bytes when a late contradiction occurs
   and link any superseding/invalidation result to them.
 

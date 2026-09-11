@@ -42,8 +42,13 @@ batch replay and incremental processing for the same admitted history.
 ## Error Conditions
 
 Mismatched progress scope or clock, unavailable history, ambiguous membership,
-unsupported profile, and exhausted retained state SHALL be explicit non-success
-outcomes and SHALL NOT settle truth.
+unsupported profile, ambiguous caller-declared record order, and exhausted
+retained state SHALL be explicit non-success outcomes and SHALL NOT settle
+truth.
+
+A duplicated caller-declared sequence SHALL report an ambiguous-order outcome
+distinct from an unsupported profile, because the caller-declared order is the
+only ordering authority and two records cannot share one position.
 
 ## Acceptance Criteria
 

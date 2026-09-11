@@ -41,6 +41,10 @@ identities, or SHALL return a typed refusal or incomplete outcome.
   record identity and compatible anchor in the selected scope.
 - The library SHALL return missing required values, membership, closure, and
   relationships as explicit incomplete reasons rather than Boolean false.
+- The library SHALL treat a member's object identity as caller-opaque.
+- The library SHALL retain the selected membership and closure digests without
+  recomputing them, because recomputing either requires a canonicalization this
+  library does not own.
 
 ## Error Conditions
 
