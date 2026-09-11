@@ -1,10 +1,14 @@
 //! Qualified, transport-independent observation admission for OB01.
 //!
 //! This crate verifies the semantic selections that make an observed record
-//! usable by later temporal or protocol consumers. It does not replay temporal
-//! rules, settle deadlines, or interpret a telemetry transport.
+//! usable by later temporal or protocol consumers. Its replay kernel operates
+//! only over a caller-selected bounded profile; it does not interpret a
+//! telemetry transport or claim production-monitor execution.
 
 use std::collections::BTreeSet;
+
+pub mod handoff;
+pub mod replay;
 
 pub const NATIVE_LINKED_PACKAGE_FORMAT: &str = "native-linked-package/1";
 pub const PRODUCER_INTERFACE_VERSION: &str = "1.2.0";
