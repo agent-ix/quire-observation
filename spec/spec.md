@@ -42,6 +42,9 @@ result facts a consumer must not collapse into a Boolean.
   `quire-spec-language`.
 - FCD decoding, OTLP/other transport adapters, production monitoring, and
   business-action execution.
+- Digest canonicalization. The selected membership and closure digests are
+  retained as given and never recomputed; `quire-spec-language` owns the
+  canonicalization that produces them.
 - Protocol conformance interpretation and verification-result storage.
 
 ## System Overview

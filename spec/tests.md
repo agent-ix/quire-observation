@@ -16,16 +16,16 @@ relationships:
 
 | Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
 |---|---|---|---|
-| FR-001 | FR-001-AC-1..4 | TC-001 | ✅ complete |
-| FR-002 | FR-002-AC-1..3 | TC-002 | ✅ complete |
+| FR-001 | FR-001-AC-1..5 | TC-001 | ✅ complete |
+| FR-002 | FR-002-AC-1..4 | TC-002 | ✅ complete |
 | FR-003 | FR-003-AC-1..3 | TC-003 | ✅ complete |
 
 ## Test Case Summary
 
 | Test ID | Title | Type | Priority | Traces To | Status |
 |---|---|---|---|---|---|
-| TC-001 | Qualify explicit observation admission | Unit | P0 | FR-001-AC-1..FR-001-AC-4 | ✅ complete |
-| TC-002 | Agree bounded replay and incremental assessment | Property | P0 | FR-002-AC-1..FR-002-AC-3, NFR-001, NFR-002 | ✅ complete |
+| TC-001 | Qualify explicit observation admission | Unit | P0 | FR-001-AC-1..FR-001-AC-5, NFR-001-AC-1, NFR-001-AC-4 | ✅ complete |
+| TC-002 | Agree bounded replay and incremental assessment | Property | P0 | FR-002-AC-1..FR-002-AC-4, NFR-001-AC-2, NFR-001-AC-3, NFR-001-AC-5, NFR-002 | ✅ complete |
 | TC-003 | Preserve result facts through consumer handoff | Property | P0 | FR-003-AC-1..FR-003-AC-3, NFR-002 | ✅ complete |
 | IT-001 | Observation assessment handoff | Integration | P1 | FR-001-AC-1, FR-002-AC-1..FR-002-AC-3, FR-003-AC-1..FR-003-AC-3 | ✅ local typed-sink coverage |
 

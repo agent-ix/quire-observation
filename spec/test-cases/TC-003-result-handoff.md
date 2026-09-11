@@ -10,15 +10,20 @@ relationships:
 
 ## Description
 
-Verify that every assessment disposition and its independent execution,
-progress, closure, truth, support, activation, participation, completeness,
-provenance, dependency, and supersession facts survive a typed consumer handoff.
+Verify that every assessment disposition and each of the seventeen result axes
+FR-003 declares — assessment identity, disposition, settlement, support, progress
+identity, decision progress, decision closure, surrounding progress, surrounding
+closure, global closure, activation, participation, completeness, provenance,
+dependency, retained-event, and late-supersession — survive a typed consumer
+handoff.
 
 ## Test Procedure
 
 Map healthy, violating, untriggered, incomplete, unsupported, and late
 superseding results to a typed sink. Independently omit, duplicate, cross-wire,
-or make a target representation unavailable for each required axis.
+or make a target representation unavailable for each required axis, one axis at a
+time, and assert the omission cases cover FR-003's declared seventeen-axis set
+exhaustively.
 
 ## Expected Results
 
