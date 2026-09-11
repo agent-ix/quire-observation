@@ -121,6 +121,25 @@ fn tc002_non_success_and_late_inputs_stay_explicit() {
 }
 
 #[test]
+fn tc002_incremental_intake_enforces_event_and_active_key_bounds() {
+    let mut retained = request();
+    retained.limits.max_events = 1;
+    let mut state = IncrementalAssessment::new(retained);
+    state.push(observation("signal:refund", 10, 11, 1)).unwrap();
+    assert_eq!(
+        state.push(observation("signal:refund", 11, 12, 2)),
+        Err(IncrementalError::RetentionExhausted)
+    );
+    let mut keys = request();
+    keys.limits.max_events = 2;
+    let mut state = IncrementalAssessment::new(keys);
+    state.push(observation("signal:refund", 10, 11, 1)).unwrap();
+    let mut other = observation("signal:refund", 11, 12, 2);
+    other.subject_identity = id("order:O2");
+    assert_eq!(state.push(other), Err(IncrementalError::ActiveKeyExhausted));
+}
+
+#[test]
 fn tc002_untriggered_and_ambiguous_boundaries_stay_distinct() {
     let mut untriggered = request();
     untriggered.trigger = TriggerState::Untriggered;

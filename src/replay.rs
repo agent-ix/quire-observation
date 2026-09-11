@@ -1,6 +1,7 @@
 //! Bounded deterministic replay and incremental assessment for OB02.
 
 use crate::{Digest, Identity};
+use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplayLimits {
@@ -104,6 +105,50 @@ pub struct ReplayResult {
     pub retained_events: usize,
 }
 
+/// Stateful bounded intake for callers receiving observations incrementally.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IncrementalAssessment {
+    request: ReplayRequest,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IncrementalError {
+    RetentionExhausted,
+    ActiveKeyExhausted,
+}
+
+impl IncrementalAssessment {
+    #[must_use]
+    pub fn new(mut request: ReplayRequest) -> Self {
+        request.observations.clear();
+        Self { request }
+    }
+
+    /// Retains a record only when both declared resource limits remain valid.
+    pub fn push(&mut self, observation: TimedObservation) -> Result<(), IncrementalError> {
+        if self.request.observations.len() >= self.request.limits.max_events {
+            return Err(IncrementalError::RetentionExhausted);
+        }
+        let mut subjects: BTreeSet<_> = self
+            .request
+            .observations
+            .iter()
+            .map(|record| record.subject_identity.clone())
+            .collect();
+        subjects.insert(observation.subject_identity.clone());
+        if subjects.len() > self.request.limits.max_active_keys {
+            return Err(IncrementalError::ActiveKeyExhausted);
+        }
+        self.request.observations.push(observation);
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn finish(&self) -> ReplayResult {
+        replay(&self.request)
+    }
+}
+
 /// Evaluates one caller-selected rule over a finite, explicitly ordered history.
 #[must_use]
 pub fn replay(request: &ReplayRequest) -> ReplayResult {
@@ -123,7 +168,13 @@ pub fn replay(request: &ReplayRequest) -> ReplayResult {
     if request.membership_ambiguous {
         return unavailable(request, Disposition::AmbiguousMembership);
     }
-    if request.observations.len() > request.limits.max_events || request.limits.max_active_keys == 0
+    let active_keys: BTreeSet<_> = request
+        .observations
+        .iter()
+        .map(|record| record.subject_identity.clone())
+        .collect();
+    if request.observations.len() > request.limits.max_events
+        || active_keys.len() > request.limits.max_active_keys
     {
         return unavailable(request, Disposition::Exhausted);
     }
@@ -213,7 +264,13 @@ pub fn replay(request: &ReplayRequest) -> ReplayResult {
 /// Incremental execution retains no different semantics from batch replay.
 #[must_use]
 pub fn incremental(request: &ReplayRequest) -> ReplayResult {
-    replay(request)
+    let mut state = IncrementalAssessment::new(request.clone());
+    for observation in &request.observations {
+        if state.push(observation.clone()).is_err() {
+            return unavailable(request, Disposition::Exhausted);
+        }
+    }
+    state.finish()
 }
 
 fn unavailable(request: &ReplayRequest, disposition: Disposition) -> ReplayResult {
