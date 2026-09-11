@@ -187,6 +187,8 @@ pub enum ClockRange {
 pub struct ScopeSelection {
     pub population_identity: Identity,
     pub membership_digest: Digest,
+    /// Whether the caller supplied the complete selected membership view.
+    pub membership_complete: bool,
     pub closure_identity: Option<Identity>,
     pub closure_digest: Option<Digest>,
     pub kind: ScopeKind,
@@ -216,6 +218,7 @@ pub struct AdmissionRequest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IncompleteReason {
     MissingValuation { record: Identity },
+    MissingMembership,
     MissingRelationship { from: Identity, to: Identity },
     MissingClosure,
 }
@@ -293,6 +296,9 @@ pub fn admit(request: AdmissionRequest) -> AdmissionOutcome {
     }
     if request.scope.closure_identity.is_none() {
         return incomplete(IncompleteReason::MissingClosure);
+    }
+    if !request.scope.membership_complete {
+        return incomplete(IncompleteReason::MissingMembership);
     }
 
     let mut ids = BTreeSet::new();

@@ -46,6 +46,7 @@ fn request() -> AdmissionRequest {
         scope: ScopeSelection {
             population_identity: id("population:orders"),
             membership_digest: digest(4),
+            membership_complete: true,
             closure_identity: Some(id("closure:complete")),
             closure_digest: Some(digest(5)),
             kind: ScopeKind::Snapshot {
@@ -183,6 +184,12 @@ fn tc142_scope_closure_clock_and_limits_are_explicit() {
     incomplete.scope.closure_digest = None;
     assert!(
         matches!(admit(incomplete), AdmissionOutcome::Incomplete { reasons } if matches!(reasons.as_slice(), [IncompleteReason::MissingClosure]))
+    );
+
+    let mut missing_membership = request();
+    missing_membership.scope.membership_complete = false;
+    assert!(
+        matches!(admit(missing_membership), AdmissionOutcome::Incomplete { reasons } if matches!(reasons.as_slice(), [IncompleteReason::MissingMembership]))
     );
 
     let mut window = request();
