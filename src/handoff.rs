@@ -2,6 +2,7 @@
 
 use crate::replay::{Disposition, ReplayResult, SettlementBasis};
 use crate::{Digest, Identity};
+use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImmutableDependency {
@@ -39,6 +40,40 @@ pub enum MappingState {
     Refused,
 }
 
+/// One independently scoped progress or closure fact.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScopeFact {
+    pub scope_identity: Identity,
+    pub authority_identity: Identity,
+    pub boundary_identity: Identity,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GlobalClosureState {
+    Closed,
+    Open,
+    Incomplete,
+    Contradicted,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GlobalConformanceClosure {
+    NotRequired,
+    Required {
+        state: GlobalClosureState,
+        execution_identity: Identity,
+        branch_identity: Identity,
+        workflow_identity: Identity,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HandoffRefusal {
+    InvalidIdentity(&'static str),
+    DuplicateDependency,
+    ScopeCrossWiring,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AssessmentHandoff {
     pub result_identity: Identity,
@@ -46,6 +81,11 @@ pub struct AssessmentHandoff {
     pub activation: Activation,
     pub participation: Participation,
     pub completeness: Completeness,
+    pub decision_progress: ScopeFact,
+    pub decision_closure: ScopeFact,
+    pub surrounding_progress: ScopeFact,
+    pub surrounding_closure: ScopeFact,
+    pub global_closure: GlobalConformanceClosure,
     pub source_identity: Identity,
     pub binding_identity: Identity,
     pub dependencies: Vec<ImmutableDependency>,
@@ -67,9 +107,18 @@ pub struct ConsumerHandoff {
     pub mapping: MappingState,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HandoffOutcome {
+    Delivered(Box<ConsumerHandoff>),
+    Refused(HandoffRefusal),
+}
+
 /// Maps an assessment only if every required fact remains independently readable.
 #[must_use]
-pub fn handoff(result: AssessmentHandoff, capabilities: ConsumerCapabilities) -> ConsumerHandoff {
+pub fn handoff(result: AssessmentHandoff, capabilities: ConsumerCapabilities) -> HandoffOutcome {
+    if let Some(cause) = validate(&result) {
+        return HandoffOutcome::Refused(cause);
+    }
     let requires_late_link = !result.replay.late_records.is_empty() || result.supersedes.is_some();
     let complete = capabilities.preserves_activation
         && capabilities.preserves_participation
@@ -87,5 +136,50 @@ pub fn handoff(result: AssessmentHandoff, capabilities: ConsumerCapabilities) ->
     } else {
         MappingState::Unrepresented
     };
-    ConsumerHandoff { result, mapping }
+    HandoffOutcome::Delivered(Box::new(ConsumerHandoff { result, mapping }))
+}
+
+fn validate(result: &AssessmentHandoff) -> Option<HandoffRefusal> {
+    if !result.result_identity.valid()
+        || !result.source_identity.valid()
+        || !result.binding_identity.valid()
+        || !valid_scope(&result.decision_progress)
+        || !valid_scope(&result.decision_closure)
+        || !valid_scope(&result.surrounding_progress)
+        || !valid_scope(&result.surrounding_closure)
+    {
+        return Some(HandoffRefusal::InvalidIdentity("result axis"));
+    }
+    if result.decision_progress.scope_identity != result.decision_closure.scope_identity
+        || result.surrounding_progress.scope_identity != result.surrounding_closure.scope_identity
+    {
+        return Some(HandoffRefusal::ScopeCrossWiring);
+    }
+    let mut dependencies = BTreeSet::new();
+    for dependency in &result.dependencies {
+        if !dependency.identity.valid() || !dependency.revision.valid() {
+            return Some(HandoffRefusal::InvalidIdentity("dependency"));
+        }
+        if !dependencies.insert((dependency.identity.clone(), dependency.revision.clone())) {
+            return Some(HandoffRefusal::DuplicateDependency);
+        }
+    }
+    if let GlobalConformanceClosure::Required {
+        execution_identity,
+        branch_identity,
+        workflow_identity,
+        ..
+    } = &result.global_closure
+    {
+        if !execution_identity.valid() || !branch_identity.valid() || !workflow_identity.valid() {
+            return Some(HandoffRefusal::InvalidIdentity("global closure"));
+        }
+    }
+    None
+}
+
+fn valid_scope(scope: &ScopeFact) -> bool {
+    scope.scope_identity.valid()
+        && scope.authority_identity.valid()
+        && scope.boundary_identity.valid()
 }

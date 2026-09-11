@@ -27,7 +27,7 @@ impl Identity {
         &self.0
     }
 
-    fn valid(&self) -> bool {
+    pub(crate) fn valid(&self) -> bool {
         !self.0.trim().is_empty()
     }
 }

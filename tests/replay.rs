@@ -48,6 +48,14 @@ fn observation(signal: &str, event: i128, ingest: i128, sequence: u64) -> TimedO
     }
 }
 
+fn scope(name: &str) -> ScopeFact {
+    ScopeFact {
+        scope_identity: id(&format!("scope:{name}")),
+        authority_identity: id(&format!("authority:{name}")),
+        boundary_identity: id(&format!("boundary:{name}")),
+    }
+}
+
 #[test]
 fn tc002_replay_and_incremental_agree_for_decisive_cases() {
     let mut satisfied = request();
@@ -137,6 +145,11 @@ fn tc003_handoff_never_promotes_loss_to_preservation() {
         activation: Activation::Unknown,
         participation: Participation::MissingRequiredObservation,
         completeness: Completeness::Incomplete,
+        decision_progress: scope("decision"),
+        decision_closure: scope("decision"),
+        surrounding_progress: scope("surrounding"),
+        surrounding_closure: scope("surrounding"),
+        global_closure: GlobalConformanceClosure::NotRequired,
         source_identity: id("source"),
         binding_identity: id("binding"),
         dependencies: vec![ImmutableDependency {
@@ -153,10 +166,10 @@ fn tc003_handoff_never_promotes_loss_to_preservation() {
         preserves_dependencies: true,
         preserves_late_supersession: false,
     };
-    assert_eq!(
-        handoff(result.clone(), missing).mapping,
-        MappingState::Unrepresented
-    );
+    assert!(matches!(
+        handoff(result.clone(), missing),
+        HandoffOutcome::Delivered(value) if value.mapping == MappingState::Unrepresented
+    ));
     let full = ConsumerCapabilities {
         preserves_activation: true,
         preserves_participation: true,
@@ -164,5 +177,56 @@ fn tc003_handoff_never_promotes_loss_to_preservation() {
         preserves_dependencies: true,
         preserves_late_supersession: true,
     };
-    assert_eq!(handoff(result, full).mapping, MappingState::Preserved);
+    assert!(matches!(
+        handoff(result, full),
+        HandoffOutcome::Delivered(value) if value.mapping == MappingState::Preserved
+    ));
+}
+
+#[test]
+fn tc003_scope_cross_wiring_and_duplicate_dependencies_refuse() {
+    let replay = replay(&request());
+    let mut result = AssessmentHandoff {
+        result_identity: id("result:axes"),
+        replay,
+        activation: Activation::Activated,
+        participation: Participation::Complete,
+        completeness: Completeness::Complete,
+        decision_progress: scope("decision"),
+        decision_closure: scope("decision"),
+        surrounding_progress: scope("surrounding"),
+        surrounding_closure: scope("surrounding"),
+        global_closure: GlobalConformanceClosure::Required {
+            state: GlobalClosureState::Open,
+            execution_identity: id("execution"),
+            branch_identity: id("branch"),
+            workflow_identity: id("workflow"),
+        },
+        source_identity: id("source"),
+        binding_identity: id("binding"),
+        dependencies: vec![ImmutableDependency {
+            identity: id("definition"),
+            revision: id("1"),
+            digest: digest(3),
+        }],
+        supersedes: None,
+    };
+    result.decision_closure.scope_identity = id("scope:wrong");
+    let caps = ConsumerCapabilities {
+        preserves_activation: true,
+        preserves_participation: true,
+        preserves_completeness: true,
+        preserves_dependencies: true,
+        preserves_late_supersession: true,
+    };
+    assert_eq!(
+        handoff(result.clone(), caps.clone()),
+        HandoffOutcome::Refused(HandoffRefusal::ScopeCrossWiring)
+    );
+    result.decision_closure = scope("decision");
+    result.dependencies.push(result.dependencies[0].clone());
+    assert_eq!(
+        handoff(result, caps),
+        HandoffOutcome::Refused(HandoffRefusal::DuplicateDependency)
+    );
 }
