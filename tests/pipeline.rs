@@ -35,6 +35,7 @@ fn admitted_request() -> AdmissionRequest {
             source_identity: id("source:provider"),
             schema_identity: id("schema:1"),
             signal_identity: id("signal:refund"),
+            trigger_identity: id("trigger:refund"),
             unit: id("USD"),
             subject_kind: SubjectKind::Order,
             required: true,
@@ -68,6 +69,7 @@ fn admitted_request() -> AdmissionRequest {
             schema_identity: id("schema:1"),
             subject: order,
             signal_identity: id("signal:refund"),
+            trigger_identity: id("trigger:refund"),
             unit: id("USD"),
             value: ValueState::Present {
                 value_type: id("decimal"),

@@ -36,6 +36,7 @@ fn request() -> AdmissionRequest {
             source_identity: id("source:provider"),
             schema_identity: id("schema:payment/v1"),
             signal_identity: id("signal:effect"),
+            trigger_identity: id("trigger:payment"),
             unit: id("USD"),
             subject_kind: SubjectKind::Order,
             required: true,
@@ -69,6 +70,7 @@ fn request() -> AdmissionRequest {
             schema_identity: id("schema:payment/v1"),
             subject: order,
             signal_identity: id("signal:effect"),
+            trigger_identity: id("trigger:payment"),
             unit: id("USD"),
             value: ValueState::Present {
                 value_type: id("decimal"),
@@ -94,10 +96,11 @@ fn tc140_valid_record_retains_provenance() {
 
 #[test]
 fn tc140_wrong_signal_unit_and_schema_refuse() {
-    for field in ["signal", "unit", "schema"] {
+    for field in ["signal", "trigger", "unit", "schema"] {
         let mut input = request();
         match field {
             "signal" => input.records[0].signal_identity = id("signal:wrong"),
+            "trigger" => input.records[0].trigger_identity = id("trigger:wrong"),
             "unit" => input.records[0].unit = id("EUR"),
             "schema" => input.records[0].schema_identity = id("schema:stale"),
             _ => unreachable!(),

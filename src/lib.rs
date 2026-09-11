@@ -132,6 +132,7 @@ pub struct ObservationBinding {
     pub source_identity: Identity,
     pub schema_identity: Identity,
     pub signal_identity: Identity,
+    pub trigger_identity: Identity,
     pub unit: Identity,
     pub subject_kind: SubjectKind,
     pub required: bool,
@@ -145,6 +146,7 @@ pub struct AdmittedRecord {
     pub schema_identity: Identity,
     pub subject: Subject,
     pub signal_identity: Identity,
+    pub trigger_identity: Identity,
     pub unit: Identity,
     pub value: ValueState,
     pub visibility: Visibility,
@@ -331,6 +333,12 @@ pub fn admit(request: AdmissionRequest) -> AdmissionOutcome {
             return refused(RefusalCause::BindingMismatch {
                 record: record.identity.clone(),
                 field: "signal",
+            });
+        }
+        if record.trigger_identity != request.binding.trigger_identity {
+            return refused(RefusalCause::BindingMismatch {
+                record: record.identity.clone(),
+                field: "trigger",
             });
         }
         if record.unit != request.binding.unit {
