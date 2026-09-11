@@ -1,0 +1,23 @@
+[package]
+name = "quire-observation"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-only"
+publish = false
+description = "Qualified observation bindings and transport-independent valuations for Quire."
+repository = "https://github.com/agent-ix/quire-observation"
+
+[lib]
+name = "quire_observation"
+path = "src/lib.rs"
+
+[workspace]
+members = ["."]
+resolver = "2"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
