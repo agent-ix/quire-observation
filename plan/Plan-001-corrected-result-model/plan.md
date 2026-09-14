@@ -16,14 +16,16 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-observation/NFR-002
     type: references
+  - target: ix://agent-ix/quire-observation/FR-005
+    type: references
 ---
 # Implementation Plan: complete observation-owner contracts
 
 The accepted ecosystem ownership correction replaced the former replay/result-handoff
 model with a transport-independent observation-owner boundary. This living plan preserves
 Tasks 001–007 as explicitly superseded history and governs the replacement implementation
-tracked by `quire-observation#15` in Tasks 008–013. All implementation-plan work is now
-complete and ready for its independent gap-analysis and repository promotion gates.
+tracked by `quire-observation#15` in Tasks 008–013. Task 014 now adopts the
+accepted FR-287/FR-262 runtime-reference boundary under `quire-observation#18`.
 
 ## Requirements Summary
 
@@ -35,6 +37,7 @@ complete and ready for its independent gap-analysis and repository promotion gat
 - [x] **FR-002**: derive all owner artifacts identically from batch and checked incremental
   histories without evaluating temporal or protocol truth.
 - [x] **FR-003**: expose complete constructor-private validated views or typed refusal.
+- [x] **FR-005**: adopt exact FCD-qualified runtime subjects and relationships.
 
 ### Non-Functional Requirements
 
@@ -95,9 +98,10 @@ complete integration without importing an evaluator, parser, transport, or proto
 - [x] **NFR-001**: assert zero excess retained state and no partial view/document on refusal.
 - [x] **NFR-002**: assert complete byte equality and exact validated envelope selections.
 
-## Completion
+## Current work
 
-Tasks 008–013 are complete. No implementation-plan work remains.
+Tasks 008–014 are complete. Task 014 did not reopen their owner-contract architecture;
+it replaced the partial producer/subject/relationship admission seam.
 
 ### Track A: Critical path
 
@@ -135,6 +139,7 @@ A1 -> A2 -> A3 -> A4 -> Task-013 review/readiness
 | Task-011 | B | FR-001, NFR-001 | TC-001 | done |
 | Task-012 | A | FR-002, FR-003, NFR-002 | TC-002, TC-003, IT-001 | done |
 | Task-013 | Gate | FR-001..FR-004, NFR-001..NFR-002 | TC-001..TC-004, IT-001 | done |
+| Task-014 | B | FR-005, FR-001 | TC-005, TC-001 | done |
 
 Tasks 001–007 are `done` with `resolution: superseded`; their files retain the historical
 design record but contain no remaining implementation work.

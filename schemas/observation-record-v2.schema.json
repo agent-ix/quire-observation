@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-ix:quire-observation:record:2",
+  "title": "Observation record owner artifact v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "identity", "revision", "authority", "subject", "payload", "predecessor", "limits"],
+  "properties": {
+    "contract": {"const": "quire.observation.record/v2"},
+    "identity": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "revision": {"type": "integer", "minimum": 1},
+    "authority": {"$ref": "#/$defs/authority"},
+    "subject": {"$ref": "#/$defs/subject"},
+    "payload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["observation_id", "binding_identity", "source_identity", "schema_identity", "subject", "signal_identity", "trigger_identity", "unit", "value", "visibility", "anchor", "event_time_nanos", "ingestion_time_nanos", "causal_relationship", "clock", "lateness", "cutoff_identity"],
+      "properties": {
+        "observation_id": {"type": "string", "pattern": "^sha256-jcs:[0-9a-f]{64}$"},
+        "binding_identity": {"$ref": "#/$defs/text"}, "source_identity": {"$ref": "#/$defs/text"}, "schema_identity": {"$ref": "#/$defs/text"},
+        "subject": {"$ref": "#/$defs/runtimeSubject"},
+        "signal_identity": {"$ref": "#/$defs/text"}, "trigger_identity": {"$ref": "#/$defs/text"}, "unit": {"$ref": "#/$defs/text"},
+        "value": {"oneOf": [
+          {"type": "object", "additionalProperties": false, "required": ["state", "value_type", "canonical_value"], "properties": {"state": {"const": "present"}, "value_type": {"$ref": "#/$defs/text"}, "canonical_value": {"type": "string", "maxLength": 1048576}}},
+          {"type": "object", "additionalProperties": false, "required": ["state"], "properties": {"state": {"const": "missing"}}}
+        ]}, "visibility": {"enum": ["internal", "external"]}, "anchor": {"$ref": "#/$defs/anchor"},
+        "event_time_nanos": {"$ref": "#/$defs/integerText"}, "ingestion_time_nanos": {"$ref": "#/$defs/integerText"},
+        "causal_relationship": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/relationship"}]}, "clock": {"$ref": "#/$defs/clock"},
+        "lateness": {"enum": ["on-time", "late"]}, "cutoff_identity": {"$ref": "#/$defs/text"}
+      }
+    },
+    "predecessor": {"$ref": "#/$defs/predecessor"}, "limits": {"$ref": "#/$defs/limits"}
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 1048576},
+    "integerText": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)$"},
+    "authority": {"type": "object", "additionalProperties": false, "required": ["definition_identity", "definition_revision", "definition_digest"], "properties": {"definition_identity": {"$ref": "#/$defs/text"}, "definition_revision": {"$ref": "#/$defs/text"}, "definition_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "subject": {"type": "object", "additionalProperties": false, "required": ["scope_identity", "population_identity"], "properties": {"scope_identity": {"$ref": "#/$defs/text"}, "population_identity": {"$ref": "#/$defs/text"}}},
+    "anchor": {"oneOf": [
+      {"type": "object", "additionalProperties": false, "required": ["kind", "position"], "properties": {"kind": {"const": "event-position"}, "position": {"$ref": "#/$defs/naturalText"}}},
+      {"type": "object", "additionalProperties": false, "required": ["kind", "index", "epoch_nanos", "period_nanos"], "properties": {"kind": {"const": "fixed-sample"}, "index": {"$ref": "#/$defs/naturalText"}, "epoch_nanos": {"$ref": "#/$defs/integerText"}, "period_nanos": {"$ref": "#/$defs/naturalText"}}},
+      {"type": "object", "additionalProperties": false, "required": ["kind", "instant_nanos"], "properties": {"kind": {"const": "timestamp"}, "instant_nanos": {"$ref": "#/$defs/integerText"}}}
+    ]},
+    "naturalText": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+    "relationship": {"type": "object", "additionalProperties": false, "required": ["declaration_identity", "authority", "interface_version", "identity", "source", "target"], "properties": {"declaration_identity": {"$ref": "#/$defs/text"}, "authority": {"$ref": "#/$defs/producerAuthority"}, "interface_version": {"const": "1.2.0"}, "identity": {"$ref": "#/$defs/opaqueBytes"}, "source": {"$ref": "#/$defs/runtimeSubject"}, "target": {"$ref": "#/$defs/runtimeSubject"}}},
+    "runtimeSubject": {"type": "object", "additionalProperties": false, "required": ["authority", "kind", "identity"], "properties": {"authority": {"$ref": "#/$defs/producerAuthority"}, "kind": {"$ref": "#/$defs/opaqueBytes"}, "identity": {"$ref": "#/$defs/opaqueBytes"}}},
+    "producerAuthority": {"type": "object", "additionalProperties": false, "required": ["bundleIdentity", "bundleRevision", "digest"], "properties": {"bundleIdentity": {"$ref": "#/$defs/text"}, "bundleRevision": {"$ref": "#/$defs/producerRevision"}, "digest": {"$ref": "#/$defs/producerDigest"}}},
+    "producerRevision": {"type": "object", "additionalProperties": false, "required": ["namespace", "value"], "properties": {"namespace": {"$ref": "#/$defs/text"}, "value": {"$ref": "#/$defs/text"}}},
+    "producerDigest": {"type": "object", "additionalProperties": false, "required": ["algorithm", "domain", "version", "value"], "properties": {"algorithm": {"const": "sha256"}, "domain": {"$ref": "#/$defs/text"}, "version": {"$ref": "#/$defs/text"}, "value": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}},
+    "opaqueBytes": {"type": "array", "minItems": 1, "maxItems": 1048576, "items": {"type": "integer", "minimum": 0, "maximum": 255}},
+    "clock": {"type": "object", "additionalProperties": false, "required": ["identity", "revision", "uncertainty_nanos"], "properties": {"identity": {"$ref": "#/$defs/text"}, "revision": {"$ref": "#/$defs/text"}, "uncertainty_nanos": {"$ref": "#/$defs/naturalText"}}},
+    "predecessor": {"oneOf": [{"type": "null"}, {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}]},
+    "limitValues": {"type": "object", "additionalProperties": false, "required": ["max_input_bytes", "max_output_bytes", "max_depth", "max_string_bytes", "max_population_entries", "max_positions", "max_capture_bindings", "max_required_sources", "max_visited_fields"], "properties": {"max_input_bytes": {"type": "integer", "minimum": 0, "maximum": 8388608}, "max_output_bytes": {"type": "integer", "minimum": 0, "maximum": 8388608}, "max_depth": {"type": "integer", "minimum": 0, "maximum": 64}, "max_string_bytes": {"type": "integer", "minimum": 0, "maximum": 1048576}, "max_population_entries": {"type": "integer", "minimum": 0, "maximum": 10000}, "max_positions": {"type": "integer", "minimum": 0, "maximum": 10000}, "max_capture_bindings": {"type": "integer", "minimum": 0, "maximum": 10000}, "max_required_sources": {"type": "integer", "minimum": 0, "maximum": 10000}, "max_visited_fields": {"type": "integer", "minimum": 0, "maximum": 1000000}}},
+    "usageValues": {"type": "object", "additionalProperties": false, "required": ["wire_bytes", "depth", "string_bytes", "population_entries", "positions", "capture_bindings", "required_sources", "visited_fields"], "properties": {"wire_bytes": {"type": "integer", "minimum": 1, "maximum": 8388608}, "depth": {"type": "integer", "minimum": 0, "maximum": 64}, "string_bytes": {"type": "integer", "minimum": 0, "maximum": 1048576}, "population_entries": {"type": "integer", "minimum": 0, "maximum": 10000}, "positions": {"type": "integer", "minimum": 0, "maximum": 10000}, "capture_bindings": {"type": "integer", "minimum": 0, "maximum": 10000}, "required_sources": {"type": "integer", "minimum": 0, "maximum": 10000}, "visited_fields": {"type": "integer", "minimum": 0, "maximum": 1000000}}},
+    "limits": {"type": "object", "additionalProperties": false, "required": ["effective", "usage"], "properties": {"effective": {"$ref": "#/$defs/limitValues"}, "usage": {"$ref": "#/$defs/usageValues"}}}
+  }
+}

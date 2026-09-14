@@ -22,4 +22,5 @@ okf_version: "0.1"
 * [Task-011: admission owner integration](./tasks/Task-011-admission-owner-integration.md) - Hardens admission, identities and relationship bounds.
 * [Task-012: history and reader integration](./tasks/Task-012-history-reader-integration.md) - Proves deterministic history and complete validated views.
 * [Task-013: review and promotion readiness](./tasks/Task-013-review-and-promote.md) - Owns final remediation, local gates, and the promotion handoff.
+* [Task-014: FCD-qualified runtime references](./tasks/Task-014-qualified-runtime-references.md) - Adopts exact producer authority, subject keys and runtime relationship correlation.
 * [Update log](./log.md) - Chronological history of this bundle.

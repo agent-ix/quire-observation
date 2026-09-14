@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Agent-IX
 
-//! `quire.observation.population/v1` owner artifact and FR-263/FR-264 identities.
+//! `quire.observation.population/v2` owner artifact and FR-263/FR-264 identities.
 
+use agent_ix_baseline_producer::{DigestSelection, Revision};
 use serde::{Deserialize, Serialize};
 
 use super::common::{
@@ -15,7 +16,7 @@ use crate::{AdmissionRequest, Digest, Identity, QualifiedObservation, ScopeKind}
 pub use super::Limits;
 
 /// Immutable population owner-contract label.
-pub const CONTRACT: &str = "quire.observation.population/v1";
+pub const CONTRACT: &str = "quire.observation.population/v2";
 /// Immutable explicit-members input-contract label.
 pub const MEMBERSHIP_CONTRACT: &str = "quire.observation.explicit-members/v1";
 /// Pinned JSON Schema bytes for [`MEMBERSHIP_CONTRACT`].
@@ -26,19 +27,21 @@ pub const MEMBERSHIP_SCHEMA_SHA256: &str =
     "408c9d2908c3660d657cea574f52d8531e9ab749ec78c8d058fe5f163df23cce";
 /// Pinned JSON Schema bytes for [`CONTRACT`].
 pub const SCHEMA_BYTES: &[u8] =
-    include_bytes!("../../schemas/observation-population-v1.schema.json");
+    include_bytes!("../../schemas/observation-population-v2.schema.json");
 /// Lowercase SHA-256 digest of [`SCHEMA_BYTES`].
-pub const SCHEMA_SHA256: &str = "493b4c10701356007d055d351171ee1897de2b7226da03161fa86a9e52e524c2";
+pub const SCHEMA_SHA256: &str = "bceba1a2a69d150af05a7f7bea52769560849fd24a8582cb35b0937eee263c01";
 
 /// Borrowed Producer-interface selection in a validated population.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProducerRef<'a> {
-    /// Exact producer-document identity.
+    /// Exact producer-bundle identity.
     pub identity: &'a str,
     /// Exact Producer-interface version.
     pub version: &'a str,
-    /// Lowercase SHA-256 digest text.
-    pub digest: &'a str,
+    /// Exact namespaced producer-bundle revision.
+    pub revision: &'a Revision,
+    /// Exact four-member producer-bundle digest selection.
+    pub digest: &'a DigestSelection,
 }
 
 /// Borrowed immutable definition selection in a validated population.
@@ -48,6 +51,15 @@ pub struct DefinitionRef<'a> {
     pub identity: &'a str,
     /// Lowercase SHA-256 digest text.
     pub digest: &'a str,
+}
+
+/// Borrowed exact FCD configuration selection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConfigurationRef<'a> {
+    /// Exact configuration identity.
+    pub identity: &'a str,
+    /// Exact four-member configuration digest selection.
+    pub digest: &'a DigestSelection,
 }
 
 /// Borrowed mutually exclusive scope selection in a validated population.
@@ -80,7 +92,7 @@ pub struct PopulationView {
     selection: SelectionWire,
     required_members: Vec<String>,
     observation_sources: Vec<String>,
-    configuration: DefinitionWire,
+    configuration: ConfigurationWire,
     closure: DefinitionWire,
     completeness_dependencies: Vec<String>,
     progress_dependencies: Vec<String>,
@@ -97,9 +109,10 @@ impl PopulationView {
     #[must_use]
     pub fn producer(&self) -> ProducerRef<'_> {
         ProducerRef {
-            identity: &self.producer.identity,
-            version: &self.producer.version,
-            digest: &self.producer.digest,
+            identity: &self.producer.authority.bundle_identity,
+            version: &self.producer.interface_version,
+            revision: &self.producer.authority.bundle_revision,
+            digest: &self.producer.authority.digest,
         }
     }
 
@@ -146,8 +159,8 @@ impl PopulationView {
 
     /// Returns the selected configuration definition.
     #[must_use]
-    pub fn configuration(&self) -> DefinitionRef<'_> {
-        DefinitionRef {
+    pub fn configuration(&self) -> ConfigurationRef<'_> {
+        ConfigurationRef {
             identity: &self.configuration.identity,
             digest: &self.configuration.digest,
         }
@@ -181,9 +194,23 @@ pub type View = Validated<PopulationView>;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ProducerWire {
+    authority: ProducerAuthorityWire,
+    interface_version: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProducerAuthorityWire {
+    bundle_identity: String,
+    bundle_revision: Revision,
+    digest: DigestSelection,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConfigurationWire {
     identity: String,
-    version: String,
-    digest: String,
+    digest: DigestSelection,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -276,7 +303,7 @@ struct PopulationPreimage {
     membership_rule_identity: String,
     selection: SelectionWire,
     observation_sources: Vec<String>,
-    configuration: DefinitionWire,
+    configuration: ConfigurationWire,
     closure: DefinitionWire,
     completeness_dependencies: Vec<String>,
     progress_dependencies: Vec<String>,
@@ -380,10 +407,7 @@ pub fn read_membership(
 pub fn population_identity(request: &AdmissionRequest, limits: Limits) -> Result<Identity> {
     let scope = &request.scope;
     let effective = limits.effective();
-    if request.producer.interface_version != crate::PRODUCER_INTERFACE_VERSION
-        || !request.producer.document_identity.valid()
-        || !request.producer.configuration_identity.valid()
-    {
+    if request.producer.interface_version() != crate::PRODUCER_INTERFACE_VERSION {
         return Err(Error::new(
             ErrorCode::InvalidSelection,
             "population producer selection must be explicit and supported",
@@ -404,18 +428,25 @@ pub fn population_identity(request: &AdmissionRequest, limits: Limits) -> Result
     }
     let closure = closure_wire(scope)?;
     let preimage = PopulationPreimage {
-        identity_version: "quire.observation.population-identity/v1-draft.1",
+        identity_version: "quire.observation.population-identity/v2",
         producer: ProducerWire {
-            identity: request.producer.document_identity.as_str().to_owned(),
-            version: request.producer.interface_version.clone(),
-            digest: digest_hex(&request.producer.document_digest),
+            authority: ProducerAuthorityWire {
+                bundle_identity: request.producer.bundle_identity().to_owned(),
+                bundle_revision: request.producer.bundle_revision().clone(),
+                digest: request.producer.digest().clone(),
+            },
+            interface_version: request.producer.interface_version().to_owned(),
         },
         membership_rule_identity: scope.membership_rule_identity.as_str().to_owned(),
         selection: selection_wire(scope)?,
         observation_sources: strings(&scope.observation_sources),
-        configuration: DefinitionWire {
-            identity: request.producer.configuration_identity.as_str().to_owned(),
-            digest: digest_hex(&request.producer.configuration_digest),
+        configuration: ConfigurationWire {
+            identity: request
+                .producer
+                .configuration()
+                .configuration_identity
+                .clone(),
+            digest: request.producer.configuration().digest.clone(),
         },
         closure,
         completeness_dependencies: strings(&scope.completeness_dependencies),
@@ -481,9 +512,12 @@ fn payload_from_qualified(
     Ok(PopulationView {
         population_identity: expected.as_str().to_owned(),
         producer: ProducerWire {
-            identity: qualified.producer().document_identity.as_str().to_owned(),
-            version: qualified.producer().interface_version.clone(),
-            digest: digest_hex(&qualified.producer().document_digest),
+            authority: ProducerAuthorityWire {
+                bundle_identity: qualified.producer().bundle_identity().to_owned(),
+                bundle_revision: qualified.producer().bundle_revision().clone(),
+                digest: qualified.producer().digest().clone(),
+            },
+            interface_version: qualified.producer().interface_version().to_owned(),
         },
         membership_rule_identity: qualified
             .scope()
@@ -494,13 +528,13 @@ fn payload_from_qualified(
         selection: selection_wire(qualified.scope())?,
         required_members: strings(&qualified.scope().required_member_identities),
         observation_sources: strings(&qualified.scope().observation_sources),
-        configuration: DefinitionWire {
+        configuration: ConfigurationWire {
             identity: qualified
                 .producer()
+                .configuration()
                 .configuration_identity
-                .as_str()
-                .to_owned(),
-            digest: digest_hex(&qualified.producer().configuration_digest),
+                .clone(),
+            digest: qualified.producer().configuration().digest.clone(),
         },
         closure: closure_wire(qualified.scope())?,
         completeness_dependencies: strings(&qualified.scope().completeness_dependencies),

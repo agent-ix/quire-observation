@@ -5,10 +5,11 @@ allow = [
     "Apache-2.0",
     "Unicode-3.0",
 ]
-# Keep the dependency allow-list permissive-only. The sole AGPL exception is
-# this project itself.
+# Keep the registry dependency allow-list permissive-only. The pinned FCD
+# Producer boundary is the sole AGPL dependency exception.
 exceptions = [
-    { allow = ["AGPL-3.0-only"], crate = "quire-observation" },
+    { allow = ["AGPL-3.0-only"], crate = "agent-ix-baseline-producer" },
+    { allow = ["AGPL-3.0-or-later"], crate = "quire-observation" },
 ]
 confidence-threshold = 0.9
 
@@ -22,5 +23,9 @@ version = 2
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-# The trace attribute is the sole non-registry dependency and is test-only.
-allow-git = ["https://github.com/agent-ix/ix-trace-rs"]
+# Both git dependencies are exact immutable selections: the test-only trace
+# attribute uses a tag and the production FCD boundary uses a full revision.
+allow-git = [
+    "https://github.com/agent-ix/ix-trace-rs",
+    "https://github.com/agent-ix/filament-core-data",
+]

@@ -11,14 +11,21 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub mod authority;
+mod runtime_reference;
+
+pub use agent_ix_baseline_producer::{AdmittedBundleKey, AdmittedStaticBundle};
+pub use runtime_reference::{
+    EndpointSide, QualifiedSubject, ReferenceComponent, ReferenceRefusal, Relationship,
+    RelationshipIdentity, RequiredRelationship, SubjectIdentity, SubjectKind,
+};
 
 /// Required linked-package descriptor format.
 pub const NATIVE_LINKED_PACKAGE_FORMAT: &str = "native-linked-package/1";
 /// Required Producer interface version.
-pub const PRODUCER_INTERFACE_VERSION: &str = "1.2.0";
+pub const PRODUCER_INTERFACE_VERSION: &str = agent_ix_baseline_producer::INTERFACE_VERSION;
 
 /// Opaque exact identity; admission validates non-empty values at their boundary.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -71,88 +78,6 @@ pub struct PackageSelection {
     pub revision: Identity,
     /// Digest of the selected package bytes.
     pub digest: Digest,
-}
-
-/// Selected Producer-interface definition and configuration.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProducerSelection {
-    /// Exact supported interface version.
-    pub interface_version: String,
-    /// Immutable producer-document identity.
-    pub document_identity: Identity,
-    /// Digest of the selected producer document.
-    pub document_digest: Digest,
-    /// Selected semantic-model identity.
-    pub model_identity: Identity,
-    /// Selected configuration identity.
-    pub configuration_identity: Identity,
-    /// Digest of the selected configuration bytes.
-    pub configuration_digest: Digest,
-}
-
-/// Closed subject-kind vocabulary retained by observation admission.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SubjectKind {
-    /// Business order.
-    Order,
-    /// Shipment.
-    Shipment,
-    /// Payment attempt.
-    PaymentAttempt,
-    /// Refund.
-    Refund,
-    /// Delivery occurrence.
-    Delivery,
-    /// Business effect.
-    Effect,
-    /// Receipt occurrence.
-    Receipt,
-}
-
-/// Typed workflow subject.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Subject {
-    /// Exact subject kind.
-    pub kind: SubjectKind,
-    /// Opaque subject identity.
-    pub identity: Identity,
-}
-
-/// Closed declared relationship vocabulary.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RelationshipKind {
-    /// A shipment belongs to an order.
-    ShipmentForOrder,
-    /// A payment attempt belongs to an order.
-    PaymentAttemptForOrder,
-    /// A refund belongs to an order.
-    RefundForOrder,
-    /// A refund compensates an effect.
-    RefundCompensatesEffect,
-}
-
-/// One exact producer-declared relationship.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Relationship {
-    /// Exact relationship identity.
-    pub identity: Identity,
-    /// Typed relationship kind.
-    pub kind: RelationshipKind,
-    /// Directed source endpoint.
-    pub from: Subject,
-    /// Directed target endpoint.
-    pub to: Subject,
-}
-
-/// Relationship premise required by an observation binding.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RequiredRelationship {
-    /// Required relationship kind.
-    pub kind: RelationshipKind,
-    /// Required directed source endpoint.
-    pub from: Subject,
-    /// Required directed target endpoint.
-    pub to: Subject,
 }
 
 /// Whether the observation originated inside or outside the assessed system.
@@ -229,7 +154,7 @@ pub struct AdmittedRecord {
     /// Selected source schema identity.
     pub schema_identity: Identity,
     /// Exact typed subject.
-    pub subject: Subject,
+    pub subject: QualifiedSubject,
     /// Selected signal identity.
     pub signal_identity: Identity,
     /// Selected trigger identity.
@@ -247,7 +172,7 @@ pub struct AdmittedRecord {
     /// Ingestion instant retained independently from event time.
     pub ingestion_time_nanos: i128,
     /// Optional explicit causal relationship; timestamps never supply it.
-    pub causal_relationship_identity: Option<Identity>,
+    pub causal_relationship_identity: Option<RelationshipIdentity>,
     /// Selected clock identity.
     pub clock_identity: Identity,
     /// Selected clock revision.
@@ -368,11 +293,11 @@ pub struct AdmissionRequest {
     /// Selected linked package.
     pub package: PackageSelection,
     /// Selected producer interface and configuration.
-    pub producer: ProducerSelection,
+    pub producer: AdmittedStaticBundle,
     /// Selected observation binding.
     pub binding: ObservationBinding,
     /// Exact expected record subject.
-    pub expected_subject: Subject,
+    pub expected_subject: QualifiedSubject,
     /// Complete supplied relationship graph.
     pub relationships: Vec<Relationship>,
     /// Relationship premises required by the binding.
@@ -389,9 +314,9 @@ pub struct AdmissionRequest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct QualifiedObservation {
     package: PackageSelection,
-    producer: ProducerSelection,
+    producer: AdmittedStaticBundle,
     binding: ObservationBinding,
-    expected_subject: Subject,
+    expected_subject: QualifiedSubject,
     relationships: Vec<Relationship>,
     required_relationships: Vec<RequiredRelationship>,
     scope: ScopeSelection,
@@ -408,7 +333,7 @@ impl QualifiedObservation {
 
     /// Returns the exact selected producer interface and configuration.
     #[must_use]
-    pub const fn producer(&self) -> &ProducerSelection {
+    pub const fn producer(&self) -> &AdmittedStaticBundle {
         &self.producer
     }
 
@@ -420,7 +345,7 @@ impl QualifiedObservation {
 
     /// Returns the exact expected subject.
     #[must_use]
-    pub const fn expected_subject(&self) -> &Subject {
+    pub const fn expected_subject(&self) -> &QualifiedSubject {
         &self.expected_subject
     }
 
@@ -467,10 +392,8 @@ pub enum IncompleteReason {
     MissingMembership,
     /// A required directed relationship is absent.
     MissingRelationship {
-        /// Required relationship source identity.
-        from: Identity,
-        /// Required relationship target identity.
-        to: Identity,
+        /// Complete exact required relationship slot.
+        required: Box<RequiredRelationship>,
     },
     /// Required closure selection is absent.
     MissingClosure,
@@ -495,19 +418,22 @@ pub enum RefusalCause {
         /// Affected record identity.
         record: Identity,
     },
+    /// A runtime subject or relationship failed exact reference validation.
+    InvalidReference(ReferenceRefusal),
+    /// One producer relationship identity was rebound to incompatible facts.
+    RelationshipIdentityContradiction {
+        /// Exact contradicted producer-local relationship identity.
+        identity: RelationshipIdentity,
+    },
     /// A supplied relationship conflicts with the required target.
     RelationshipConflict {
-        /// Required source endpoint.
-        from: Identity,
-        /// Required target endpoint.
-        to: Identity,
+        /// Complete exact required relationship slot.
+        required: Box<RequiredRelationship>,
     },
     /// More than one supplied relationship satisfies one premise.
     AmbiguousRelationship {
-        /// Required source endpoint.
-        from: Identity,
-        /// Required target endpoint.
-        to: Identity,
+        /// Complete exact required relationship slot.
+        required: Box<RequiredRelationship>,
     },
     /// A record uses a foreign clock or incompatible anchor.
     ClockMismatch {
@@ -552,12 +478,6 @@ pub enum SelectionField {
     PackageFormat,
     /// Linked-package identity or revision.
     PackageIdentity,
-    /// Producer-document identity.
-    ProducerDocumentIdentity,
-    /// Producer model identity.
-    ProducerModelIdentity,
-    /// Producer configuration identity.
-    ProducerConfigurationIdentity,
     /// Observation binding identity.
     BindingIdentity,
     /// Binding source identity.
@@ -570,8 +490,6 @@ pub enum SelectionField {
     BindingTriggerIdentity,
     /// Binding unit identity.
     BindingUnit,
-    /// Expected subject identity.
-    ExpectedSubjectIdentity,
     /// Population identity.
     PopulationIdentity,
     /// Closure identity/digest pair.
@@ -580,10 +498,6 @@ pub enum SelectionField {
     Scope,
     /// Record or record-subject identity.
     RecordIdentity,
-    /// Relationship identity or duplicate identity.
-    RelationshipIdentity,
-    /// Relationship endpoint identity.
-    RelationshipEndpoint,
     /// Member or member-record identity.
     MemberIdentity,
 }
@@ -659,7 +573,7 @@ pub enum AdmissionOutcome {
 
 /// Validates an explicit observation handoff for later consumers.
 #[must_use]
-pub fn admit(request: AdmissionRequest) -> AdmissionOutcome {
+pub fn admit(mut request: AdmissionRequest) -> AdmissionOutcome {
     if request.package.format != NATIVE_LINKED_PACKAGE_FORMAT {
         return refused(RefusalCause::InvalidSelection(
             SelectionField::PackageFormat,
@@ -670,7 +584,7 @@ pub fn admit(request: AdmissionRequest) -> AdmissionOutcome {
             SelectionField::PackageIdentity,
         ));
     }
-    if request.producer.interface_version != PRODUCER_INTERFACE_VERSION {
+    if request.producer.interface_version() != PRODUCER_INTERFACE_VERSION {
         return refused(RefusalCause::ProducerVersion);
     }
     if let Some(field) = invalid_required_selection(&request) {
@@ -714,11 +628,15 @@ pub fn admit(request: AdmissionRequest) -> AdmissionOutcome {
 
     let mut ids = BTreeSet::new();
     let mut incomplete_reasons = Vec::new();
-    if let Some(field) = invalid_relationship_selection(&request) {
-        return refused(RefusalCause::InvalidSelection(field));
+    if let Some(cause) = invalid_relationship_selection(&request) {
+        return refused(cause);
     }
+    request.relationships.sort();
+    request.relationships.dedup();
+    request.required_relationships.sort();
+    request.required_relationships.dedup();
     for record in &request.records {
-        if !record.identity.valid() || !record.subject.identity.valid() {
+        if !record.identity.valid() {
             return refused(RefusalCause::InvalidSelection(
                 SelectionField::RecordIdentity,
             ));
@@ -764,7 +682,7 @@ pub fn admit(request: AdmissionRequest) -> AdmissionOutcome {
                 field: BindingField::Unit,
             });
         }
-        if record.subject.kind != request.binding.subject_kind
+        if record.subject.kind() != &request.binding.subject_kind
             || record.subject != request.expected_subject
         {
             return refused(RefusalCause::SubjectMismatch {
@@ -825,33 +743,28 @@ pub fn admit(request: AdmissionRequest) -> AdmissionOutcome {
     }
 
     for wanted in &request.required_relationships {
-        let matching: Vec<_> = request
+        let matching: BTreeSet<_> = request
             .relationships
             .iter()
-            .filter(|actual| {
-                actual.kind == wanted.kind && actual.from == wanted.from && actual.to == wanted.to
-            })
+            .filter(|actual| wanted.matches(actual))
             .collect();
         if matching.len() > 1 {
             return refused(RefusalCause::AmbiguousRelationship {
-                from: wanted.from.identity.clone(),
-                to: wanted.to.identity.clone(),
+                required: Box::new(wanted.clone()),
             });
         }
         if matching.is_empty() {
             if request
                 .relationships
                 .iter()
-                .any(|actual| actual.kind == wanted.kind && actual.from == wanted.from)
+                .any(|actual| wanted.conflicts_with(actual))
             {
                 return refused(RefusalCause::RelationshipConflict {
-                    from: wanted.from.identity.clone(),
-                    to: wanted.to.identity.clone(),
+                    required: Box::new(wanted.clone()),
                 });
             }
             incomplete_reasons.push(IncompleteReason::MissingRelationship {
-                from: wanted.from.identity.clone(),
-                to: wanted.to.identity.clone(),
+                required: Box::new(wanted.clone()),
             });
         }
     }
@@ -930,7 +843,7 @@ fn validate_owner_identities(request: &AdmissionRequest) -> std::result::Result<
                 !request
                     .relationships
                     .iter()
-                    .any(|relationship| relationship.identity == *identity)
+                    .any(|relationship| relationship.identity() == identity)
             })
         {
             return Err(OwnerArtifact::CausalRelationship);
@@ -941,18 +854,6 @@ fn validate_owner_identities(request: &AdmissionRequest) -> std::result::Result<
 
 fn invalid_required_selection(request: &AdmissionRequest) -> Option<SelectionField> {
     [
-        (
-            request.producer.document_identity.valid(),
-            SelectionField::ProducerDocumentIdentity,
-        ),
-        (
-            request.producer.model_identity.valid(),
-            SelectionField::ProducerModelIdentity,
-        ),
-        (
-            request.producer.configuration_identity.valid(),
-            SelectionField::ProducerConfigurationIdentity,
-        ),
         (
             request.binding.identity.valid(),
             SelectionField::BindingIdentity,
@@ -975,10 +876,6 @@ fn invalid_required_selection(request: &AdmissionRequest) -> Option<SelectionFie
         ),
         (request.binding.unit.valid(), SelectionField::BindingUnit),
         (
-            request.expected_subject.identity.valid(),
-            SelectionField::ExpectedSubjectIdentity,
-        ),
-        (
             request.scope.population_identity.valid(),
             SelectionField::PopulationIdentity,
         ),
@@ -987,20 +884,35 @@ fn invalid_required_selection(request: &AdmissionRequest) -> Option<SelectionFie
     .find_map(|(valid, field)| (!valid).then_some(field))
 }
 
-fn invalid_relationship_selection(request: &AdmissionRequest) -> Option<SelectionField> {
-    let mut identities = BTreeSet::new();
-    for relationship in &request.relationships {
-        if !relationship.identity.valid() || !identities.insert(&relationship.identity) {
-            return Some(SelectionField::RelationshipIdentity);
-        }
-        if !relationship.from.identity.valid() || !relationship.to.identity.valid() {
-            return Some(SelectionField::RelationshipEndpoint);
-        }
+fn invalid_relationship_selection(request: &AdmissionRequest) -> Option<RefusalCause> {
+    if !request.expected_subject.belongs_to(&request.producer)
+        || request
+            .records
+            .iter()
+            .any(|record| !record.subject.belongs_to(&request.producer))
+        || request
+            .relationships
+            .iter()
+            .any(|relationship| !relationship.belongs_to(&request.producer))
+        || request
+            .required_relationships
+            .iter()
+            .any(|relationship| !relationship.belongs_to(&request.producer))
+    {
+        return Some(RefusalCause::InvalidReference(
+            ReferenceRefusal::ForeignAuthority,
+        ));
     }
-    if request.required_relationships.iter().any(|relationship| {
-        !relationship.from.identity.valid() || !relationship.to.identity.valid()
-    }) {
-        return Some(SelectionField::RelationshipEndpoint);
+    let mut identities = BTreeMap::new();
+    for relationship in &request.relationships {
+        let slot = (relationship.authority(), relationship.identity());
+        if let Some(previous) = identities.insert(slot, relationship) {
+            if previous != relationship {
+                return Some(RefusalCause::RelationshipIdentityContradiction {
+                    identity: relationship.identity().clone(),
+                });
+            }
+        }
     }
     None
 }

@@ -32,8 +32,8 @@ contracts are:
 
 | Module | Contract | Semantic payload |
 | --- | --- | --- |
-| observation | `quire.observation.record/v1` | FR-260/FR-288 admitted observation and correction preimage |
-| population | `quire.observation.population/v1` | FR-263 membership, snapshot/window and population identities |
+| observation | `quire.observation.record/v2` | FR-260/FR-288 admitted observation, FR-287 authority-qualified subject and correction preimage |
+| population | `quire.observation.population/v2` | FR-263 membership, snapshot/window and exact FCD producer authority |
 | position | `quire.observation.position-ledger/v1` | ordered distinct zero-based positions, observation identities and exact clock identity/revision |
 | clock | `quire.observation.clock-binding/v1` | event-position, fixed-sample or timestamped-event selection and exact parameters |
 | capture | `quire.observation.capture-environment/v1` | immutable trigger/anchor and complete sorted typed value bindings |
@@ -45,6 +45,11 @@ contracts are:
 The population subsystem SHALL additionally publish and strict-read the
 `quire.observation.explicit-members/v1` input contract, whose identity and raw
 digest bind the sorted, distinct required-member population.
+
+FR-005 supersedes only the observation and population payload schemas with v2
+because their v1 shapes cannot retain the complete FR-287/FCD authority. Their
+v1 schema files remain pinned historical bytes; the other seven contracts and
+the explicit-members input remain v1.
 
 Availability admits exactly `available`, `not-yet-observed`,
 `producer-unavailable`, and `contract-unavailable`. Progress and closure admit

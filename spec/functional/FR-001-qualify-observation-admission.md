@@ -5,6 +5,8 @@ type: FR
 relationships:
   - target: "ix://agent-ix/quire-observation/US-001"
     type: "implements"
+  - target: "ix://agent-ix/quire-observation/FR-005"
+    type: "refined-by"
 ---
 # FR-001: Qualify observation admission without ambient inference
 
@@ -17,7 +19,7 @@ identities, or SHALL return a typed refusal or incomplete outcome.
 ## Inputs
 
 - A `native-linked-package/1` identity, revision, and digest.
-- A Producer interface 1.2.0 identity, digest, model, and configuration.
+- An FCD-admitted Producer interface 1.2.0 static-bundle capability.
 - One binding, bounded related-subject relationship set, strict-read
   `quire.observation.explicit-members/v1` selection, finite scope, record set,
   and explicit record, member, relationship, and required-relationship limits.
@@ -85,5 +87,6 @@ typed refusal conditions.
   FR-263/FR-264 population and explicit-members canonical identities and verifies
   them through its strict readers. Closure authority is also owned here;
   `quire-protocol` owns only protocol-result canonicalization.
-- Producer interface 1.2.0 and the selected `native-linked-package/1` artifact
-  are caller-provided dependencies, not crate dependencies.
+- Producer interface 1.2.0 is consumed from the pinned FCD Rust crate as defined
+  by [FR-005](FR-005-adopt-authority-qualified-runtime-references.md). The
+  selected `native-linked-package/1` artifact remains caller-provided.
