@@ -9,6 +9,7 @@ use quire_observation::{QualifiedSubject, SubjectIdentity, SubjectKind};
 pub const ORDER_KIND: &str = "ix://agent-ix/commerce/type/Order";
 pub const SHIPMENT_KIND: &str = "ix://agent-ix/commerce/type/Shipment";
 pub const ORDER_SHIPMENT: &str = "ix://agent-ix/commerce/relationship/Order-shipment";
+pub const ORDER_SUCCESSOR: &str = "ix://agent-ix/commerce/relationship/Order-successor";
 
 pub fn producer() -> AdmittedStaticBundle {
     StaticProducerBundle::admit_json(include_bytes!("../fixtures/fcd-static-bundle-1.2.json"))

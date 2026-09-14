@@ -23,4 +23,5 @@ okf_version: "0.1"
 * [Task-012: history and reader integration](./tasks/Task-012-history-reader-integration.md) - Proves deterministic history and complete validated views.
 * [Task-013: review and promotion readiness](./tasks/Task-013-review-and-promote.md) - Owns final remediation, local gates, and the promotion handoff.
 * [Task-014: FCD-qualified runtime references](./tasks/Task-014-qualified-runtime-references.md) - Adopts exact producer authority, subject keys and runtime relationship correlation.
+* [Task-015: finite topology and anchored boundary](./tasks/Task-015-close-topology-and-window-boundary.md) - Closes topology policy and all-clock FR-289 evidence without adding an evaluator.
 * [Update log](./log.md) - Chronological history of this bundle.
