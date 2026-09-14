@@ -21,9 +21,9 @@ security_critical: false
 ## Purpose
 
 This specification defines the private Rust observation boundary required for
-the Quire native-language launch. It qualifies incoming records for later
-assessment, performs the selected bounded replay profile, and preserves the
-result facts a consumer must not collapse into a Boolean.
+the Quire native-language launch. It qualifies incoming records and derives
+bounded immutable observation-authority facts for later assessment without
+owning any temporal or protocol result.
 
 ## Scope
 
@@ -31,10 +31,9 @@ result facts a consumer must not collapse into a Boolean.
 
 - Digest-bound package and producer selections, typed observation admission,
   declared relationship correlation, and finite scope completeness.
-- Deterministic bounded replay and incremental assessment under explicit
+- Deterministic batch and incremental owner-artifact derivation under explicit
   progress, closure, lateness, and clock-family inputs.
-- Immutable, loss-aware output handoff to temporal, protocol, and verification
-  consumers.
+- Immutable strict-read views for temporal, protocol, and verification consumers.
 
 ### Out of Scope
 
@@ -67,20 +66,21 @@ to distinguish absent evidence from a negative value.
 ## Requirements Architecture
 
 The user story [US-001](usecase/US-001-qualify-observations.md) drives admission
-(OB01), replay (OB02), handoff (OB03), and the canonical owner-artifact boundary
-in [FR-004](functional/FR-004-publish-observation-authority-artifacts.md). The
-two non-functional requirements constrain retained state and reproducible
-outcomes. Integration coverage connects the stages.
+(OB01), deterministic batch/incremental authority derivation (OB02), validated
+consumer access (OB03), and the canonical owner-artifact boundary in
+[FR-004](functional/FR-004-publish-observation-authority-artifacts.md). The two
+non-functional requirements constrain retained state and reproducible artifacts.
+Integration coverage connects the stages.
 
 ## Ownership correction for the temporal ecosystem
 
 This library owns observation identity, membership/population, position, clock,
 capture, progress, closure, completeness and result-availability facts. It does
 not own temporal or protocol truth, settlement, claim, conformance, or Boolean
-result vocabularies. FR-002's assessment is therefore observation adequacy and
-authority derivation only; FR-003 hands those artifacts to owner readers and
-never emits a canonical protocol result. `quire-protocol` and `tl-mltl` own their
-results, and `quire-contract-ir` joins only validated owner views.
+result vocabularies. FR-002 owns observation-authority derivation only; FR-003
+exposes those artifacts through strict owner readers and never emits a canonical
+protocol result. `quire-protocol` and `tl-mltl` own their results, and
+`quire-contract-ir` joins only validated owner views.
 
 ## References
 

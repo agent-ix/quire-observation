@@ -12,15 +12,17 @@ relationships:
 
 Verify valid qualified admission and independently mutate selected entity,
 source, schema, signal, unit, producer version, relationship, required value,
-closure, clock family, and exact record/member bounds. Also verify that an
-unrecognized member object identity and an unrecomputed membership or closure
-digest leave an otherwise qualified admission available.
+closure, clock family, owner-derived observation/membership/population identity,
+observation-source population, and exact record/member bounds. Closure bytes are
+not interpreted here, but their explicitly selected identity and raw digest are
+retained without substitution.
 
 ## Test Procedure
 
 Construct a valid selected package, Producer interface 1.2.0 selection,
-relationship graph, finite scope, and record. Run admission for the valid input,
-then repeat after each independent mutation and at exactly/one-over each bound.
+relationship set, finite scope, and record. Run admission for the valid input,
+then repeat after each independent mutation and at exactly/one-over each record,
+member, relationship, and required-relationship bound.
 
 ## Expected Results
 

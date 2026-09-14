@@ -18,3 +18,13 @@ description: "Chronological log of changes to the Plan-001 bundle."
   second spec amendment that the semantic tasks depend on, moved the omission sweep after the
   supersession change rather than before it, and freed the test-only evidence task to run
   first as the regression guard for everything after it.
+* **2026-09-13** — Reconciled after the accepted ecosystem ownership correction. The
+  replay/result-handoff task shapes (Tasks 001–007) are explicitly superseded and closed;
+  Tasks 008–013 govern the implemented admission plus nine observation-owner contracts,
+  complete strict-reader integration, all-seven spec review, code/Rust/gap review, and
+  promotion of `quire-observation#15`.
+* **2026-09-13** — Completed Tasks 008–013 after implementing the owner boundary and
+  resolving specification, Rust API, traceability, resource-bound, and dependency-policy
+  findings. The plan now ends at independently auditable promotion readiness; gap analysis,
+  merge, tracker update, and worktree cleanup are the repository lifecycle gates that
+  follow the completed implementation plan.

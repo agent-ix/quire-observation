@@ -3,8 +3,8 @@ id: FR-004
 title: "Publish strict observation authority artifacts"
 type: FR
 relationships:
+  - { target: ix://agent-ix/quire-observation/US-001, type: implements }
   - { target: ix://agent-ix/quire-observation/FR-001, type: depends_on }
-  - { target: ix://agent-ix/quire-observation/FR-002, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-260, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-263, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-267, type: depends_on }
@@ -34,13 +34,17 @@ contracts are:
 | --- | --- | --- |
 | observation | `quire.observation.record/v1` | FR-260/FR-288 admitted observation and correction preimage |
 | population | `quire.observation.population/v1` | FR-263 membership, snapshot/window and population identities |
-| position | `quire.observation.position-ledger/v1` | ordered distinct zero-based positions and observation identities |
+| position | `quire.observation.position-ledger/v1` | ordered distinct zero-based positions, observation identities and exact clock identity/revision |
 | clock | `quire.observation.clock-binding/v1` | event-position, fixed-sample or timestamped-event selection and exact parameters |
 | capture | `quire.observation.capture-environment/v1` | immutable trigger/anchor and complete sorted typed value bindings |
-| progress | `quire.observation.progress-assertion/v1` | FR-268 authority, scope, clock, source set, boundary and `open`/`closed` state |
-| closure | `quire.observation.closure-assertion/v1` | scope, closure authority, boundary, source set and `open`/`closed` state |
+| progress | `quire.observation.progress-assertion/v1` | FR-268 authority, scope, exact clock identity/revision, source set, boundary and `open`/`closed` state |
+| closure | `quire.observation.closure-assertion/v1` | scope, exact clock identity/revision, boundary, source set and `open`/`closed` state |
 | completeness | `quire.observation.completeness-assertion/v1` | exact population/facts and FR-287 state |
 | availability | `quire.observation.result-availability/v1` | required result identities and availability state |
+
+The population subsystem SHALL additionally publish and strict-read the
+`quire.observation.explicit-members/v1` input contract, whose identity and raw
+digest bind the sorted, distinct required-member population.
 
 Availability admits exactly `available`, `not-yet-observed`,
 `producer-unavailable`, and `contract-unavailable`. Progress and closure admit
@@ -66,17 +70,33 @@ and immutable predecessor; it never rewrites prior bytes.
 
 Derivation SHALL consume only FR-001 qualified state and FR-002 deterministic
 authority derivations. Each reader SHALL revalidate its entire document against
-independently supplied expected authority, subject, clock, scope, population,
-boundary and predecessor selections. Readers reject unknown/duplicate/missing/
-out-of-order fields, trailing data, invalid UTF-8, noncanonical bytes, unknown
-contracts or enum labels, unsorted/duplicate populations, identity/digest/
-revision mismatch and every cross-wired scope or clock.
+independently supplied expected authority, subject, exact clock identity and
+revision, scope, population, boundary and predecessor selections. Readers
+reject unknown, duplicate, missing or out-of-order fields; trailing data;
+invalid UTF-8; noncanonical bytes; unknown contracts or enum labels;
+unsorted/duplicate populations; identity, digest or revision mismatch; and
+every cross-wired scope or clock.
 
 Limits independently bound input/output bytes, JSON depth, string bytes,
 population entries, position count, capture bindings, required sources and
-visited fields. Work is charged before allocation or traversal. Exact-limit
-inputs are admitted; one-over inputs return resource-incomplete with no partial
-document/view. Caller limits may lower but not raise owner maxima.
+visited fields. Strict readers preflight raw input before semantic
+deserialization; derivation validates effective bounds before returning a
+document. Exact-limit inputs are admitted; one-over inputs return
+resource-incomplete with no partial document/view. Caller limits may lower but
+not raise owner maxima.
+
+Owner maxima are 8,388,608 input bytes, 8,388,608 output bytes, depth 64,
+1,048,576 encoded bytes in one string, 10,000 entries for each population,
+position, capture-binding and required-source dimension, and 1,000,000 visited
+object members or array elements.
+
+The stable error-code catalog is `QOBS-AUTH-INVALID-SELECTION`,
+`QOBS-AUTH-IDENTITY-MISMATCH`, `QOBS-AUTH-REVISION-MISMATCH`,
+`QOBS-AUTH-PREDECESSOR-MISMATCH`, `QOBS-AUTH-RESOURCE-INCOMPLETE`,
+`QOBS-AUTH-INVALID-UTF8`, `QOBS-AUTH-INVALID-JSON`,
+`QOBS-AUTH-NONCANONICAL`, `QOBS-AUTH-CONTRACT-MISMATCH`,
+`QOBS-AUTH-EXPECTED-MISMATCH`, and `QOBS-AUTH-AMBIGUOUS-ORDER`. Exact matching
+is case-sensitive; aliases and unknown codes are refused.
 
 Position order is authoritative only under its selected ledger/clock and never
 inferred from timestamps. Clock uncertainty is a value under a selected clock,
@@ -108,5 +128,4 @@ result and bridge crates consume only the public validated views.
 
 ## Status
 
-Proposed complete owner boundary for `quire-observation#15` and
-`tl-syntax#52`.
+Implemented for `quire-observation#15` with traced Rust coverage in TC-004.

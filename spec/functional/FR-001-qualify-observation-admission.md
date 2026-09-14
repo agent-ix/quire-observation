@@ -18,14 +18,14 @@ identities, or SHALL return a typed refusal or incomplete outcome.
 
 - A `native-linked-package/1` identity, revision, and digest.
 - A Producer interface 1.2.0 identity, digest, model, and configuration.
-- One binding, related-subject graph, strict-read
+- One binding, bounded related-subject relationship set, strict-read
   `quire.observation.explicit-members/v1` selection, finite scope, record set,
-  and explicit resource limits.
+  and explicit record, member, relationship, and required-relationship limits.
 
 ## Outputs
 
 - An `Available` qualified-observation envelope retaining the selected package,
-  producer, binding, subject, relationship graph, scope, records, and limits.
+  producer, binding, subject, relationship set, scope, records, and limits.
 - `Incomplete` with one or more missing-premise reasons.
 - `Refused` with the affected identity and typed validation cause.
 
@@ -38,6 +38,9 @@ identities, or SHALL return a typed refusal or incomplete outcome.
 - The library SHALL correlate related instances only through supplied typed
   relationships and SHALL NOT use trace IDs, provider identities, or record
   attributes as a substitute.
+- The library SHALL match a required relationship only by its exact type and
+  directed endpoints and SHALL NOT traverse or infer transitive, cyclic, or
+  timestamp-based relationships.
 - The library SHALL bind every admitted record to exactly one supplied member
   record identity and compatible anchor in the selected scope.
 - The library SHALL return missing required values, membership, closure, and
@@ -58,7 +61,8 @@ identities, or SHALL return a typed refusal or incomplete outcome.
 
 Selection mismatch, unsupported producer version, binding mismatch, subject
 mismatch, conflicting/ambiguous relationship, clock mismatch, invalid scope,
-duplicate record, and resource-limit exhaustion are typed refusal conditions.
+duplicate record, and record/member/relationship resource-limit exhaustion are
+typed refusal conditions.
 
 ## Acceptance Criteria
 
@@ -68,7 +72,9 @@ duplicate record, and resource-limit exhaustion are typed refusal conditions.
 | FR-001-AC-2 | Wrong entity, signal, unit, trigger, schema, or producer selection is refused. | Test (TC-001) |
 | FR-001-AC-3 | Missing required valuation, relationship, membership, or closure remains incomplete. | Test (TC-001) |
 | FR-001-AC-4 | Conflicting or ambiguous relationships and one-over resource inputs are refused. | Test (TC-001) |
-| FR-001-AC-5 | A member object identity remains opaque, while a membership or population identity is independently derived and compared and a selected producer/closure definition digest is retained in its declared domain. | Test (TC-001) |
+| FR-001-AC-5 | A member object identity is compared only as an exact opaque key and is never parsed, normalized, or interpreted. | Test (TC-001) |
+| FR-001-AC-6 | Explicit-members, observation, and population identities are independently derived and stale caller-authored identities are refused. | Test (TC-001) |
+| FR-001-AC-7 | Selected producer and closure definition digests are retained in their declared domains without interpreting definition bytes. | Test (TC-001) |
 
 ## Dependencies
 

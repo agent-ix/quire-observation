@@ -9,8 +9,7 @@ relationships:
 
 ## Description
 
-Planned complete owner-artifact checks for FR-004. No implementation coverage is
-claimed.
+Complete owner-artifact checks for FR-004.
 
 ## Test Procedure
 
@@ -29,4 +28,4 @@ implies protocol/TL truth, settlement, conformance or a Boolean verdict.
 
 ## Status
 
-Planned for `quire-observation#15`.
+Implemented for `quire-observation#15` in `tests/authority.rs`.

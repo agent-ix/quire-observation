@@ -2,7 +2,8 @@
 id: Task-007
 title: "#12 — define contradiction, lateness and outcome precedence"
 type: Task
-status: not_started
+status: done
+resolution: superseded
 track: S
 priority: P0
 relationships:
@@ -25,6 +26,9 @@ relationships:
 ---
 # Task-007: #12 — define contradiction, lateness and outcome precedence
 
+> Superseded by the ownership correction: QObs derives FR-294 lateness from an
+> explicit cutoff but does not define temporal contradiction or result precedence.
+
 ## Scope
 
 The readiness gate for this plan found that three things the code must decide are not defined
@@ -33,31 +37,31 @@ Settle them in the spec before any semantic code lands.
 
 ## Subtasks
 
-- [ ] **Define contradiction differentially.** A late record contradicts the result when
+- **Define contradiction differentially.** A late record contradicts the result when
       replaying with that record in window would yield a different `(disposition, basis)`.
       This replaces the basis-keyed table the epic plan proposed, which keyed on the current
       result's basis while the contradicted fact belongs to the prior result the library
       cannot read, and which left a settled `MissedDeadline` unsuperseded by a late
       counterexample.
-- [ ] **Declare the lateness inputs and the boundary convention.** The late cutoff, deadline
+- **Declare the lateness inputs and the boundary convention.** The late cutoff, deadline
       and scope start appear in no Inputs section, and nothing states the outcome for a record
       at exactly the deadline or a late arrival past it. Admission's range is half-open; say
       whether replay's is.
-- [ ] **State the precedence of the non-success outcomes.** NFR-002's reproducibility claim
+- **State the precedence of the non-success outcomes.** NFR-002's reproducibility claim
       needs a total order; "distinct" only constrains the value space.
-- [ ] **Say what an unavailable outcome does with late records**, not only with the
+- **Say what an unavailable outcome does with late records**, not only with the
       retained-event count.
-- [ ] **Fix the retained-event justification.** FR-003 says the axis tells bounded from
+- **Fix the retained-event justification.** FR-003 says the axis tells bounded from
       truncated while `NFR-001-AC-5` forces zero for every unavailable outcome, and the
       truncation case is unavailable. Truncation is carried by the disposition; say so.
-- [ ] **Reconcile FR-003's two axis sets.** The Description still enumerates fifteen names,
+- **Reconcile FR-003's two axis sets.** The Description still enumerates fifteen names,
       using "execution" and "truth" and omitting four axes the Behavior list names.
-- [ ] **Correct FR-001's Dependencies.** It cites `quire-spec-language` FR-015 and FR-027 for
+- **Correct FR-001's Dependencies.** It cites `quire-spec-language` FR-015 and FR-027 for
       an export neither states. Name the owning component without citing a requirement that
       does not carry the obligation.
-- [ ] **Trim FR-003's Inputs claim** that the immutable dependencies come from FR-002's
+- **Trim FR-003's Inputs claim** that the immutable dependencies come from FR-002's
       result; they are supplied at the handoff call site.
-- [ ] **Resolve the remaining identity, partial-capability, incremental-exhaustion and
+- **Resolve the remaining identity, partial-capability, incremental-exhaustion and
       member-comparand gaps** recorded in #12.
 
 ## Deliverables

@@ -2,7 +2,8 @@
 id: Task-004
 title: "#8 — supersede only on a contradicting late record; typed ambiguous order"
 type: Task
-status: not_started
+status: done
+resolution: superseded
 track: A
 priority: P0
 relationships:
@@ -17,6 +18,10 @@ relationships:
 ---
 # Task-004: #8 — supersede only on a contradicting late record; typed ambiguous order
 
+> Superseded by the accepted owner-contract architecture in FR-004. Temporal
+> contradiction and supersession decisions are downstream; QObs retains only
+> immutable direct artifact lineage and typed ambiguous position order.
+
 ## Scope
 
 Link a supersession only when a late record actually contradicts the settled result, and
@@ -25,26 +30,26 @@ profile.
 
 ## Subtasks
 
-- [ ] **Write the failing tests first.** A settled `Satisfied` result plus a late *agreeing*
+- **Write the failing tests first.** A settled `Satisfied` result plus a late *agreeing*
       witness, and plus a late record matching neither rule arm, both link
       `supersedes = Some(prior)` today. FR-002 requires neither to.
-- [ ] **Implement contradiction as a differential.** A late record contradicts when replaying
+- **Implement contradiction as a differential.** A late record contradicts when replaying
       with that record in window yields a different `(disposition, basis)`. Do not hand-write
       a basis-to-signal table: the version in the epic plan keyed on the wrong result's basis
       and left a settled `MissedDeadline` unsuperseded by a late counterexample that would
       have produced `Violated`.
-- [ ] **Use the differential as the test oracle too.** `supersedes.is_some()` must equal
+- **Use the differential as the test oracle too.** `supersedes.is_some()` must equal
       "recomputing with the late record in window changes the typed outcome", asserted over
       the fixture set rather than case by case.
-- [ ] **Add `superseding_records`** to `ReplayResult` as the contradicting subset, and derive
+- **Add `superseding_records`** to `ReplayResult` as the contradicting subset, and derive
       `supersedes` from it, so a consumer can see which record forced the link.
-- [ ] **Add `Disposition::AmbiguousOrder`** for a duplicated declared sequence, bind
+- **Add `Disposition::AmbiguousOrder`** for a duplicated declared sequence, bind
       `FR-002-AC-4`, and **assert its handoff mapping** — it currently reaches the
       classification through a non-exhaustive `matches!` and falls to `Unrepresented` with no
       compile error. Correct by intent, unverified today.
-- [ ] **Preserve Task-002's invariant.** Both tasks rewrite `unavailable()`; an unavailable
+- **Preserve Task-002's invariant.** Both tasks rewrite `unavailable()`; an unavailable
       outcome must still report zero retained events.
-- [ ] **Keep the existing late-record assertions passing unchanged** — both use a
+- **Keep the existing late-record assertions passing unchanged** — both use a
       contradicting signal and must stay green.
 
 ## Deliverables

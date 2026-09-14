@@ -1,132 +1,102 @@
-# Spec Writing & Review Improvement Report
+# Implementation Gap Analysis — Observation Owner Contracts
 
 ## Overview
 
-This report records gaps found while reviewing `quire-observation` against its
-OB01–03 specification and its executable evidence. It is a review artifact,
-not an accepted design change: the result-model and scope contracts need owner
-decisions before code or requirements are changed.
+This report maps the implemented QObs admission and observation-authority boundary back to
+the unified FR-001 through FR-004 and NFR-001/NFR-002 specification. It supersedes the
+earlier replay/result-handoff report because that architecture was explicitly replaced by
+the accepted ecosystem owner model.
 
-## Remediation Status
+## Final status
 
-All four design gaps and the traceability gap recorded below were remediated in
-the repository and verified by SR-003: replay now performs a complete bounded
-scan for late evidence; admission retains and binds its premise envelope;
-handoff enumerates every consumer loss axis; and the matrix is 18/18 backed.
-The formal Quoin plan-based gap-analysis verdict remains unavailable until a
-governed plan bundle exists. The requested review-to-plan capability is tracked
-in agent-ix/quoin#365.
+No open implementation gap remains. Review discoveries were formalized in the
+specification, implemented, and covered by executable Rust traces:
 
-## Coverage Summary
+- exact opaque membership keys and independently derived observation/membership/population
+  identities;
+- exact clock identity plus revision on every clock-bearing owner artifact;
+- bounded relationship and required-relationship populations;
+- closed schemas, canonical identities, immutable correction lineage, strict readers, and
+  constructor-private validated views;
+- independent progress, closure, completeness, availability, and lateness vocabularies;
+- byte/depth/string/population/position/capture/source/work ceilings with no partial output.
 
-| Category | Total | Covered | Gaps | Coverage |
-| --- | ---: | ---: | ---: | ---: |
-| Stakeholder Requirements (StR) | 0 | 0 | 0 | n/a |
-| Functional Requirements (FR) | 3 | 0 | 3 | 0% |
-| Non-Functional Requirements (NFR) | 2 | 2 | 0 | 100% |
-| Constraints (C) | 0 | 0 | 0 | n/a |
-| Acceptance Criteria (AC) | 10 | 0 | 10 | 0% |
+## Coverage summary
 
-The counts use `quire coverage --json`: it found 2 backed rows of 14 total
-matrix rows. The two backed rows are TC-002 and TC-003; this does not establish
-their individual acceptance-criterion coverage.
+| Category | Inventory | Unowned or hollow | Evidence |
+| --- | ---: | ---: | --- |
+| Public Rust declarations | 170 | 0 | FR-001..FR-004, NFR-001..NFR-002 |
+| Public Rust functions | 26 | 0 | TC-001..TC-004, IT-001 |
+| Substantive source modules | 12 | 0 | all exceed stub threshold and implement owner logic |
+| Integration test functions | 28 | 0 | 204 behavioral assertions/rejections |
+| Test Matrix rows | 33 | 0 unbacked | `quire coverage` 33/33 |
 
-### Gap Inventory
+The intentionally thin `src/authority/mod.rs` is the documented subsystem facade. It is
+not a masquerading implementation: the eleven substantive sibling/common modules contain
+the actual behavior.
 
-**StR Gaps**: None authored; ownership is currently only by the OB01–03 local
-campaign documents.
+## Discovery and remediation
 
-**FR Gaps**: FR-001 does not specify the exact `Available` envelope needed to
-retain selections; FR-002 does not state whether replay must inspect all records
-after a decisive record; FR-003 does not enumerate which consumer capabilities
-are required for every result axis.
+### GAP-001: Caller-authored owner identities could become trusted state
 
-**NFR Gaps**: The NFR metric rows exist, but the documents lack the
-`Acceptance Criteria` section expected by the active trace configuration.
+**Discovery:** admission and helper APIs needed a single fail-closed rule for canonical
+membership, population, and record identities.
 
-**Constraint Gaps**: No explicit constraint artifacts exist.
+**Remediation:** derivation is performed from validated selections; stale identities are
+refused; request identity assignment derives into a clone before committing atomically.
 
-**AC Gaps**: FR-001-AC-1 through FR-003-AC-3 are all unbound. TC-001 and
-IT-001 report complete coverage without recognized evidence.
+**Prevention technique:** For every caller-supplied identity, identify the owning preimage
+and test stale, cross-wired, and failed-helper cases.
 
-## Analysis of Gaps
+### GAP-002: Clock-bearing artifacts could bind only a family name
 
-### GAP-001: Post-settlement late-record completeness
+**Discovery:** identity without exact revision permits a different clock definition to be
+substituted under the same label.
 
-**The Gap:** `replay` stops on the first decisive observation. A later record
-whose ingestion time is beyond the late cutoff is never collected, so a late
-contradiction neither appears in `late_records` nor links to the prior result.
+**Remediation:** position, progress, and closure payloads, schemas, preimages, expected
+selections, readers, and tests all bind both clock identity and revision. The progress API
+now accepts the shared typed clock selection.
 
-**Root Cause:** FR-002 requires late-record retention but does not state the
-full-scan invariant or provide a test where a decisive timely record precedes a
-late contradictory record.
+**Prevention technique:** Treat `(identity, revision)` as one typed selection at every
+construction and reader boundary.
 
-**Skill Improvement:**
+### GAP-003: Strict JSON parsing needed pre-deserialization resource accounting
 
-- **Technique**: Post-decision input sweep.
-  - *Description*: For every evaluator that can settle early, test records both
-    before and after the decisive input, including late conflicting inputs.
-- **Checklist Item**: Does every input that can affect audit, late-data, or
-  supersession metadata get examined after a decision is known?
+**Discovery:** `serde_json` strictness alone does not guarantee byte, depth, string, array,
+or visited-field ceilings before allocation and traversal.
 
-### GAP-002: Admission retention and membership binding
+**Remediation:** one bounded scanner accounts for all raw input before semantic
+deserialization, and every deriver uses bounded output encoding plus semantic population
+limits.
 
-**The Gap:** `Available` exposes records only, and admission does not bind a
-member selection to an admitted record. The caller can supply unrelated members
-and still obtain an available outcome without the selected scope envelope.
+**Prevention technique:** Require a preflight stage that charges work before the general
+decoder and returns no partial typed value.
 
-**Root Cause:** FR-001 says selections are retained, but the output shape and
-member-to-record invariant are not specified as testable fields.
+### GAP-004: Independent states were vulnerable to implicit Boolean/result coercion
 
-**Skill Improvement:**
+**Discovery:** progress, closure, completeness, and availability can be accidentally
+collapsed by plausible combinations.
 
-- **Technique**: Input-to-output retention map.
-  - *Description*: Enumerate every selected input and state whether it is
-    returned, internally bound, or intentionally excluded with a typed reason.
-- **Checklist Item**: Can a caller inspect the accepted outcome and prove that
-  each population member and every immutable selection constrained the result?
+**Remediation:** each has a closed enum under its own contract; the 48-state product is
+derived and strict-read without emitting truth, settlement, conformance, or Boolean data.
 
-### GAP-003: Consumer preservation is under-modeled
+**Prevention technique:** Enumerate the complete Cartesian product of independently owned
+state axes and assert the exact round-trip state on every axis.
 
-**The Gap:** `ConsumerCapabilities` can represent loss for five fields only,
-yet `AssessmentHandoff` has more independently readable axes. The code can
-report `Preserved` when the downstream target cannot represent scope facts,
-global closure, provenance, support, settlement, or truth.
+### GAP-005: Dependency policy was implicit
 
-**Root Cause:** FR-003 names all axes but does not define a capability matrix or
-a refusal/loss rule for each axis.
+**Discovery:** the crate had no `deny.toml`; `cargo deny` therefore could not express its
+actual source and license policy.
 
-**Skill Improvement:**
+**Remediation:** a narrow policy allows only the observed permissive dependency licenses,
+the crate's own AGPL license as a crate-specific exception, and the exact test-only
+`ix-trace-rs` Git source. The Git dependency is version- and tag-pinned.
 
-- **Technique**: Axis-by-axis loss matrix.
-  - *Description*: Derive one consumer capability and one omission test per
-    independently readable result fact.
-- **Checklist Item**: For every result field, what exact consumer capability
-  proves it is preserved, and what typed loss occurs when it is absent?
+**Prevention technique:** Treat dependency policy as a first-class repository artifact and
+run it with the same strictness as compiler/test gates.
 
-### GAP-004: Traceability reports completion without bound evidence
+## Skill-evolution assessment
 
-**The Gap:** Matrix status claims TC-001 and IT-001 are complete, while the
-active trace binder recognizes no evidence for them; all functional acceptance
-criteria are unbacked.
-
-**Root Cause:** Test names use local TC-140/141/142 identifiers rather than
-the minted TC-001 trace identifier, and the coverage table uses `Coverage
-Status` while the active trace configuration expects `Status`.
-
-**Skill Improvement:**
-
-- **Technique**: Binding-before-complete gate.
-  - *Description*: Run `quire coverage --json` and reject a complete status for
-    any unbacked row before finalizing a matrix.
-- **Checklist Item**: Does every complete matrix row resolve to at least one
-  recognized test symbol and each cited acceptance criterion?
-
-## Required Next Decisions
-
-1. Define the immutable admission result envelope and member-to-record binding.
-2. Define whether replay must scan the entire bounded history after decisive
-   evidence, then specify supersession semantics for a late contradiction.
-3. Define a complete result-axis capability/loss matrix for handoff.
-4. Choose a governed plan bundle before requesting Quoin's plan-based
-   `gap-analysis` verdict.
+The useful techniques above are already present in the active Rust review, failure-domain,
+scope-boundary, evidence, and gap-analysis skills. No global skill patch is proposed; the
+value here is the concrete owner-contract application and its executable evidence.

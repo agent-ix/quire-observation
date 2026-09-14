@@ -2,7 +2,8 @@
 id: Task-001
 title: "#5 — four independent scope-fact axes"
 type: Task
-status: not_started
+status: done
+resolution: superseded
 track: A
 priority: P0
 relationships:
@@ -15,6 +16,9 @@ relationships:
 ---
 # Task-001: #5 — four independent scope-fact axes
 
+> Superseded by the accepted owner-contract architecture in FR-004. The removed
+> result-handoff axis model has no remaining implementation obligation.
+
 ## Scope
 
 Make each of FR-003's four scope facts its own result axis with its own capability, so a
@@ -22,15 +26,15 @@ consumer that can represent one without the others says so instead of reporting 
 
 ## Subtasks
 
-- [ ] **Write the failing test first.** A consumer preserving decision progress, decision
+- **Write the failing test first.** A consumer preserving decision progress, decision
       closure and surrounding progress but not surrounding closure must report
       `lost_axes == [SurroundingClosure]` and a mapping other than `Preserved`. Today it
       reports `Preserved`, which is the defect.
-- [ ] **Split the axis.** `ResultAxis::ScopeFacts` becomes `DecisionProgress`,
+- **Split the axis.** `ResultAxis::ScopeFacts` becomes `DecisionProgress`,
       `DecisionClosure`, `SurroundingProgress`, `SurroundingClosure`.
-- [ ] **Split the capability.** `preserves_scope_facts` becomes four flags; update `all()`
+- **Split the capability.** `preserves_scope_facts` becomes four flags; update `all()`
       and the loss table so each flag pairs with exactly one axis.
-- [ ] **Update the existing single-axis assertion** that currently expects
+- **Update the existing single-axis assertion** that currently expects
       `[ResultAxis::ScopeFacts]`.
 
 ## Deliverables
