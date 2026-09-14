@@ -12,6 +12,8 @@ relationships:
     type: "constrains"
   - target: "ix://agent-ix/quire-observation/FR-004"
     type: "constrains"
+  - target: "ix://agent-ix/quire-observation/FR-006"
+    type: "constrains"
 ---
 # NFR-001: Bound retained observation state
 

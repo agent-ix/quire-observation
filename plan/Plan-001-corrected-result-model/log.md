@@ -37,3 +37,12 @@ description: "Chronological log of changes to the Plan-001 bundle."
   inputs without approximation; record and population owner projections advanced to v2
   while the v1 schemas remained byte-identical. SR-032 and SR-033 passed with all 42
   matrix rows backed and all local Rust, schema, and dependency gates green.
+* **2026-09-14** — Added Task 015 after reconciling #13 against main `8d54458`.
+  The implemented owner boundary already carries FR-289 for all clock families and
+  explicitly excludes evaluators; the task therefore proves finite topology retention
+  and exact scope/clock boundary behavior instead of resurrecting the superseded replay
+  engine or inventing graph reachability in QObs.
+* **2026-09-14** — Completed Task 015 with four production-reaching TC-006
+  integration tests and no production-code or schema change. The full Rust suite passes
+  46/46, Quire coverage is 52/52 with FR-006 8/8, and SR-036/SR-037 find no remaining
+  Rust or plan gap. Plan-001 is complete through Task 015.

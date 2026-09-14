@@ -18,6 +18,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-observation/FR-005
     type: references
+  - target: ix://agent-ix/quire-observation/FR-006
+    type: references
 ---
 # Implementation Plan: complete observation-owner contracts
 
@@ -26,6 +28,8 @@ model with a transport-independent observation-owner boundary. This living plan 
 Tasks 001–007 as explicitly superseded history and governs the replacement implementation
 tracked by `quire-observation#15` in Tasks 008–013. Task 014 now adopts the
 accepted FR-287/FR-262 runtime-reference boundary under `quire-observation#18`.
+Task 015 closes the remaining `quire-observation#13` topology and boundary
+evidence without adding an evaluator.
 
 ## Requirements Summary
 
@@ -38,6 +42,8 @@ accepted FR-287/FR-262 runtime-reference boundary under `quire-observation#18`.
   histories without evaluating temporal or protocol truth.
 - [x] **FR-003**: expose complete constructor-private validated views or typed refusal.
 - [x] **FR-005**: adopt exact FCD-qualified runtime subjects and relationships.
+- [x] **FR-006**: preserve arbitrary well-typed finite topology and exact
+  scope/clock boundary anchoring without adding an evaluator.
 
 ### Non-Functional Requirements
 
@@ -92,6 +98,10 @@ complete integration without importing an evaluator, parser, transport, or proto
   identity, correction, state cross-product, field mutation, and exact/one-over limit.
 - [x] **IT-001**: join real admission, both history paths, all derivers and all strict readers,
   including incomplete, ambiguous, open, and late variants.
+- [x] **TC-005**: admit exact FCD-qualified runtime subjects and relationships,
+  including replay, contradiction, correlation and owner-v2 projections.
+- [x] **TC-006**: prove arbitrary well-typed finite topology retention and the
+  exact all-clock FR-289 mapping, including adverse boundaries.
 
 ### Verification
 
@@ -100,8 +110,8 @@ complete integration without importing an evaluator, parser, transport, or proto
 
 ## Current work
 
-Tasks 008–014 are complete. Task 014 did not reopen their owner-contract architecture;
-it replaced the partial producer/subject/relationship admission seam.
+Tasks 008–015 are complete. Task 015 closed the residual #13 topology/boundary evidence
+without reopening the owner architecture or adding graph/temporal evaluation.
 
 ### Track A: Critical path
 
@@ -122,11 +132,20 @@ it replaced the partial producer/subject/relationship admission seam.
 - **B1 = Task-011** harden admission and owner identity helpers — complete; exit: qualified
   state cannot carry stale owner identities, foreign clocks, or over-bound relationships.
 
+### Track C: Residual topology/boundary closure
+
+- **C1 = Task-014** adopt FCD-qualified subjects and relationships — complete; exit: exact
+  edge values, replay, correlation and population ceilings are implemented.
+- **C2 = Task-015** prove finite-topology and anchored-boundary behavior — complete; exit:
+  loops/cycles/disconnected facts and every FR-289 clock/boundary case have executable
+  evidence without adding an evaluator.
+
 ## Parallel Execution Summary
 
 ```text
 A1 -> A2 -> A3 -> A4 -> Task-013 review/readiness
            \-> B1 --/
+C1 -> C2
 ```
 
 ## Task File Mapping
@@ -140,6 +159,7 @@ A1 -> A2 -> A3 -> A4 -> Task-013 review/readiness
 | Task-012 | A | FR-002, FR-003, NFR-002 | TC-002, TC-003, IT-001 | done |
 | Task-013 | Gate | FR-001..FR-004, NFR-001..NFR-002 | TC-001..TC-004, IT-001 | done |
 | Task-014 | B | FR-005, FR-001 | TC-005, TC-001 | done |
+| Task-015 | Gate | FR-006, FR-004, FR-005 | TC-006 | done |
 
 Tasks 001–007 are `done` with `resolution: superseded`; their files retain the historical
 design record but contain no remaining implementation work.
