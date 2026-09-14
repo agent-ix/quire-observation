@@ -1,31 +1,30 @@
 ---
 id: TC-003
-title: "Preserve result facts through consumer handoff"
+title: "Expose complete validated owner views"
 type: TC
 relationships:
   - target: "ix://agent-ix/quire-observation/FR-003"
     type: "verifies"
 ---
-# TC-003: Preserve result facts through consumer handoff
+# TC-003: Expose complete validated owner views
 
 ## Description
 
-Verify that every assessment disposition and each of the seventeen result axes
-FR-003 declares — assessment identity, disposition, settlement, support, progress
-identity, decision progress, decision closure, surrounding progress, surrounding
-closure, global closure, activation, participation, completeness, provenance,
-dependency, retained-event, and late-supersession — survive a typed consumer
-handoff.
+Verify that the public handoff consists only of constructor-private FR-004
+validated views and preserves each observation-owned axis without introducing a
+protocol-result vocabulary.
 
 ## Test Procedure
 
-Map healthy, violating, untriggered, incomplete, unsupported, and late
-superseding results to a typed sink. Independently omit, duplicate, cross-wire,
-or make a target representation unavailable for each required axis, one axis at a
-time, and assert the omission cases cover FR-003's declared seventeen-axis set
-exhaustively.
+Strict-read the record, population, position, clock, capture, progress, closure,
+completeness and availability documents against independent selections.
+Independently omit, duplicate, reorder and cross-wire their required envelope and
+payload fields, and offer each document to the wrong owner reader.
 
 ## Expected Results
 
-Valid mappings retain all facts. Invalid mappings refuse or report explicit loss;
-no consumer result becomes passed merely because information is absent or lossy.
+Valid bytes yield only the corresponding constructor-private view with read-only
+access to every payload fact. Every invalid or unsupported representation
+returns one typed refusal and no partial view.
+Availability, completeness, progress and closure never become truth, settlement,
+adequacy, conformance or Boolean values.

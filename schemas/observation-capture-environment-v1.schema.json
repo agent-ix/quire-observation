@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "urn:agent-ix:quire-observation:capture-environment:1",
+  "title": "Observation capture environment owner artifact v1", "type": "object", "additionalProperties": false,
+  "required": ["contract", "identity", "revision", "authority", "subject", "payload", "predecessor", "limits"],
+  "properties": {
+    "contract": {"const": "quire.observation.capture-environment/v1"}, "identity": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "revision": {"type": "integer", "minimum": 1}, "authority": {"$ref": "observation-record-v1.schema.json#/$defs/authority"}, "subject": {"$ref": "observation-record-v1.schema.json#/$defs/subject"},
+    "payload": {"type": "object", "additionalProperties": false, "required": ["trigger_identity", "anchor", "bindings"], "properties": {"trigger_identity": {"type": "string", "minLength": 1}, "anchor": {"$ref": "observation-record-v1.schema.json#/$defs/anchor"}, "bindings": {"type": "array", "maxItems": 10000, "items": {"type": "object", "additionalProperties": false, "required": ["capture_identity", "binding_identity", "observation_identity", "value_type", "canonical_value", "unit"], "properties": {"capture_identity": {"type": "string", "minLength": 1}, "binding_identity": {"type": "string", "minLength": 1}, "observation_identity": {"type": "string", "minLength": 1}, "value_type": {"type": "string", "minLength": 1}, "canonical_value": {"type": "string", "maxLength": 1048576}, "unit": {"type": "string", "minLength": 1}}}}}},
+    "predecessor": {"$ref": "observation-record-v1.schema.json#/$defs/predecessor"}, "limits": {"$ref": "observation-record-v1.schema.json#/$defs/limits"}
+  }
+}

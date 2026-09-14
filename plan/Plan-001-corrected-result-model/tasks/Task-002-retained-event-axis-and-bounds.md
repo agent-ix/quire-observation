@@ -2,7 +2,8 @@
 id: Task-002
 title: "#6 — retained-event axis, honest retention counts, four bound criteria"
 type: Task
-status: not_started
+status: done
+resolution: superseded
 track: A
 priority: P0
 relationships:
@@ -23,6 +24,9 @@ relationships:
 ---
 # Task-002: #6 — retained-event axis, honest retention counts, four bound criteria
 
+> Superseded by the accepted owner-contract architecture in FR-004. Observation
+> authority no longer owns or exposes replay retained-event results.
+
 ## Scope
 
 Give the retained-event count a capability and a typed loss, stop over-reporting retention on
@@ -31,19 +35,19 @@ admission and replay.
 
 ## Subtasks
 
-- [ ] **Write the failing tests first.** A consumer that cannot hold the retained-event count
+- **Write the failing tests first.** A consumer that cannot hold the retained-event count
       reports `lost_axes == []` today. `replay` on a one-over history reports `max_events`
       retained today, where FR-002 now requires zero for an unavailable outcome.
-- [ ] **Add the axis.** `ResultAxis::RetainedEvents` and `preserves_retained_events`, wired
+- **Add the axis.** `ResultAxis::RetainedEvents` and `preserves_retained_events`, wired
       into `all()` and the loss table — seventeen axes, matching FR-003.
-- [ ] **Correct `unavailable()`.** Report `retained_events: 0` and document why: nothing was
+- **Correct `unavailable()`.** Report `retained_events: 0` and document why: nothing was
       retained because nothing was assessed.
-- [ ] **Bind `NFR-001-AC-3`.** One event over the declared bound on both paths — `Exhausted`
+- **Bind `NFR-001-AC-3`.** One event over the declared bound on both paths — `Exhausted`
       from batch replay, `RetentionExhausted` from incremental intake.
-- [ ] **Bind `NFR-001-AC-4`.** One member over the declared bound is refused. `src/lib.rs`
+- **Bind `NFR-001-AC-4`.** One member over the declared bound is refused. `src/lib.rs`
       enforces this already and nothing tests it.
-- [ ] **Bind `NFR-001-AC-5`.** `Exhausted` and `Untriggered` both report zero retained.
-- [ ] **Bind `FR-001-AC-5`.** An unrecognized member object identity and a membership digest
+- **Bind `NFR-001-AC-5`.** `Exhausted` and `Untriggered` both report zero retained.
+- **Bind `FR-001-AC-5`.** An unrecognized member object identity and a membership digest
       matching nothing still yield `Available` — the stated boundary, proven.
 
 ## Deliverables

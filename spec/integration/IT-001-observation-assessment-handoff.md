@@ -9,20 +9,22 @@ relationships:
     type: "verifies"
   - target: "ix://agent-ix/quire-observation/FR-003"
     type: "verifies"
+  - target: "ix://agent-ix/quire-observation/FR-004"
+    type: "verifies"
 ---
-# IT-001: Hand qualified observation assessment to a consumer
+# IT-001: Hand qualified observation authority to a consumer
 
 ## Objective
 
-Verify that a qualified observation can move from admission through replay to a
-consumer handoff without losing its selected identities or changing an
-incomplete/non-success disposition into Boolean success.
+Verify that a qualified observation can move from admission through owner
+derivation and strict reading without losing selected identities or changing an
+independent observation state into a result.
 
 ## Target Integration
 
-The integration joins this library's admission, replay, and result-handoff
-interfaces; the downstream temporal/protocol consumer is represented by a typed
-in-process test sink, not a production adapter.
+The integration joins admission, batch/incremental history, all nine owner
+derivers and their strict readers. The consumer boundary ends at validated Rust
+views; no downstream evaluator or adapter is implemented here.
 
 ## Preconditions
 
@@ -31,21 +33,22 @@ progress assertion, and bounded fixture records are available.
 
 ## Inputs
 
-One valid timed-refund fixture plus variants with a missing provider record, an
-ambiguous refund relationship, a quiet deadline, and a late contradiction.
+One valid timed-refund fixture plus variants with a missing provider record,
+ambiguous declared order, open progress and a late contradiction.
 
 ## Test Procedure
 
 1. Admit the valid fixture using explicit selections and limits.
    - IT-001-SC-01: admission returns qualified records with provenance.
-2. Evaluate the same history by replay and incrementally.
-   - IT-001-SC-02: both paths return the same full disposition.
-3. Emit the result to the typed consumer sink.
-   - IT-001-SC-03: the sink receives every required result axis and dependency.
+2. Derive the same owner artifacts from batch and incremental history.
+   - IT-001-SC-02: both paths return the same canonical bytes.
+3. Strict-read the artifacts at the consumer boundary.
+   - IT-001-SC-03: each reader yields its exact validated owner view.
 4. Repeat with the adverse variants.
-   - IT-001-SC-04: no adverse variant is represented as passed.
+   - IT-001-SC-04: no adverse variant is promoted to success or truth.
 
 ## Expected Results
 
 The valid fixture remains qualified and deterministic. Missing, ambiguous, late,
-or unsupported inputs retain their typed non-success meanings through handoff.
+or unsupported inputs retain typed observation meanings. No artifact or view
+contains a temporal or protocol result.

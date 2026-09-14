@@ -2,7 +2,8 @@
 id: Task-005
 title: "#9 — make IT-001 and the batch/incremental agreement real"
 type: Task
-status: not_started
+status: done
+resolution: superseded
 track: B
 priority: P0
 relationships:
@@ -17,6 +18,10 @@ relationships:
 ---
 # Task-005: #9 — make IT-001 and the batch/incremental agreement real
 
+> Superseded in shape and completed in intent by the FR-004 integration tests:
+> admission, checked history, all owner derivations, and strict readers now carry
+> real IT-001 trace evidence.
+
 ## Scope
 
 Two tags that currently bind to nothing: an integration test that never leaves admission, and
@@ -26,15 +31,15 @@ the two-path edits that follow.
 
 ## Subtasks
 
-- [ ] **Extend the integration test.** From the incomplete admission, drive a replay with no
+- **Extend the integration test.** From the incomplete admission, drive a replay with no
       available history, assert `IncompleteHistory`, then hand off with
       `Completeness::Incomplete` to a consumer that cannot preserve completeness and assert
       the `Completeness` axis is lost with a mapping of `Unrepresented` — never `Preserved`.
       Today the test calls only `admit`, so its `FR-002-AC-3`, `FR-003-AC-1` and
       `FR-003-AC-3` tags cannot fail for the reasons those criteria state.
-- [ ] **Add the missed-deadline agreement case.** A progress assertion covering past the
+- **Add the missed-deadline agreement case.** A progress assertion covering past the
       deadline must return `MissedDeadline` from both paths, equal.
-- [ ] **Confirm the failing-first direction.** Dropping `request.progress` in
+- **Confirm the failing-first direction.** Dropping `request.progress` in
       `IncrementalAssessment::new` must turn the suite red; today it stays green.
 
 ## Deliverables

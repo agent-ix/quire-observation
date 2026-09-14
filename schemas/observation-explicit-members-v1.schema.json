@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-ix:quire-observation:explicit-members:1",
+  "title": "Explicit finite observation membership v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "identity", "digest", "members"],
+  "properties": {
+    "contract": {"const": "quire.observation.explicit-members/v1"},
+    "identity": {"type": "string", "pattern": "^sha256-jcs:[0-9a-f]{64}$"},
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "members": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 1048576}}
+  }
+}

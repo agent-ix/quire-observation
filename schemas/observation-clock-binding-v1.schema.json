@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "urn:agent-ix:quire-observation:clock-binding:1",
+  "title": "Observation clock binding owner artifact v1", "type": "object", "additionalProperties": false,
+  "required": ["contract", "identity", "revision", "authority", "subject", "payload", "predecessor", "limits"],
+  "properties": {
+    "contract": {"const": "quire.observation.clock-binding/v1"}, "identity": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "revision": {"type": "integer", "minimum": 1}, "authority": {"$ref": "observation-record-v1.schema.json#/$defs/authority"}, "subject": {"$ref": "observation-record-v1.schema.json#/$defs/subject"},
+    "payload": {"type": "object", "additionalProperties": false, "required": ["clock_identity", "clock_revision", "selection"], "properties": {"clock_identity": {"type": "string", "minLength": 1}, "clock_revision": {"type": "string", "minLength": 1}, "selection": {"$ref": "#/$defs/selection"}}},
+    "predecessor": {"$ref": "observation-record-v1.schema.json#/$defs/predecessor"}, "limits": {"$ref": "observation-record-v1.schema.json#/$defs/limits"}
+  },
+  "$defs": {
+    "natural": {"$ref": "observation-record-v1.schema.json#/$defs/naturalText"}, "integer": {"$ref": "observation-record-v1.schema.json#/$defs/integerText"},
+    "selection": {"oneOf": [
+      {"type": "object", "additionalProperties": false, "required": ["family", "start", "end_exclusive"], "properties": {"family": {"const": "event-position"}, "start": {"$ref": "#/$defs/natural"}, "end_exclusive": {"$ref": "#/$defs/natural"}}},
+      {"type": "object", "additionalProperties": false, "required": ["family", "start", "end_exclusive", "epoch_nanos", "period_nanos"], "properties": {"family": {"const": "fixed-sample"}, "start": {"$ref": "#/$defs/natural"}, "end_exclusive": {"$ref": "#/$defs/natural"}, "epoch_nanos": {"$ref": "#/$defs/integer"}, "period_nanos": {"$ref": "#/$defs/natural"}}},
+      {"type": "object", "additionalProperties": false, "required": ["family", "start_nanos", "end_exclusive_nanos"], "properties": {"family": {"const": "timestamped-event"}, "start_nanos": {"$ref": "#/$defs/integer"}, "end_exclusive_nanos": {"$ref": "#/$defs/integer"}}}
+    ]}
+  }
+}

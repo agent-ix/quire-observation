@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "urn:agent-ix:quire-observation:closure-assertion:1",
+  "title": "Observation closure assertion owner artifact v1", "type": "object", "additionalProperties": false,
+  "required": ["contract", "identity", "revision", "authority", "subject", "payload", "predecessor", "limits"],
+  "properties": {
+    "contract": {"const": "quire.observation.closure-assertion/v1"}, "identity": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "revision": {"type": "integer", "minimum": 1}, "authority": {"$ref": "observation-record-v1.schema.json#/$defs/authority"}, "subject": {"$ref": "observation-record-v1.schema.json#/$defs/subject"},
+    "payload": {"type": "object", "additionalProperties": false, "required": ["scope_identity", "clock_identity", "clock_revision", "required_sources", "boundary", "state"], "properties": {"scope_identity": {"type": "string", "minLength": 1}, "clock_identity": {"type": "string", "minLength": 1}, "clock_revision": {"type": "string", "minLength": 1}, "required_sources": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "boundary": {"$ref": "observation-progress-assertion-v1.schema.json#/$defs/boundary"}, "state": {"enum": ["open", "closed"]}}},
+    "predecessor": {"$ref": "observation-record-v1.schema.json#/$defs/predecessor"}, "limits": {"$ref": "observation-record-v1.schema.json#/$defs/limits"}
+  }
+}

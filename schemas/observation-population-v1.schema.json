@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "urn:agent-ix:quire-observation:population:1",
+  "title": "Observation population owner artifact v1", "type": "object", "additionalProperties": false,
+  "required": ["contract", "identity", "revision", "authority", "subject", "payload", "predecessor", "limits"],
+  "properties": {
+    "contract": {"const": "quire.observation.population/v1"}, "identity": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "revision": {"type": "integer", "minimum": 1},
+    "authority": {"$ref": "#/$defs/authority"}, "subject": {"$ref": "#/$defs/subject"},
+    "payload": {"type": "object", "additionalProperties": false,
+      "required": ["population_identity", "producer", "membership_rule_identity", "membership_digest", "selection", "required_members", "observation_sources", "configuration", "closure", "completeness_dependencies", "progress_dependencies"],
+      "properties": {
+        "population_identity": {"type": "string", "pattern": "^sha256-jcs:[0-9a-f]{64}$"}, "producer": {"$ref": "#/$defs/producer"},
+        "membership_rule_identity": {"type": "string", "pattern": "^sha256-jcs:[0-9a-f]{64}$"}, "membership_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "selection": {"$ref": "#/$defs/selection"}, "required_members": {"$ref": "#/$defs/textSet"}, "observation_sources": {"$ref": "#/$defs/textSet"},
+        "configuration": {"$ref": "#/$defs/definition"}, "closure": {"$ref": "#/$defs/definition"}, "completeness_dependencies": {"$ref": "#/$defs/textSet"}, "progress_dependencies": {"$ref": "#/$defs/textSet"}
+      }},
+    "predecessor": {"$ref": "observation-record-v1.schema.json#/$defs/predecessor"}, "limits": {"$ref": "observation-record-v1.schema.json#/$defs/limits"}
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 1048576}, "textSet": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+    "authority": {"type": "object", "additionalProperties": false, "required": ["definition_identity", "definition_revision", "definition_digest"], "properties": {"definition_identity": {"$ref": "#/$defs/text"}, "definition_revision": {"$ref": "#/$defs/text"}, "definition_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "subject": {"type": "object", "additionalProperties": false, "required": ["scope_identity", "population_identity"], "properties": {"scope_identity": {"$ref": "#/$defs/text"}, "population_identity": {"$ref": "#/$defs/text"}}},
+    "producer": {"type": "object", "additionalProperties": false, "required": ["identity", "version", "digest"], "properties": {"identity": {"$ref": "#/$defs/text"}, "version": {"$ref": "#/$defs/text"}, "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "definition": {"type": "object", "additionalProperties": false, "required": ["identity", "digest"], "properties": {"identity": {"$ref": "#/$defs/text"}, "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "selection": {"oneOf": [
+      {"type": "object", "additionalProperties": false, "required": ["kind", "identity"], "properties": {"kind": {"const": "snapshot"}, "identity": {"$ref": "#/$defs/text"}}},
+      {"type": "object", "additionalProperties": false, "required": ["kind", "identity", "start_nanos", "end_exclusive_nanos"], "properties": {"kind": {"const": "event-time-window"}, "identity": {"$ref": "#/$defs/text"}, "start_nanos": {"$ref": "observation-record-v1.schema.json#/$defs/integerText"}, "end_exclusive_nanos": {"$ref": "observation-record-v1.schema.json#/$defs/integerText"}}}
+    ]}
+  }
+}

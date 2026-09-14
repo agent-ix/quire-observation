@@ -2,7 +2,8 @@
 id: Task-006
 title: "#10 — correct the coverage record and run the authoritative audit"
 type: Task
-status: not_started
+status: done
+resolution: superseded
 track: D
 priority: P1
 relationships:
@@ -31,6 +32,9 @@ relationships:
 ---
 # Task-006: #10 — correct the coverage record and run the authoritative audit
 
+> Superseded in shape. The current owner-contract review gate and Task-013 own
+> the authoritative coverage, review, and promotion record.
+
 ## Scope
 
 Make `gap_analysis.md` state what is true about its own coverage, then get the first
@@ -38,15 +42,15 @@ tool-authoritative verdict this repository has had.
 
 ## Subtasks
 
-- [ ] **Correct the Remediation Status.** 18 was the trace-target count, not matrix rows;
+- **Correct the Remediation Status.** 18 was the trace-target count, not matrix rows;
       the matrix authors 8 rows. Say which number counts what.
-- [ ] **Remove or date the stale Coverage Summary** that still reports FR 0%, AC 0% and
+- **Remove or date the stale Coverage Summary** that still reports FR 0%, AC 0% and
       "2 backed rows of 14 total matrix rows" three paragraphs below a claim of full
       coverage.
-- [ ] **Replace the blocker sentence.** `quoin#365` closed on 2026-09-11; the installed
+- **Replace the blocker sentence.** `quoin#365` closed on 2026-09-11; the installed
       plugin still wants a plan bundle, and `Plan-001` is now that bundle.
-- [ ] **Rename the remaining "scope facts" language** to the four axes the spec now names.
-- [ ] **Run the audit.** `quoin:gap-analysis --plan Plan-001`, recording its verdict as a
+- **Rename the remaining "scope facts" language** to the four axes the spec now names.
+- **Run the audit.** `quoin:gap-analysis --plan Plan-001`, recording its verdict as a
       validated SpecReview under `spec/reviews/`.
 
 ## Deliverables

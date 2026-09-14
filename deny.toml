@@ -1,0 +1,26 @@
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Unicode-3.0",
+]
+# Keep the dependency allow-list permissive-only. The sole AGPL exception is
+# this project itself.
+exceptions = [
+    { allow = ["AGPL-3.0-only"], crate = "quire-observation" },
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "allow"
+wildcards = "warn"
+
+[advisories]
+version = 2
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+# The trace attribute is the sole non-registry dependency and is test-only.
+allow-git = ["https://github.com/agent-ix/ix-trace-rs"]

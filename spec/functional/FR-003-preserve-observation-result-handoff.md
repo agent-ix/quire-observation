@@ -1,75 +1,67 @@
 ---
 id: FR-003
-title: "Preserve qualified result facts at consumer handoff"
+title: "Expose validated observation authority to consumers"
 type: FR
 relationships:
   - target: "ix://agent-ix/quire-observation/US-001"
     type: "implements"
+  - target: "ix://agent-ix/quire-observation/FR-002"
+    type: "depends_on"
+  - target: "ix://agent-ix/quire-observation/FR-004"
+    type: "depends_on"
 ---
-# FR-003: Preserve qualified result facts at consumer handoff
+# FR-003: Expose validated observation authority to consumers
 
 ## Description
 
-When emitting an assessment result, the library SHALL preserve independently
-readable execution, decision progress, decision closure, surrounding progress,
-surrounding closure, truth, settlement, support, activation, participation,
-completeness, provenance, dependency, retained-event, and late-supersession
-facts, or SHALL report an explicit mapping loss or refusal.
+When a consumer reads observation authority, the library SHALL expose only
+FR-004 constructor-private validated views for position, clock, capture,
+admitted observation, population, progress, closure, completeness and result
+availability, or SHALL return a typed refusal without partial authority.
 
 ## Inputs
 
-- A typed assessment disposition, its retained-event count, and its immutable
-  selection dependencies, as returned by [FR-002](FR-002-replay-and-incremental-assessment.md).
-- A caller-selected typed consumer mapping declaring one capability per result
-  axis.
+- Qualified admission and derived authority artifacts from FR-001 and FR-002.
+- The exact owner-contract reader, independent expected selections, and
+  caller-lowered limits.
 
 ## Outputs
 
-- A consumer handoff preserving all represented result facts.
-- An explicit refusal or loss record when a target cannot represent a required
-  fact.
+- Constructor-private validated observation-authority views with public
+  read-only access to every independently owned payload fact.
+- An explicit typed refusal when a selected contract cannot represent the exact
+  artifact; no lossy substitute is emitted.
 
 ## Behavior
 
-- The library SHALL NOT convert pending, incomplete, refused, unsupported, or
-  lossy results into a passed Boolean.
-- The library SHALL retain selected definition/profile identities and digests
-  with each result.
-- The library SHALL report, for each of the seventeen independently readable
-  result axes, either preservation or one explicit typed loss: assessment
-  identity, disposition, settlement, support, progress identity, decision
-  progress, decision closure, surrounding progress, surrounding closure, global
-  closure, activation, participation, completeness, provenance, dependency,
-  retained-event, and late-supersession.
-- The library SHALL accept one independently settable capability per result axis.
-- The library SHALL NOT let one capability stand for two result axes.
-- The library SHALL preserve prior result bytes when a late contradiction occurs
-  and link any superseding/invalidation result to them.
-
-The four scope axes are distinct facts, not one: *decision progress* and
-*decision closure* are the progress authority and the closure boundary of the
-scope the decision was taken in; *surrounding progress* and *surrounding closure*
-are the same two facts for the enclosing scope. A consumer can hold any one of
-them without the others. The *retained-event* axis is the count of events the
-assessment retained, which a consumer needs to tell a bounded assessment from a
-truncated one.
+- The library SHALL preserve each owner artifact under its own contract,
+  identity, revision, scope and correction lineage, including every selected
+  raw-definition digest carried by that contract.
+- The library SHALL NOT convert availability, completeness, progress or closure
+  into truth, settlement, adequacy, conformance or Boolean values.
+- Progress and closure SHALL remain separate `open`/`closed` facts, and
+  completeness SHALL remain a separate `complete`/`incomplete`/`contradicted`
+  fact.
+- A correction SHALL preserve predecessor bytes and name the exact direct
+  predecessor; consumers choose whether any downstream result must be
+  recomputed.
 
 ## Error Conditions
 
-Missing, duplicate, scope-cross-wired, or unsupported target fields SHALL
-refuse the handoff or emit explicit loss; none may be discarded silently.
+Missing, duplicate, scope-cross-wired, unknown-version, noncanonical or
+unsupported fields SHALL refuse the handoff; none may be discarded silently.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-003-AC-1 | Healthy, violating, untriggered, incomplete, and unsupported outcomes remain distinct. | Test (TC-003) |
-| FR-003-AC-2 | A handoff preserves all required result axes and rejects omission, duplication, or scope cross-wiring. | Test (TC-003) |
-| FR-003-AC-3 | A consumer mapping records explicit loss and cannot promote it to preservation. | Test (TC-003) |
+| FR-003-AC-1 | Every owner artifact remains independently readable through complete read-only payload accessors and no view exposes a truth, settlement or Boolean field. | Test (TC-003) |
+| FR-003-AC-2 | A strict read preserves all required owner selections and rejects omission, duplication or scope cross-wiring. | Test (TC-003) |
+| FR-003-AC-3 | An unsupported document or owner-contract representation returns a typed refusal and cannot promote loss to availability, completeness or success. | Test (TC-003) |
 
 ## Dependencies
 
-- [FR-002](FR-002-replay-and-incremental-assessment.md) supplies the typed
-  assessment disposition.
+- [FR-002](FR-002-replay-and-incremental-assessment.md) supplies deterministic
+  batch and incremental owner-artifact derivation.
 - Downstream temporal, protocol, and verification consumers select their own
-  mappings; this library does not implement those consumers.
+  mappings; this library does not implement those consumers or their results.
