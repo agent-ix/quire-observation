@@ -18,8 +18,9 @@ identities, or SHALL return a typed refusal or incomplete outcome.
 
 - A `native-linked-package/1` identity, revision, and digest.
 - A Producer interface 1.2.0 identity, digest, model, and configuration.
-- One binding, related-subject graph, finite scope, record set, and explicit
-  resource limits.
+- One binding, related-subject graph, strict-read
+  `quire.observation.explicit-members/v1` selection, finite scope, record set,
+  and explicit resource limits.
 
 ## Outputs
 
@@ -45,13 +46,13 @@ identities, or SHALL return a typed refusal or incomplete outcome.
   key against the selected membership.
 - The library SHALL NOT parse, normalize, or derive meaning from a member's
   object identity.
-- The library SHALL retain the selected membership and closure digests with the
-  qualified observation.
-- The library SHALL NOT recompute or compare the selected membership and closure
-  digests.
-
-Recomputing either digest requires the canonicalization that produces it, which
-belongs to the package compiler named under Dependencies, not to this library.
+- The library SHALL derive and compare the FR-264 explicit-members identity from
+  its sorted, distinct, bounded required-member set before admission.
+- The library SHALL retain the selected producer-definition and
+  closure-definition raw-artifact digests without interpreting their bytes.
+- The library SHALL bind the qualified observation to the FR-263 population
+  identity derived by the observation owner from the strict-read membership,
+  selection, source, configuration, closure, completeness and progress inputs.
 
 ## Error Conditions
 
@@ -67,16 +68,16 @@ duplicate record, and resource-limit exhaustion are typed refusal conditions.
 | FR-001-AC-2 | Wrong entity, signal, unit, trigger, schema, or producer selection is refused. | Test (TC-001) |
 | FR-001-AC-3 | Missing required valuation, relationship, membership, or closure remains incomplete. | Test (TC-001) |
 | FR-001-AC-4 | Conflicting or ambiguous relationships and one-over resource inputs are refused. | Test (TC-001) |
-| FR-001-AC-5 | An unrecognized member object identity and an unrecomputed membership or closure digest do not block an otherwise qualified admission. | Test (TC-001) |
+| FR-001-AC-5 | A member object identity remains opaque, while a membership or population identity is independently derived and compared and a selected producer/closure definition digest is retained in its declared domain. | Test (TC-001) |
 
 ## Dependencies
 
 - [US-001](../usecase/US-001-qualify-observations.md) defines the consumer need.
 - **Upstream**: `agent-ix/quire-spec-language` owns semantic package compilation
-  and exports the `native-linked-package/1` selection with its canonical
-  membership and closure digests (its FR-015 and FR-027). This library retains
-  those digests as selected and never recomputes them. `quire-protocol`'s
-  canonicalization governs protocol result identity and is not the owner of
-  population membership or closure.
+  and exports the `native-linked-package/1` selection and producer-definition
+  digest. This library treats member object identities as opaque, but owns the
+  FR-263/FR-264 population and explicit-members canonical identities and verifies
+  them through its strict readers. Closure authority is also owned here;
+  `quire-protocol` owns only protocol-result canonicalization.
 - Producer interface 1.2.0 and the selected `native-linked-package/1` artifact
   are caller-provided dependencies, not crate dependencies.

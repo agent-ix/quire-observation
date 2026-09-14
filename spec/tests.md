@@ -9,6 +9,8 @@ relationships:
     type: "covers"
   - target: "ix://agent-ix/quire-observation/FR-003"
     type: "covers"
+  - target: "ix://agent-ix/quire-observation/FR-004"
+    type: "covers"
 ---
 # quire-observation campaign test matrix
 
@@ -19,6 +21,7 @@ relationships:
 | FR-001 | FR-001-AC-1..5 | TC-001 | ✅ complete |
 | FR-002 | FR-002-AC-1..4 | TC-002 | ✅ complete |
 | FR-003 | FR-003-AC-1..3 | TC-003 | ✅ complete |
+| FR-004 | FR-004-AC-1..6 | TC-004 | 🚧 planned |
 
 ## Test Case Summary
 
@@ -27,6 +30,7 @@ relationships:
 | TC-001 | Qualify explicit observation admission | Unit | P0 | FR-001-AC-1..FR-001-AC-5, NFR-001-AC-1, NFR-001-AC-4 | ✅ complete |
 | TC-002 | Agree bounded replay and incremental assessment | Property | P0 | FR-002-AC-1..FR-002-AC-4, NFR-001-AC-2, NFR-001-AC-3, NFR-001-AC-5, NFR-002 | ✅ complete |
 | TC-003 | Preserve result facts through consumer handoff | Property | P0 | FR-003-AC-1..FR-003-AC-3, NFR-002 | ✅ complete |
+| TC-004 | Publish and read observation authority artifacts | Integration | P0 | FR-004-AC-1..FR-004-AC-6 | 🚧 planned |
 | IT-001 | Observation assessment handoff | Integration | P1 | FR-001-AC-1, FR-002-AC-1..FR-002-AC-3, FR-003-AC-1..FR-003-AC-3 | ✅ local typed-sink coverage |
 
 ## Integration Test Matrix
