@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "urn:agent-ix:quire-observation:position-ledger:1",
+  "title": "Observation position ledger owner artifact v1", "type": "object", "additionalProperties": false,
+  "required": ["contract", "identity", "revision", "authority", "subject", "payload", "predecessor", "limits"],
+  "properties": {
+    "contract": {"const": "quire.observation.position-ledger/v1"}, "identity": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "revision": {"type": "integer", "minimum": 1}, "authority": {"$ref": "observation-record-v1.schema.json#/$defs/authority"}, "subject": {"$ref": "observation-record-v1.schema.json#/$defs/subject"},
+    "payload": {"type": "object", "additionalProperties": false, "required": ["ledger_identity", "clock_identity", "clock_revision", "positions"], "properties": {"ledger_identity": {"type": "string", "minLength": 1}, "clock_identity": {"type": "string", "minLength": 1}, "clock_revision": {"type": "string", "minLength": 1}, "positions": {"type": "array", "maxItems": 10000, "items": {"type": "object", "additionalProperties": false, "required": ["position", "observation_identity"], "properties": {"position": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "observation_identity": {"type": "string", "minLength": 1}}}}}},
+    "predecessor": {"$ref": "observation-record-v1.schema.json#/$defs/predecessor"}, "limits": {"$ref": "observation-record-v1.schema.json#/$defs/limits"}
+  }
+}

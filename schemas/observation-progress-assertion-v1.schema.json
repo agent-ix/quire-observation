@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "urn:agent-ix:quire-observation:progress-assertion:1",
+  "title": "Observation progress assertion owner artifact v1", "type": "object", "additionalProperties": false,
+  "required": ["contract", "identity", "revision", "authority", "subject", "payload", "predecessor", "limits"],
+  "properties": {
+    "contract": {"const": "quire.observation.progress-assertion/v1"}, "identity": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "revision": {"type": "integer", "minimum": 1}, "authority": {"$ref": "observation-record-v1.schema.json#/$defs/authority"}, "subject": {"$ref": "observation-record-v1.schema.json#/$defs/subject"},
+    "payload": {"type": "object", "additionalProperties": false, "required": ["authority_identity", "scope_identity", "clock_identity", "clock_revision", "required_sources", "boundary", "state", "captured_trigger_identity", "cutoff_identity", "restoration_basis_identity"], "properties": {"authority_identity": {"type": "string", "pattern": "^sha256-jcs:[0-9a-f]{64}$"}, "scope_identity": {"type": "string", "minLength": 1}, "clock_identity": {"type": "string", "minLength": 1}, "clock_revision": {"type": "string", "minLength": 1}, "required_sources": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "boundary": {"$ref": "#/$defs/boundary"}, "state": {"enum": ["open", "closed"]}, "captured_trigger_identity": {"type": "string", "minLength": 1}, "cutoff_identity": {"type": "string", "pattern": "^sha256-jcs:[0-9a-f]{64}$"}, "restoration_basis_identity": {"type": "string", "minLength": 1}}},
+    "predecessor": {"$ref": "observation-record-v1.schema.json#/$defs/predecessor"}, "limits": {"$ref": "observation-record-v1.schema.json#/$defs/limits"}
+  },
+  "$defs": {
+    "natural": {"$ref": "observation-record-v1.schema.json#/$defs/naturalText"}, "integer": {"$ref": "observation-record-v1.schema.json#/$defs/integerText"},
+    "boundary": {"oneOf": [
+      {"type": "object", "additionalProperties": false, "required": ["clock_family", "lower", "upper_inclusive", "carrier_end_exclusive", "watermark"], "properties": {"clock_family": {"const": "event-position"}, "lower": {"$ref": "#/$defs/natural"}, "upper_inclusive": {"$ref": "#/$defs/natural"}, "carrier_end_exclusive": {"$ref": "#/$defs/natural"}, "watermark": {"$ref": "#/$defs/natural"}}},
+      {"type": "object", "additionalProperties": false, "required": ["clock_family", "lower", "upper_inclusive", "carrier_end_exclusive", "watermark"], "properties": {"clock_family": {"const": "fixed-sample"}, "lower": {"$ref": "#/$defs/natural"}, "upper_inclusive": {"$ref": "#/$defs/natural"}, "carrier_end_exclusive": {"$ref": "#/$defs/natural"}, "watermark": {"$ref": "#/$defs/natural"}}},
+      {"type": "object", "additionalProperties": false, "required": ["clock_family", "lower_nanos", "upper_inclusive_nanos", "carrier_end_exclusive_nanos", "watermark_nanos"], "properties": {"clock_family": {"const": "timestamped-event"}, "lower_nanos": {"$ref": "#/$defs/integer"}, "upper_inclusive_nanos": {"$ref": "#/$defs/integer"}, "carrier_end_exclusive_nanos": {"$ref": "#/$defs/integer"}, "watermark_nanos": {"$ref": "#/$defs/integer"}}}
+    ]}
+  }
+}
