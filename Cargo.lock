@@ -3,6 +3,16 @@
 version = 4
 
 [[package]]
+name = "agent-ix-baseline-producer"
+version = "0.0.0"
+source = "git+https://github.com/agent-ix/filament-core-data?rev=404288282402d60de007295ccbafa960532b955e#404288282402d60de007295ccbafa960532b955e"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -92,6 +102,7 @@ dependencies = [
 name = "quire-observation"
 version = "0.1.0"
 dependencies = [
+ "agent-ix-baseline-producer",
  "ix-trace-rs",
  "serde",
  "serde_json",

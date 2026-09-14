@@ -3,6 +3,8 @@
 
 //! TC-004: canonical observation-owner artifacts.
 
+mod support;
+
 use ix_trace_rs::trace;
 use quire_observation::authority::{
     self, AuthoritySelection, Context, History, IncrementalHistory, Limits, OpenClosed,
@@ -10,10 +12,12 @@ use quire_observation::authority::{
 };
 use quire_observation::{
     admit, AdmissionOutcome, AdmissionRequest, AdmittedRecord, Anchor, ClockRange, Digest,
-    Identity, Member, ObservationBinding, PackageSelection, ProducerSelection,
-    QualifiedObservation, ResourceLimits, ScopeKind, ScopeSelection, Subject, SubjectKind,
-    ValueState, Visibility, NATIVE_LINKED_PACKAGE_FORMAT, PRODUCER_INTERFACE_VERSION,
+    Identity, Member, ObservationBinding, PackageSelection, QualifiedObservation, Relationship,
+    RelationshipIdentity, ResourceLimits, ScopeKind, ScopeSelection, ValueState, Visibility,
+    NATIVE_LINKED_PACKAGE_FORMAT, PRODUCER_INTERFACE_VERSION,
 };
+use sha2::{Digest as _, Sha256};
+use support::{order, producer, shipment, ORDER_SHIPMENT};
 
 fn id(value: &str) -> Identity {
     Identity::new(value)
@@ -24,24 +28,23 @@ fn digest(value: u8) -> Digest {
 }
 
 fn qualified() -> Box<QualifiedObservation> {
-    let subject = Subject {
-        kind: SubjectKind::Order,
-        identity: id("order:O1"),
-    };
+    let producer = producer();
+    let subject = order(&producer, "order:O1");
+    let causal_identity = RelationshipIdentity::new("relationship:O1-S1").unwrap();
+    let relationship = Relationship::new(
+        &producer,
+        ORDER_SHIPMENT,
+        causal_identity.clone(),
+        subject.clone(),
+        shipment(&producer, "shipment:S1"),
+    )
+    .unwrap();
     let mut request = AdmissionRequest {
         package: PackageSelection {
             format: NATIVE_LINKED_PACKAGE_FORMAT.to_owned(),
             identity: id("package:refund"),
             revision: id("1"),
             digest: digest(1),
-        },
-        producer: ProducerSelection {
-            interface_version: PRODUCER_INTERFACE_VERSION.to_owned(),
-            document_identity: id("producer:commerce"),
-            document_digest: digest(2),
-            model_identity: id("model:commerce"),
-            configuration_identity: id("configuration:production"),
-            configuration_digest: digest(3),
         },
         binding: ObservationBinding {
             identity: id("binding:refund"),
@@ -50,11 +53,11 @@ fn qualified() -> Box<QualifiedObservation> {
             signal_identity: id("signal:refund"),
             trigger_identity: id("trigger:refund-request"),
             unit: id("USD"),
-            subject_kind: SubjectKind::Order,
+            subject_kind: subject.kind().clone(),
             required: true,
         },
         expected_subject: subject.clone(),
-        relationships: vec![],
+        relationships: vec![relationship],
         required_relationships: vec![],
         scope: ScopeSelection {
             population_identity: id("unsealed-population"),
@@ -100,7 +103,7 @@ fn qualified() -> Box<QualifiedObservation> {
             anchor: Anchor::TimestampNanos(10),
             event_time_nanos: 10,
             ingestion_time_nanos: 11,
-            causal_relationship_identity: None,
+            causal_relationship_identity: Some(causal_identity),
             clock_identity: id("clock:event-time"),
             clock_revision: id("1"),
             clock_uncertainty_nanos: 2,
@@ -108,9 +111,10 @@ fn qualified() -> Box<QualifiedObservation> {
         limits: ResourceLimits {
             max_records: 1,
             max_members: 1,
-            max_relationships: 0,
+            max_relationships: 1,
             max_required_relationships: 0,
         },
+        producer,
     };
     let record_identity =
         authority::observation::record_identity(&request.records[0], Limits::owner_max())
@@ -598,8 +602,20 @@ fn tc004_each_public_reader_requires_exact_independent_selections() {
     assert_eq!(observation.binding_identity(), "binding:refund");
     assert_eq!(observation.source_identity(), "source:payments");
     assert_eq!(observation.schema_identity(), "schema:refund/v1");
-    assert_eq!(observation.subject_kind(), "order");
-    assert_eq!(observation.subject_identity(), "order:O1");
+    assert_eq!(observation.subject().kind, support::ORDER_KIND.as_bytes());
+    assert_eq!(observation.subject().identity, b"order:O1");
+    assert_eq!(
+        observation.subject().authority.identity,
+        qualified.producer().bundle_identity()
+    );
+    assert_eq!(
+        observation.subject().authority.revision,
+        qualified.producer().bundle_revision()
+    );
+    assert_eq!(
+        observation.subject().authority.digest,
+        qualified.producer().digest()
+    );
     assert_eq!(observation.signal_identity(), "signal:refund");
     assert_eq!(observation.trigger_identity(), "trigger:refund-request");
     assert_eq!(observation.unit(), "USD");
@@ -619,7 +635,25 @@ fn tc004_each_public_reader_requires_exact_independent_selections() {
     );
     assert_eq!(observation.event_time_nanos(), "10");
     assert_eq!(observation.ingestion_time_nanos(), "11");
-    assert_eq!(observation.causal_relationship(), None);
+    let relationship = observation
+        .causal_relationship()
+        .expect("the exact causal relationship is retained");
+    assert_eq!(relationship.declaration_identity, ORDER_SHIPMENT);
+    assert_eq!(relationship.interface_version, PRODUCER_INTERFACE_VERSION);
+    assert_eq!(relationship.identity, b"relationship:O1-S1");
+    assert_eq!(
+        relationship.authority.identity,
+        qualified.producer().bundle_identity()
+    );
+    assert_eq!(
+        relationship.authority.revision,
+        qualified.producer().bundle_revision()
+    );
+    assert_eq!(relationship.authority.digest, qualified.producer().digest());
+    assert_eq!(relationship.source.kind, support::ORDER_KIND.as_bytes());
+    assert_eq!(relationship.source.identity, b"order:O1");
+    assert_eq!(relationship.target.kind, support::SHIPMENT_KIND.as_bytes());
+    assert_eq!(relationship.target.identity, b"shipment:S1");
     assert_eq!(
         observation.clock(),
         authority::observation::ClockRef {
@@ -644,14 +678,11 @@ fn tc004_each_public_reader_requires_exact_independent_selections() {
         population.population_identity(),
         qualified.scope().population_identity.as_str()
     );
-    assert_eq!(
-        population.producer(),
-        authority::population::ProducerRef {
-            identity: "producer:commerce",
-            version: PRODUCER_INTERFACE_VERSION,
-            digest: &"02".repeat(32),
-        }
-    );
+    let producer = population.producer();
+    assert_eq!(producer.identity, qualified.producer().bundle_identity());
+    assert_eq!(producer.version, PRODUCER_INTERFACE_VERSION);
+    assert_eq!(producer.revision, qualified.producer().bundle_revision());
+    assert_eq!(producer.digest, qualified.producer().digest());
     assert_eq!(
         population.membership_rule_identity(),
         qualified.scope().membership_rule_identity.as_str()
@@ -678,12 +709,14 @@ fn tc004_each_public_reader_requires_exact_independent_selections() {
         population.observation_sources(),
         &["source:payments".to_owned()]
     );
+    let configuration = population.configuration();
     assert_eq!(
-        population.configuration(),
-        authority::population::DefinitionRef {
-            identity: "configuration:production",
-            digest: &"03".repeat(32),
-        }
+        configuration.identity,
+        qualified.producer().configuration().configuration_identity
+    );
+    assert_eq!(
+        configuration.digest,
+        &qualified.producer().configuration().digest
     );
     assert_eq!(
         population.closure(),
@@ -1763,5 +1796,34 @@ fn tc004_corrections_are_new_direct_lineage_and_cross_wiring_refuses() {
         .expect_err("cross-wired subject cannot correct an artifact")
         .code(),
         authority::ErrorCode::ExpectedMismatch
+    );
+}
+
+#[trace("TC-005", "FR-005-AC-9")]
+#[test]
+fn tc005_qualified_owner_contracts_version_without_mutating_v1() {
+    fn sha256(bytes: &[u8]) -> String {
+        format!("{:x}", Sha256::digest(bytes))
+    }
+
+    assert_eq!(
+        sha256(include_bytes!(
+            "../schemas/observation-record-v1.schema.json"
+        )),
+        "2922c6ad6bbca53f0800b7bd5159781632aa6ebd1e696567ae5639ec18dea3a3"
+    );
+    assert_eq!(
+        sha256(include_bytes!(
+            "../schemas/observation-population-v1.schema.json"
+        )),
+        "493b4c10701356007d055d351171ee1897de2b7226da03161fa86a9e52e524c2"
+    );
+    assert_eq!(
+        authority::observation::CONTRACT,
+        "quire.observation.record/v2"
+    );
+    assert_eq!(
+        authority::population::CONTRACT,
+        "quire.observation.population/v2"
     );
 }

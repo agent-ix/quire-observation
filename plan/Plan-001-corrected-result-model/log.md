@@ -28,3 +28,12 @@ description: "Chronological log of changes to the Plan-001 bundle."
   findings. The plan now ends at independently auditable promotion readiness; gap analysis,
   merge, tracker update, and worktree cleanup are the repository lifecycle gates that
   follow the completed implementation plan.
+* **2026-09-14** — Added Task 014 from live issue #18 after FCD Producer interface 1.2
+  merged at `4042882`. The task consumes the admitted FCD capability and implements the
+  QSpec FR-287/FR-262 runtime subject and relationship seam; it does not reopen or
+  relitigate the completed owner-contract architecture in Tasks 008–013.
+* **2026-09-14** — Completed Task 014. The exact pinned FCD capability now qualifies
+  runtime subjects and relationships; bounded replay/correlation refuses incompatible
+  inputs without approximation; record and population owner projections advanced to v2
+  while the v1 schemas remained byte-identical. SR-032 and SR-033 passed with all 42
+  matrix rows backed and all local Rust, schema, and dependency gates green.

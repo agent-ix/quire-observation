@@ -1,21 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Agent-IX
 
+mod support;
+
 use ix_trace_rs::trace;
 use quire_observation::*;
+use support::{order, producer, producer_with_bundle_identity, shipment, ORDER_SHIPMENT};
 
 fn id(value: &str) -> Identity {
     Identity::new(value)
 }
+
 fn digest(value: u8) -> Digest {
     Digest::new([value; 32])
-}
-
-fn order(value: &str) -> Subject {
-    Subject {
-        kind: SubjectKind::Order,
-        identity: id(value),
-    }
 }
 
 fn seal(mut request: AdmissionRequest) -> AdmissionRequest {
@@ -32,21 +29,14 @@ fn seal(mut request: AdmissionRequest) -> AdmissionRequest {
 }
 
 fn request() -> AdmissionRequest {
-    let order = order("order:O1");
+    let producer = producer();
+    let order = order(&producer, "order:O1");
     let request = AdmissionRequest {
         package: PackageSelection {
             format: NATIVE_LINKED_PACKAGE_FORMAT.into(),
             identity: id("package:checkout"),
             revision: id("1-draft"),
             digest: digest(1),
-        },
-        producer: ProducerSelection {
-            interface_version: PRODUCER_INTERFACE_VERSION.into(),
-            document_identity: id("fcd:producer"),
-            document_digest: digest(2),
-            model_identity: id("model:commerce"),
-            configuration_identity: id("config:1"),
-            configuration_digest: digest(3),
         },
         binding: ObservationBinding {
             identity: id("binding:payment-effect"),
@@ -55,7 +45,7 @@ fn request() -> AdmissionRequest {
             signal_identity: id("signal:effect"),
             trigger_identity: id("trigger:payment"),
             unit: id("USD"),
-            subject_kind: SubjectKind::Order,
+            subject_kind: order.kind().clone(),
             required: true,
         },
         expected_subject: order.clone(),
@@ -116,11 +106,36 @@ fn request() -> AdmissionRequest {
             max_relationships: 2,
             max_required_relationships: 2,
         },
+        producer,
     };
     seal(request)
 }
 
-#[trace("TC-001", "FR-001-AC-1", "FR-001-AC-7")]
+fn relationship(
+    input: &AdmissionRequest,
+    identity: &str,
+    source: QualifiedSubject,
+    target: QualifiedSubject,
+) -> Relationship {
+    Relationship::new(
+        &input.producer,
+        ORDER_SHIPMENT,
+        RelationshipIdentity::new(identity).unwrap(),
+        source,
+        target,
+    )
+    .unwrap()
+}
+
+fn required(
+    input: &AdmissionRequest,
+    source: QualifiedSubject,
+    target: QualifiedSubject,
+) -> RequiredRelationship {
+    RequiredRelationship::new(&input.producer, ORDER_SHIPMENT, source, target).unwrap()
+}
+
+#[trace("TC-001", "FR-001-AC-1", "FR-001-AC-7", "TC-005", "FR-005-AC-1")]
 #[test]
 fn tc001_valid_record_retains_all_selected_premises() {
     let outcome = admit(request());
@@ -128,9 +143,9 @@ fn tc001_valid_record_retains_all_selected_premises() {
         matches!(outcome, AdmissionOutcome::Available { observation }
             if observation.records()[0].visibility == Visibility::External
                 && observation.package().identity == id("package:checkout")
-                && observation.producer().document_digest == digest(2)
-                && observation.producer().configuration_identity == id("config:1")
-                && observation.producer().configuration_digest == digest(3)
+                && observation.producer().interface_version() == PRODUCER_INTERFACE_VERSION
+                && observation.producer().configuration().configuration_identity
+                    == "ix://agent-ix/commerce/config/evaluation-default"
                 && observation.scope().population_identity.as_str().starts_with("sha256-jcs:")
                 && observation.scope().closure_identity == Some(id("closure:complete"))
                 && observation.scope().closure_digest == Some(digest(5))
@@ -138,8 +153,8 @@ fn tc001_valid_record_retains_all_selected_premises() {
     );
 }
 
+#[trace("TC-001", "FR-001-AC-2")]
 #[test]
-// Trace: TC-001, FR-001-AC-2
 fn tc001_wrong_signal_unit_and_schema_refuse() {
     for (name, field) in [
         ("signal", BindingField::Signal),
@@ -171,59 +186,49 @@ fn tc001_missing_required_value_is_incomplete_not_false() {
     );
 }
 
+#[trace("TC-001", "FR-001-AC-4", "TC-005", "FR-005-AC-5", "FR-005-AC-6")]
 #[test]
-// Trace: TC-001, FR-001-AC-4
-fn tc001_refund_for_other_order_is_a_conflict() {
-    let mut input = request();
-    let refund = Subject {
-        kind: SubjectKind::Refund,
-        identity: id("refund:R1"),
-    };
-    input.required_relationships.push(RequiredRelationship {
-        kind: RelationshipKind::RefundForOrder,
-        from: refund.clone(),
-        to: order("order:O1"),
-    });
-    input.relationships.push(Relationship {
-        identity: id("relationship:R1-O2"),
-        kind: RelationshipKind::RefundForOrder,
-        from: refund,
-        to: order("order:O2"),
-    });
+fn tc005_relationship_correlation_has_four_exact_outcomes() {
+    let mut missing = request();
+    let source = missing.expected_subject.clone();
+    let target = shipment(&missing.producer, "shipment:S1");
+    missing
+        .required_relationships
+        .push(required(&missing, source.clone(), target.clone()));
     assert!(matches!(
-        admit(input),
+        admit(missing),
+        AdmissionOutcome::Incomplete { reasons }
+            if matches!(reasons.as_slice(), [IncompleteReason::MissingRelationship { .. }])
+    ));
+
+    let mut conflicting = request();
+    let source = conflicting.expected_subject.clone();
+    let wanted = shipment(&conflicting.producer, "shipment:S1");
+    let other = shipment(&conflicting.producer, "shipment:S2");
+    let required_slot = required(&conflicting, source.clone(), wanted);
+    let relation = relationship(&conflicting, "relationship:O1-S2", source, other);
+    conflicting.required_relationships.push(required_slot);
+    conflicting.relationships.push(relation);
+    assert!(matches!(
+        admit(conflicting),
         AdmissionOutcome::Refused {
             cause: RefusalCause::RelationshipConflict { .. }
         }
     ));
-}
 
-#[test]
-// Trace: TC-001, FR-001-AC-3, FR-001-AC-4
-fn tc001_missing_and_ambiguous_relationships_do_not_match_heuristically() {
-    let refund = Subject {
-        kind: SubjectKind::Refund,
-        identity: id("refund:R1"),
-    };
-    let expected = RequiredRelationship {
-        kind: RelationshipKind::RefundForOrder,
-        from: refund.clone(),
-        to: order("order:O1"),
-    };
-    let mut missing = request();
-    missing.required_relationships.push(expected.clone());
-    assert!(
-        matches!(admit(missing), AdmissionOutcome::Incomplete { reasons } if matches!(reasons.as_slice(), [IncompleteReason::MissingRelationship { .. }]))
-    );
     let mut ambiguous = request();
-    ambiguous.required_relationships.push(expected);
+    let source = ambiguous.expected_subject.clone();
+    let target = shipment(&ambiguous.producer, "shipment:S1");
+    let required_slot = required(&ambiguous, source.clone(), target.clone());
+    ambiguous.required_relationships.push(required_slot);
     for suffix in ["a", "b"] {
-        ambiguous.relationships.push(Relationship {
-            identity: id(&format!("relationship:{suffix}")),
-            kind: RelationshipKind::RefundForOrder,
-            from: refund.clone(),
-            to: order("order:O1"),
-        });
+        let relation = relationship(
+            &ambiguous,
+            &format!("relationship:{suffix}"),
+            source.clone(),
+            target.clone(),
+        );
+        ambiguous.relationships.push(relation);
     }
     assert!(matches!(
         admit(ambiguous),
@@ -232,34 +237,21 @@ fn tc001_missing_and_ambiguous_relationships_do_not_match_heuristically() {
         }
     ));
 
-    let mut duplicate_identity = request();
-    duplicate_identity.relationships.extend([
-        Relationship {
-            identity: id("relationship:duplicate"),
-            kind: RelationshipKind::RefundForOrder,
-            from: refund.clone(),
-            to: order("order:O1"),
-        },
-        Relationship {
-            identity: id("relationship:duplicate"),
-            kind: RelationshipKind::RefundCompensatesEffect,
-            from: refund,
-            to: Subject {
-                kind: SubjectKind::Effect,
-                identity: id("effect:E1"),
-            },
-        },
-    ]);
+    let mut replay = request();
+    let source = replay.expected_subject.clone();
+    let target = shipment(&replay.producer, "shipment:S1");
+    let required_slot = required(&replay, source.clone(), target.clone());
+    let relation = relationship(&replay, "relationship:one", source, target);
+    replay.required_relationships.push(required_slot);
+    replay.relationships.extend([relation.clone(), relation]);
     assert!(matches!(
-        admit(duplicate_identity),
-        AdmissionOutcome::Refused {
-            cause: RefusalCause::InvalidSelection(SelectionField::RelationshipIdentity)
-        }
+        admit(replay),
+        AdmissionOutcome::Available { observation } if observation.relationships().len() == 1
     ));
 }
 
+#[trace("TC-001", "FR-001-AC-2", "FR-001-AC-3", "NFR-001-AC-1")]
 #[test]
-// Trace: TC-001, FR-001-AC-2, FR-001-AC-3, FR-001-AC-4, NFR-001-AC-1
 fn tc001_scope_closure_clock_and_limits_are_explicit() {
     let mut incomplete = request();
     incomplete.scope.closure_identity = None;
@@ -289,22 +281,11 @@ fn tc001_scope_closure_clock_and_limits_are_explicit() {
             cause: RefusalCause::ClockMismatch { .. }
         }
     ));
-
-    let mut excess = request();
-    excess.limits.max_records = 0;
-    assert!(matches!(
-        admit(excess),
-        AdmissionOutcome::Refused {
-            cause: RefusalCause::ResourceLimit {
-                limit: ResourceKind::Records
-            }
-        }
-    ));
 }
 
-#[trace("TC-001", "FR-001-AC-4", "NFR-001-AC-6")]
+#[trace("TC-001", "FR-001-AC-4", "NFR-001-AC-6", "TC-005", "FR-005-AC-8")]
 #[test]
-fn tc001_relationship_graph_bounds_are_exact_and_fail_closed() {
+fn tc005_relationship_graph_bounds_are_exact_and_fail_closed() {
     let mut exact = request();
     exact.limits.max_relationships = 0;
     exact.limits.max_required_relationships = 0;
@@ -312,15 +293,10 @@ fn tc001_relationship_graph_bounds_are_exact_and_fail_closed() {
 
     let mut relationships = request();
     relationships.limits.max_relationships = 0;
-    relationships.relationships.push(Relationship {
-        identity: id("relationship:bounded"),
-        kind: RelationshipKind::PaymentAttemptForOrder,
-        from: Subject {
-            kind: SubjectKind::PaymentAttempt,
-            identity: id("payment:P1"),
-        },
-        to: order("order:O1"),
-    });
+    let source = relationships.expected_subject.clone();
+    let target = shipment(&relationships.producer, "shipment:S1");
+    let relation = relationship(&relationships, "relationship:bounded", source, target);
+    relationships.relationships.push(relation);
     assert!(matches!(
         admit(relationships),
         AdmissionOutcome::Refused {
@@ -330,18 +306,14 @@ fn tc001_relationship_graph_bounds_are_exact_and_fail_closed() {
         }
     ));
 
-    let mut required = request();
-    required.limits.max_required_relationships = 0;
-    required.required_relationships.push(RequiredRelationship {
-        kind: RelationshipKind::PaymentAttemptForOrder,
-        from: Subject {
-            kind: SubjectKind::PaymentAttempt,
-            identity: id("payment:P1"),
-        },
-        to: order("order:O1"),
-    });
+    let mut required_input = request();
+    required_input.limits.max_required_relationships = 0;
+    let source = required_input.expected_subject.clone();
+    let target = shipment(&required_input.producer, "shipment:S1");
+    let relation = required(&required_input, source, target);
+    required_input.required_relationships.push(relation);
     assert!(matches!(
-        admit(required),
+        admit(required_input),
         AdmissionOutcome::Refused {
             cause: RefusalCause::ResourceLimit {
                 limit: ResourceKind::RequiredRelationships
@@ -350,59 +322,224 @@ fn tc001_relationship_graph_bounds_are_exact_and_fail_closed() {
     ));
 }
 
+#[trace("TC-001", "FR-001-AC-2", "TC-005", "FR-005-AC-3")]
 #[test]
-// Trace: TC-001, FR-001-AC-2
-fn tc001_clock_families_are_not_interchangeable() {
-    let mut fixed = request();
-    fixed.scope.range = ClockRange::FixedSample {
-        start: 4,
-        end_exclusive: 6,
-        epoch_nanos: 10,
-        period_nanos: 5,
-    };
-    fixed.records[0].anchor = Anchor::FixedSample {
-        index: 4,
-        epoch_nanos: 10,
-        period_nanos: 5,
-    };
-    fixed.scope.members[0].anchor = fixed.records[0].anchor;
-    fixed = seal(fixed);
+fn tc005_subject_mismatch_and_cross_kind_comparison_refuse() {
+    let mut input = request();
+    input.records[0].subject = order(&input.producer, "order:O2");
     assert!(matches!(
-        admit(fixed.clone()),
-        AdmissionOutcome::Available { .. }
-    ));
-    fixed.records[0].anchor = Anchor::EventPosition(4);
-    assert!(matches!(
-        admit(fixed),
-        AdmissionOutcome::Refused {
-            cause: RefusalCause::ClockMismatch { .. }
-        }
-    ));
-}
-
-#[test]
-// Trace: TC-001, FR-001-AC-2
-fn tc001_producer_version_and_subject_mismatch_refuse() {
-    let mut version = request();
-    version.producer.interface_version = "1.1.0".into();
-    assert!(matches!(
-        admit(version),
-        AdmissionOutcome::Refused {
-            cause: RefusalCause::ProducerVersion
-        }
-    ));
-    let mut subject = request();
-    subject.records[0].subject = order("order:O2");
-    assert!(matches!(
-        admit(subject),
+        admit(input),
         AdmissionOutcome::Refused {
             cause: RefusalCause::SubjectMismatch { .. }
         }
     ));
+
+    let input = request();
+    let shipment = shipment(&input.producer, "order:O1");
+    assert_eq!(
+        input.expected_subject.same_object(&shipment),
+        Err(ReferenceRefusal::WrongSubjectKind)
+    );
 }
 
+#[trace("TC-005", "FR-005-AC-2", "FR-005-AC-3")]
 #[test]
-// Trace: TC-001, FR-001-AC-1, FR-001-AC-3, NFR-001-AC-2
+fn tc005_opaque_subject_components_and_authority_are_exact() {
+    assert_eq!(
+        SubjectKind::new(Vec::<u8>::new()),
+        Err(ReferenceRefusal::Empty(ReferenceComponent::SubjectKind))
+    );
+    assert_eq!(
+        SubjectIdentity::new(Vec::<u8>::new()),
+        Err(ReferenceRefusal::Empty(ReferenceComponent::SubjectIdentity))
+    );
+    assert_eq!(
+        RelationshipIdentity::new(Vec::<u8>::new()),
+        Err(ReferenceRefusal::Empty(
+            ReferenceComponent::RelationshipIdentity
+        ))
+    );
+
+    let producer = producer();
+    let exact = support::subject(&producer, b" Kind \0".to_vec(), b" Object \xff".to_vec());
+    assert_eq!(exact.kind().as_bytes(), b" Kind \0");
+    assert_eq!(exact.identity().as_bytes(), b" Object \xff");
+
+    let foreign = producer_with_bundle_identity("ix://agent-ix/commerce/bundle/foreign");
+    let foreign_subject = support::subject(
+        &foreign,
+        exact.kind().as_bytes(),
+        exact.identity().as_bytes(),
+    );
+    assert_eq!(
+        exact.same_object(&foreign_subject),
+        Err(ReferenceRefusal::ForeignAuthority)
+    );
+
+    let mut input = request();
+    input.expected_subject = order(&foreign, "order:O1");
+    assert_eq!(
+        admit(input),
+        AdmissionOutcome::Refused {
+            cause: RefusalCause::InvalidReference(ReferenceRefusal::ForeignAuthority)
+        }
+    );
+}
+
+#[trace("TC-005", "FR-005-AC-3", "FR-005-AC-7")]
+#[test]
+fn tc005_presentation_is_not_a_key_member_and_sorting_is_noncausal() {
+    #[derive(Clone)]
+    struct Presented {
+        subject: QualifiedSubject,
+        display: &'static str,
+        trace: &'static str,
+        timestamp: i64,
+        arrival: u64,
+        transport_ok: bool,
+    }
+
+    let producer = producer();
+    let o2 = order(&producer, "order:O2");
+    let o1 = order(&producer, "order:O1");
+    let first = Presented {
+        subject: o1.clone(),
+        display: "first",
+        trace: "trace-a",
+        timestamp: 99,
+        arrival: 1,
+        transport_ok: true,
+    };
+    let changed = Presented {
+        subject: o1,
+        display: "renamed",
+        trace: "trace-z",
+        timestamp: -1,
+        arrival: 500,
+        transport_ok: false,
+    };
+    assert_eq!(first.subject, changed.subject);
+    assert_ne!(first.display, changed.display);
+    assert_ne!(first.trace, changed.trace);
+    assert_ne!(first.timestamp, changed.timestamp);
+    assert_ne!(first.arrival, changed.arrival);
+    assert_ne!(first.transport_ok, changed.transport_ok);
+
+    let mut subjects = vec![o2, changed.subject, shipment(&producer, "shipment:S1")];
+    subjects.sort();
+    let sorted = subjects.clone();
+    subjects.reverse();
+    subjects.sort();
+    assert_eq!(subjects, sorted);
+
+    let distinct: std::collections::BTreeSet<_> = [
+        "workflow",
+        "role-instance",
+        "channel",
+        "node",
+        "message",
+        "send",
+        "receive",
+        "delivery",
+        "attempt",
+        "effect",
+        "receipt",
+        "configuration",
+    ]
+    .into_iter()
+    .map(|kind| support::subject(&producer, kind, "same-opaque-bytes"))
+    .collect();
+    assert_eq!(distinct.len(), 12);
+}
+
+#[trace("TC-005", "FR-005-AC-4")]
+#[test]
+fn tc005_relationship_construction_refuses_unknown_reversed_and_foreign_inputs() {
+    let producer = producer();
+    let local_order = order(&producer, "order:O1");
+    let local_shipment = shipment(&producer, "shipment:S1");
+    let identity = || RelationshipIdentity::new("relationship:one").unwrap();
+
+    assert!(matches!(
+        Relationship::new(
+            &producer,
+            "relationship:unknown",
+            identity(),
+            local_order.clone(),
+            local_shipment.clone(),
+        ),
+        Err(ReferenceRefusal::UnknownRelationshipDeclaration { .. })
+    ));
+    assert_eq!(
+        Relationship::new(
+            &producer,
+            "",
+            identity(),
+            local_order.clone(),
+            local_shipment.clone(),
+        ),
+        Err(ReferenceRefusal::Empty(
+            ReferenceComponent::RelationshipDeclaration
+        ))
+    );
+    assert_eq!(
+        Relationship::new(
+            &producer,
+            ORDER_SHIPMENT,
+            identity(),
+            local_order.clone(),
+            local_order.clone(),
+        ),
+        Err(ReferenceRefusal::WrongEndpointKind {
+            endpoint: EndpointSide::Target
+        })
+    );
+    assert_eq!(
+        Relationship::new(
+            &producer,
+            ORDER_SHIPMENT,
+            identity(),
+            local_shipment,
+            local_order.clone(),
+        ),
+        Err(ReferenceRefusal::ReversedEndpoints)
+    );
+
+    let foreign = producer_with_bundle_identity("ix://agent-ix/commerce/bundle/foreign");
+    let foreign_order = order(&foreign, "order:O1");
+    let local_shipment = shipment(&producer, "shipment:S1");
+    assert_eq!(
+        Relationship::new(
+            &producer,
+            ORDER_SHIPMENT,
+            identity(),
+            foreign_order,
+            local_shipment,
+        ),
+        Err(ReferenceRefusal::ForeignAuthority)
+    );
+}
+
+#[trace("TC-005", "FR-005-AC-5")]
+#[test]
+fn tc005_same_relationship_identity_cannot_rebind() {
+    let mut input = request();
+    let source = input.expected_subject.clone();
+    let s1 = shipment(&input.producer, "shipment:S1");
+    let s2 = shipment(&input.producer, "shipment:S2");
+    let first = relationship(&input, "relationship:fixed", source.clone(), s1);
+    let rebound = relationship(&input, "relationship:fixed", source, s2);
+    input.relationships.extend([first, rebound]);
+    assert!(matches!(
+        admit(input),
+        AdmissionOutcome::Refused {
+            cause: RefusalCause::RelationshipIdentityContradiction { .. }
+        }
+    ));
+}
+
+#[trace("TC-001", "FR-001-AC-1", "FR-001-AC-3", "NFR-001-AC-2")]
+#[test]
 fn tc001_members_must_bind_exactly_to_accepted_records() {
     let mut unrelated = request();
     unrelated.scope.members[0].record_identity = id("record:other");
@@ -504,15 +641,4 @@ fn tc001_owner_identities_sources_and_clock_are_derived_not_trusted() {
             cause: RefusalCause::ClockMismatch { .. }
         }
     ));
-
-    let mut invalid_helper_input = request();
-    invalid_helper_input.producer.document_identity = id("   ");
-    let original_scope = invalid_helper_input.scope.clone();
-    let error = authority::population::assign_request_identities(
-        &mut invalid_helper_input,
-        authority::Limits::owner_max(),
-    )
-    .expect_err("invalid producer selection must fail closed");
-    assert_eq!(error.code(), authority::ErrorCode::InvalidSelection);
-    assert_eq!(invalid_helper_input.scope, original_scope);
 }

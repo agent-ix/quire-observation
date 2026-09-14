@@ -1,22 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Agent-IX
 
-//! `quire.observation.record/v1` owner artifact.
+//! `quire.observation.record/v2` owner artifact.
 
 use serde::{Deserialize, Serialize};
 
-use super::common::{self, build_document, read_exact, subject_kind_label, Validated};
+use agent_ix_baseline_producer::{AdmittedBundleKey, DigestSelection, Revision};
+
+use super::common::{self, build_document, read_exact, Validated};
 use super::{Context, Document, Error, ErrorCode, Result, Usage};
-use crate::{AdmittedRecord, Anchor, Identity, RelationshipKind, ValueState, Visibility};
+use crate::{AdmittedRecord, Anchor, Identity, QualifiedSubject, ValueState, Visibility};
 
 pub use super::Limits;
 
 /// Immutable owner-contract label.
-pub const CONTRACT: &str = "quire.observation.record/v1";
+pub const CONTRACT: &str = "quire.observation.record/v2";
 /// Pinned JSON Schema bytes for [`CONTRACT`].
-pub const SCHEMA_BYTES: &[u8] = include_bytes!("../../schemas/observation-record-v1.schema.json");
+pub const SCHEMA_BYTES: &[u8] = include_bytes!("../../schemas/observation-record-v2.schema.json");
 /// Lowercase SHA-256 digest of [`SCHEMA_BYTES`].
-pub const SCHEMA_SHA256: &str = "2922c6ad6bbca53f0800b7bd5159781632aa6ebd1e696567ae5639ec18dea3a3";
+pub const SCHEMA_SHA256: &str = "8737683a5971aabcb39bbc5f0842fa1d7c1db5c8f283b8b2544c6364c682f882";
 
 /// Closed FR-294 timing classification.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -152,21 +154,43 @@ pub enum AnchorRef<'a> {
     },
 }
 
+/// Borrowed Producer-interface authority key.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProducerAuthorityRef<'a> {
+    /// Exact producer bundle identity.
+    pub identity: &'a str,
+    /// Exact namespaced producer revision.
+    pub revision: &'a Revision,
+    /// Exact four-member digest selection.
+    pub digest: &'a DigestSelection,
+}
+
+/// Borrowed FR-287 subject key exposed by a validated record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SubjectRef<'a> {
+    /// Exact selected Producer authority.
+    pub authority: ProducerAuthorityRef<'a>,
+    /// Exact producer-local subject-kind bytes.
+    pub kind: &'a [u8],
+    /// Exact producer-local object-identity bytes.
+    pub identity: &'a [u8],
+}
+
 /// Borrowed explicit causal relationship exposed by a validated record.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RelationshipRef<'a> {
-    /// Exact relationship identity.
-    pub identity: &'a str,
-    /// Exact relationship-kind label.
-    pub kind: &'a str,
-    /// Exact source-subject kind.
-    pub from_kind: &'a str,
-    /// Exact source-subject identity.
-    pub from_identity: &'a str,
-    /// Exact target-subject kind.
-    pub to_kind: &'a str,
-    /// Exact target-subject identity.
-    pub to_identity: &'a str,
+    /// Exact FCD relationship declaration identity.
+    pub declaration_identity: &'a str,
+    /// Exact selected Producer authority.
+    pub authority: ProducerAuthorityRef<'a>,
+    /// Exact Producer interface version.
+    pub interface_version: &'a str,
+    /// Exact producer-local relationship identity.
+    pub identity: &'a [u8],
+    /// Authored source endpoint.
+    pub source: SubjectRef<'a>,
+    /// Authored target endpoint.
+    pub target: SubjectRef<'a>,
 }
 
 /// Borrowed clock facts exposed by a validated record.
@@ -188,8 +212,7 @@ pub struct RecordView {
     binding_identity: String,
     source_identity: String,
     schema_identity: String,
-    subject_kind: String,
-    subject_identity: String,
+    subject: SubjectWire,
     signal_identity: String,
     trigger_identity: String,
     unit: String,
@@ -229,16 +252,10 @@ impl RecordView {
         &self.schema_identity
     }
 
-    /// Returns the exact subject-kind label.
+    /// Returns the complete authority-qualified subject key.
     #[must_use]
-    pub fn subject_kind(&self) -> &str {
-        &self.subject_kind
-    }
-
-    /// Returns the exact subject identity.
-    #[must_use]
-    pub fn subject_identity(&self) -> &str {
-        &self.subject_identity
+    pub fn subject(&self) -> SubjectRef<'_> {
+        subject_ref(&self.subject)
     }
 
     /// Returns the selected signal identity.
@@ -319,12 +336,12 @@ impl RecordView {
         self.causal_relationship
             .as_ref()
             .map(|relationship| RelationshipRef {
+                declaration_identity: &relationship.declaration_identity,
+                authority: authority_ref(&relationship.authority),
+                interface_version: &relationship.interface_version,
                 identity: &relationship.identity,
-                kind: &relationship.kind,
-                from_kind: &relationship.from_kind,
-                from_identity: &relationship.from_identity,
-                to_kind: &relationship.to_kind,
-                to_identity: &relationship.to_identity,
+                source: subject_ref(&relationship.source),
+                target: subject_ref(&relationship.target),
             })
     }
 
@@ -390,12 +407,28 @@ enum AnchorWire {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RelationshipWire {
-    identity: String,
-    kind: String,
-    from_kind: String,
-    from_identity: String,
-    to_kind: String,
-    to_identity: String,
+    declaration_identity: String,
+    authority: ProducerAuthorityWire,
+    interface_version: String,
+    identity: Vec<u8>,
+    source: SubjectWire,
+    target: SubjectWire,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProducerAuthorityWire {
+    bundle_identity: String,
+    bundle_revision: Revision,
+    digest: DigestSelection,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SubjectWire {
+    authority: ProducerAuthorityWire,
+    kind: Vec<u8>,
+    identity: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -429,8 +462,7 @@ struct ObservationWithoutIdentity<'a> {
     binding_identity: &'a str,
     source_identity: &'a str,
     schema_identity: &'a str,
-    subject_kind: &'static str,
-    subject_identity: &'a str,
+    subject: SubjectWire,
     signal_identity: &'a str,
     trigger_identity: &'a str,
     unit: &'a str,
@@ -439,7 +471,7 @@ struct ObservationWithoutIdentity<'a> {
     anchor: AnchorWire,
     event_time_nanos: String,
     ingestion_time_nanos: String,
-    causal_relationship_identity: Option<&'a str>,
+    causal_relationship_identity: Option<&'a [u8]>,
     clock_identity: &'a str,
     clock_revision: &'a str,
     clock_uncertainty_nanos: String,
@@ -449,7 +481,7 @@ struct ObservationWithoutIdentity<'a> {
 pub fn record_identity(record: &AdmittedRecord, limits: Limits) -> Result<Identity> {
     validate_record(record)?;
     let preimage = ObservationIdentityPreimage {
-        identity_version: "quire.observation.identity/v1-draft.1",
+        identity_version: "quire.observation.identity/v2",
         observation: without_identity(record),
     };
     common::sha256_jcs(&preimage, limits).map(|value| value.0)
@@ -528,7 +560,7 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
             let relation = qualified
                 .relationships()
                 .iter()
-                .find(|relation| relation.identity == *identity)
+                .find(|relation| relation.identity() == identity)
                 .ok_or_else(|| {
                     Error::new(
                         ErrorCode::ExpectedMismatch,
@@ -544,8 +576,7 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
         binding_identity: record.binding_identity.as_str().to_owned(),
         source_identity: record.source_identity.as_str().to_owned(),
         schema_identity: record.schema_identity.as_str().to_owned(),
-        subject_kind: subject_kind_label(record.subject.kind).to_owned(),
-        subject_identity: record.subject.identity.as_str().to_owned(),
+        subject: subject_wire(&record.subject),
         signal_identity: record.signal_identity.as_str().to_owned(),
         trigger_identity: record.trigger_identity.as_str().to_owned(),
         unit: record.unit.as_str().to_owned(),
@@ -581,7 +612,6 @@ fn validate_record(record: &AdmittedRecord) -> Result<()> {
     let identities_valid = record.binding_identity.valid()
         && record.source_identity.valid()
         && record.schema_identity.valid()
-        && record.subject.identity.valid()
         && record.signal_identity.valid()
         && record.trigger_identity.valid()
         && record.unit.valid()
@@ -590,7 +620,7 @@ fn validate_record(record: &AdmittedRecord) -> Result<()> {
         && record
             .causal_relationship_identity
             .as_ref()
-            .is_none_or(Identity::valid);
+            .is_none_or(|identity| !identity.as_bytes().is_empty());
     if !identities_valid {
         return Err(Error::new(
             ErrorCode::InvalidSelection,
@@ -606,8 +636,7 @@ fn without_identity(record: &AdmittedRecord) -> ObservationWithoutIdentity<'_> {
         binding_identity: record.binding_identity.as_str(),
         source_identity: record.source_identity.as_str(),
         schema_identity: record.schema_identity.as_str(),
-        subject_kind: subject_kind_label(record.subject.kind),
-        subject_identity: record.subject.identity.as_str(),
+        subject: subject_wire(&record.subject),
         signal_identity: record.signal_identity.as_str(),
         trigger_identity: record.trigger_identity.as_str(),
         unit: record.unit.as_str(),
@@ -619,7 +648,7 @@ fn without_identity(record: &AdmittedRecord) -> ObservationWithoutIdentity<'_> {
         causal_relationship_identity: record
             .causal_relationship_identity
             .as_ref()
-            .map(Identity::as_str),
+            .map(crate::RelationshipIdentity::as_bytes),
         clock_identity: record.clock_identity.as_str(),
         clock_revision: record.clock_revision.as_str(),
         clock_uncertainty_nanos: record.clock_uncertainty_nanos.to_string(),
@@ -668,21 +697,44 @@ fn anchor_wire(value: Anchor) -> AnchorWire {
 
 fn relationship_wire(value: &crate::Relationship) -> RelationshipWire {
     RelationshipWire {
-        identity: value.identity.as_str().to_owned(),
-        kind: relationship_kind_label(value.kind).to_owned(),
-        from_kind: subject_kind_label(value.from.kind).to_owned(),
-        from_identity: value.from.identity.as_str().to_owned(),
-        to_kind: subject_kind_label(value.to.kind).to_owned(),
-        to_identity: value.to.identity.as_str().to_owned(),
+        declaration_identity: value.declaration_identity().to_owned(),
+        authority: authority_wire(value.authority()),
+        interface_version: value.interface_version().to_owned(),
+        identity: value.identity().as_bytes().to_vec(),
+        source: subject_wire(value.source()),
+        target: subject_wire(value.target()),
     }
 }
 
-const fn relationship_kind_label(value: RelationshipKind) -> &'static str {
-    match value {
-        RelationshipKind::ShipmentForOrder => "shipment-for-order",
-        RelationshipKind::PaymentAttemptForOrder => "payment-attempt-for-order",
-        RelationshipKind::RefundForOrder => "refund-for-order",
-        RelationshipKind::RefundCompensatesEffect => "refund-compensates-effect",
+fn authority_wire(value: &AdmittedBundleKey) -> ProducerAuthorityWire {
+    ProducerAuthorityWire {
+        bundle_identity: value.bundle_identity.clone(),
+        bundle_revision: value.bundle_revision.clone(),
+        digest: value.digest.clone(),
+    }
+}
+
+fn subject_wire(value: &QualifiedSubject) -> SubjectWire {
+    SubjectWire {
+        authority: authority_wire(value.authority()),
+        kind: value.kind().as_bytes().to_vec(),
+        identity: value.identity().as_bytes().to_vec(),
+    }
+}
+
+fn authority_ref(value: &ProducerAuthorityWire) -> ProducerAuthorityRef<'_> {
+    ProducerAuthorityRef {
+        identity: &value.bundle_identity,
+        revision: &value.bundle_revision,
+        digest: &value.digest,
+    }
+}
+
+fn subject_ref(value: &SubjectWire) -> SubjectRef<'_> {
+    SubjectRef {
+        authority: authority_ref(&value.authority),
+        kind: &value.kind,
+        identity: &value.identity,
     }
 }
 
@@ -692,8 +744,6 @@ fn usage(payload: &RecordView) -> Usage {
         &payload.binding_identity,
         &payload.source_identity,
         &payload.schema_identity,
-        &payload.subject_kind,
-        &payload.subject_identity,
         &payload.signal_identity,
         &payload.trigger_identity,
         &payload.unit,
@@ -701,6 +751,16 @@ fn usage(payload: &RecordView) -> Usage {
     ] {
         string_bytes = string_bytes.max(value.len());
     }
+    string_bytes = string_bytes
+        .max(payload.subject.authority.bundle_identity.len())
+        .max(payload.subject.authority.bundle_revision.namespace.len())
+        .max(payload.subject.authority.bundle_revision.value.len())
+        .max(payload.subject.authority.digest.algorithm.len())
+        .max(payload.subject.authority.digest.domain.len())
+        .max(payload.subject.authority.digest.version.len())
+        .max(payload.subject.authority.digest.value.len())
+        .max(payload.subject.kind.len())
+        .max(payload.subject.identity.len());
     Usage {
         depth: 5,
         string_bytes,

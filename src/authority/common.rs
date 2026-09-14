@@ -10,9 +10,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
-use crate::{
-    AdmittedRecord, ClockRange, Digest, Identity, QualifiedObservation, ScopeKind, SubjectKind,
-};
+use crate::{AdmittedRecord, ClockRange, Digest, Identity, QualifiedObservation, ScopeKind};
 
 /// Owner-enforced ceilings that callers may lower but cannot raise.
 pub const OWNER_MAX: Limits = Limits {
@@ -1145,18 +1143,6 @@ fn hex(bytes: &[u8]) -> String {
         write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
     }
     output
-}
-
-pub(crate) fn subject_kind_label(kind: SubjectKind) -> &'static str {
-    match kind {
-        SubjectKind::Order => "order",
-        SubjectKind::Shipment => "shipment",
-        SubjectKind::PaymentAttempt => "payment-attempt",
-        SubjectKind::Refund => "refund",
-        SubjectKind::Delivery => "delivery",
-        SubjectKind::Effect => "effect",
-        SubjectKind::Receipt => "receipt",
-    }
 }
 
 pub(crate) fn scope_identity(kind: ScopeKind) -> String {

@@ -11,18 +11,19 @@ It also publishes nine canonical bounded owner contracts for observation,
 population, position, clock, capture, progress, closure, completeness, and
 result availability. Consumers receive only strict-read validated views.
 
-It accepts a selected `native-linked-package/1` descriptor and FCD 1.2.0-shaped
-semantic data, but it deliberately has no compiler dependency, FCD decoder, or
-telemetry adapter, temporal evaluator, or protocol-result mapper. It does not
-claim production monitor execution, protocol conformance interpretation, or
-evidence-store ownership.
+It accepts a selected `native-linked-package/1` descriptor and consumes the
+constructor-private `AdmittedStaticBundle` from the FCD Producer interface 1.2
+Rust crate pinned at `404288282402d60de007295ccbafa960532b955e`. It deliberately
+has no compiler dependency, FCD decoder, telemetry adapter, temporal evaluator,
+or protocol-result mapper. It does not claim production monitor execution,
+protocol conformance interpretation, or evidence-store ownership.
 
 ## Owner contracts
 
 | Module | Contract | Schema SHA-256 | Public reader |
 | --- | --- | --- | --- |
-| `authority::observation` | `quire.observation.record/v1` | `2922c6ad6bbca53f0800b7bd5159781632aa6ebd1e696567ae5639ec18dea3a3` | `observation::read` |
-| `authority::population` | `quire.observation.population/v1` | `493b4c10701356007d055d351171ee1897de2b7226da03161fa86a9e52e524c2` | `population::read` |
+| `authority::observation` | `quire.observation.record/v2` | `8737683a5971aabcb39bbc5f0842fa1d7c1db5c8f283b8b2544c6364c682f882` | `observation::read` |
+| `authority::population` | `quire.observation.population/v2` | `bceba1a2a69d150af05a7f7bea52769560849fd24a8582cb35b0937eee263c01` | `population::read` |
 | `authority::position` | `quire.observation.position-ledger/v1` | `aac2fd7fc1b129e24afec397900647f3fe8977341b9907662a3852ac5430211a` | `position::read` |
 | `authority::clock` | `quire.observation.clock-binding/v1` | `c9a7b154a2c2d775ba71ba001842e6f0595e123c07b23a2bb37215c1f05de38d` | `clock::read` |
 | `authority::capture` | `quire.observation.capture-environment/v1` | `6d9260d3c4de65b5c3304debdb9baa7816aaea55949839924182d1db4c24c516` | `capture::read` |
@@ -35,6 +36,11 @@ Population admission additionally strict-reads
 `quire.observation.explicit-members/v1` through
 `population::read_membership`; its schema digest is
 `408c9d2908c3660d657cea574f52d8531e9ab749ec78c8d058fe5f163df23cce`.
+
+The immutable record/population v1 schema files remain committed at their
+original digests (`2922c6ad…` and `493b4c10…`). Their active qualified owner
+documents are v2 because FR-287 adds authority, revision, digest-domain and
+opaque-byte members that v1 cannot represent without an in-place schema break.
 
 ## Local checks
 
