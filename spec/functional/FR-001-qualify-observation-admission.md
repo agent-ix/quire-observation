@@ -12,9 +12,9 @@ relationships:
 
 ## Description
 
-When admitting an observation request, the library SHALL retain the selected
-package, producer, binding, source/schema, subject, scope, and resource-limit
-identities, or SHALL return a typed refusal or incomplete outcome.
+When admitting an observation request, the library SHALL return exactly one
+qualified envelope retaining every selected identity or one typed refusal or
+incomplete outcome.
 
 ## Inputs
 
@@ -38,11 +38,13 @@ identities, or SHALL return a typed refusal or incomplete outcome.
 - The library SHALL refuse a source, schema, signal, unit, subject, producer, or
   clock-family substitution.
 - The library SHALL correlate related instances only through supplied typed
-  relationships and SHALL NOT use trace IDs, provider identities, or record
-  attributes as a substitute.
+  relationships.
+- The library SHALL NOT use trace IDs, provider identities, or record attributes
+  as a relationship substitute.
 - The library SHALL match a required relationship only by its exact type and
-  directed endpoints and SHALL NOT traverse or infer transitive, cyclic, or
-  timestamp-based relationships.
+  directed endpoints.
+- The library SHALL NOT traverse or infer transitive, cyclic, or timestamp-based
+  relationships during admission.
 - The library SHALL bind every admitted record to exactly one supplied member
   record identity and compatible anchor in the selected scope.
 - The library SHALL return missing required values, membership, closure, and

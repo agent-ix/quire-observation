@@ -21,14 +21,15 @@ refund, and related-workflow populations.
 2. Generate exact typed relationships for concurrent workflows, a foreign member,
    a missing relationship, and ambiguous/conflicting relationship variants.
 3. Compare repeated receipts, exact effect replay, distinct effects, and duplicate
-   occurrence values under every admitted duplicate policy.
+   occurrence values under `effect-identity-deduplicating` and
+   `occurrence-preserving` policies.
 4. Evaluate filter, count, and exact sum in deterministic exposure order,
    retaining every participating fact identity.
 5. Exercise empty complete populations, two partial refunds matching a captured
    amount, wrong units/representations, arithmetic overflow, and an invalid
    intermediate prefix with an otherwise in-range final mathematical sum.
-6. Repeat with open, unknown, stale, contradicted, incomplete, foreign, and
-   exact/one-over bounded authority.
+6. Repeat with open, unknown, stale, contradicted, incomplete, foreign,
+   receipt-as-effect, undeclared-policy, and exact/one-over bounded authority.
 
 ## Expected Results
 

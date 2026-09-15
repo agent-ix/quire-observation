@@ -57,11 +57,18 @@ closed event-time interval under one selected clock and unit.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-007-AC-1 | Known true, known false, missing, and conflicting inputs retain their exact possibility sets and distinct reasons. | Test (TC-007) |
-| FR-007-AC-2 | Empty or reason-inconsistent possibility sets refuse without an authority fact. | Test (TC-007) |
-| FR-007-AC-3 | Disjoint intervals establish only the order required by their endpoints; overlapping intervals retain every admissible order. | Property Test (TC-007) |
-| FR-007-AC-4 | Reversing an interval or cross-wiring its clock, revision, or unit refuses before comparison. | Test (TC-007) |
-| FR-007-AC-5 | Mutating ingestion order or an interval midpoint cannot change the semantic order relation. | Property Test (TC-007) |
+| FR-007-AC-1 | Known true, known false, missing, and conflicting inputs retain their exact possibility sets and distinct reasons. | unit-testing (TC-007) |
+| FR-007-AC-2 | Empty or reason-inconsistent possibility sets refuse without an authority fact. | unit-testing (TC-007) |
+| FR-007-AC-3 | Disjoint intervals establish only the order required by their endpoints; overlapping intervals retain every admissible order. | property-based-testing (TC-007) |
+| FR-007-AC-4 | Reversing an interval or cross-wiring its clock, revision, or unit refuses before comparison. | unit-testing (TC-007) |
+| FR-007-AC-5 | Mutating ingestion order or an interval midpoint cannot change the semantic order relation. | metamorphic-testing (TC-007) |
+
+## Error Conditions
+
+An empty or reason-inconsistent possibility set, reversed endpoint range,
+cross-clock/revision/unit comparison, unsupported representation, arithmetic
+overflow, or exceeded resource bound returns a typed refusal without a partial
+authority fact.
 
 ## Dependencies
 

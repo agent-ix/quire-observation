@@ -22,9 +22,7 @@ every new C00 collection and expansion path.
    submit exact-effective-limit and one-over inputs.
 3. Inspect every one-over result for its stable resource code, measured usage, and
    absence of a bundle, view, repair plan, aggregate, or retained excess item.
-4. Statically inspect the production paths for bounded iteration/allocation and
-   the absence of recursive or materialized factorial order expansion.
-5. Mutate arrival and presentation order while preserving semantic inputs and
+4. Mutate arrival and presentation order while preserving semantic inputs and
    compare complete outcomes.
 
 ## Expected Results
@@ -32,4 +30,4 @@ every new C00 collection and expansion path.
 Identical semantic inputs always produce byte-identical artifacts and outcomes.
 Exact limits admit, one-over inputs fail before partial retention, and neither
 arrival nor presentation order changes a semantic result. The implementation
-does not enumerate an unbounded set of possible interval orders.
+agrees with TC-013's static inventory of bounded expansion paths.

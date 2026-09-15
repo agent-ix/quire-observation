@@ -31,6 +31,8 @@ batch/incremental/repair parity under revisioned and uncertain event time.
    a semantic total order not established by the interval endpoints.
 6. Exercise unknown nodes, foreign revisions, graph cycles, and exact/one-over
    node, edge, retained-result, possible-order, and output limits.
+7. Inject evaluator refusal, failure, unsupported capability, and resource
+   exhaustion independently and compare unaffected result identities and bytes.
 
 ## Expected Results
 

@@ -29,9 +29,11 @@ request.
 
 - A validated FR-009 bundle revision and exact population/snapshot-or-window,
   membership-rule, completeness, progress, and authority selections.
-- An exact subject kind, root relationship, grouping key, duplicate policy,
-  deterministic exposure order, and one admitted `filter`, `count`, or exact
-  `sum` query plan.
+- An exact subject kind, root relationship, grouping key, deterministic exposure
+  order, and one admitted `filter`, `count`, or exact `sum` query plan.
+- Exactly one duplicate policy: `effect-identity-deduplicating` or
+  `occurrence-preserving`. Transport receipts are never population members under
+  either policy.
 - For `sum`, one exact numeric representation/unit, result domain, zero identity,
   and bounded ordered value projection.
 - Caller-lowered member, arithmetic, byte, and work limits.
@@ -55,10 +57,12 @@ request.
 - The library SHALL preserve duplicate occurrences when the selected query plan
   declares occurrence-preserving semantics.
 - The library SHALL evaluate `filter`, `count`, and `sum` in the declared
-  deterministic exposure order and SHALL retain each participating fact identity.
+  deterministic exposure order.
+- The library SHALL retain each participating fact identity.
 - The library SHALL perform exact checked sum arithmetic in the selected
-  representation and unit and SHALL refuse an invalid intermediate prefix even
-  when a reordered or final mathematical sum would fit.
+  representation and unit.
+- The library SHALL refuse an invalid intermediate prefix even when a reordered
+  or final mathematical sum would fit.
 - When membership, relationship, observation, progress, or closure is open,
   unknown, stale, ambiguous, contradicted, or incomplete, the library SHALL emit
   no partial definitive aggregate.
@@ -71,12 +75,20 @@ request.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-011-AC-1 | A closed selected population includes every and only admitted member once according to its explicit duplicate policy and in deterministic exposure order. | Property Test (TC-011) |
-| FR-011-AC-2 | A member at the half-open window start participates and one at the end does not; adjacent windows never double-count a boundary member. | Property Test (TC-011) |
-| FR-011-AC-3 | Two related partial refunds sum exactly to the captured amount only when both effects, their relationships, and the complete population are authority-qualified. | Test (TC-011) |
-| FR-011-AC-4 | Replayed receipts do not create effects, while distinct admitted effects and occurrence-preserving duplicate values remain distinguishable. | Test (TC-011) |
-| FR-011-AC-5 | Open, unknown, stale, ambiguous, contradicted, incomplete, foreign, or over-bound authority produces no partial definitive aggregate. | Property Test (TC-011) |
-| FR-011-AC-6 | Exact sum rejects wrong representation/unit, overflow, and an invalid intermediate prefix without reordering operands. | Property Test (TC-011) |
+| FR-011-AC-1 | A closed selected population includes every and only admitted member once according to its explicit duplicate policy and in deterministic exposure order. | property-based-testing (TC-011) |
+| FR-011-AC-2 | A member at the half-open window start participates and one at the end does not; adjacent windows never double-count a boundary member. | property-based-testing (TC-011) |
+| FR-011-AC-3 | Two related partial refunds sum exactly to the captured amount only when both effects, their relationships, and the complete population are authority-qualified. | unit-testing (TC-011) |
+| FR-011-AC-4 | Replayed receipts do not create effects, while distinct admitted effects and occurrence-preserving duplicate values remain distinguishable. | unit-testing (TC-011) |
+| FR-011-AC-5 | Open, unknown, stale, ambiguous, contradicted, incomplete, foreign, or over-bound authority produces no partial definitive aggregate. | property-based-testing (TC-011) |
+| FR-011-AC-6 | Exact sum rejects wrong representation/unit, overflow, and an invalid intermediate prefix without reordering operands. | property-based-testing (TC-011) |
+
+## Error Conditions
+
+Open, unknown, stale, ambiguous, contradicted, or incomplete authority returns a
+typed incomplete outcome. A foreign identity, undeclared duplicate policy,
+receipt-as-effect substitution, representation/unit mismatch, arithmetic
+overflow or invalid prefix, malformed query, or one-over resource input returns
+a typed refusal. Neither outcome contains a definitive aggregate.
 
 ## Dependencies
 

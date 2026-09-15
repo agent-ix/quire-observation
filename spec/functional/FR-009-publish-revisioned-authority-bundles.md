@@ -33,11 +33,16 @@ relations.
 - A positive revision and, after the initial revision, the exact direct
   predecessor bundle identity plus a nonempty set of declared replacement
   relations.
+- For a later revision, one strict-read bounded lineage view identifying the
+  selected authority/scope's current head and every already-issued direct child
+  of that head.
 
 ## Outputs
 
 - Canonical bundle bytes, a content-derived bundle identity, and a constructor-
   private validated read view.
+- A canonical successor lineage view derived from the accepted prior view and
+  new bundle.
 - A typed refusal without a partial bundle or view for invalid contract,
   authority, scope, revision, lineage, component, encoding, or bounds.
 
@@ -51,6 +56,10 @@ relations.
 - The library SHALL require revision one to omit a predecessor and replacements.
 - The library SHALL require every later revision to increase the predecessor's
   revision and to name that exact predecessor bundle.
+- The library SHALL require a later revision's predecessor to equal the current
+  head in the supplied strict-read lineage view.
+- The library SHALL refuse a successor when the supplied lineage view already
+  records a different direct child for the same predecessor.
 - The library SHALL require each replacement to name one prior fact and one new
   fact of the same semantic role and authority-qualified subject.
 - The library SHALL preserve prior bundle bytes.
@@ -65,11 +74,20 @@ relations.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-009-AC-1 | Repeated derivation from the same complete inputs produces byte-identical bundle bytes and identity. | Property Test (TC-009) |
-| FR-009-AC-2 | A valid later revision names its exact predecessor and replacements while prior bytes remain unchanged. | Test (TC-009) |
-| FR-009-AC-3 | Missing, stale, branching, cross-authority, cross-role, or self-referential lineage refuses without a bundle. | Test (TC-009) |
-| FR-009-AC-4 | Exact replay is idempotent; reusing one authority/scope/revision key for unequal bytes is an identity contradiction. | Property Test (TC-009) |
-| FR-009-AC-5 | Omitting, duplicating, cross-wiring, or exceeding a component bound refuses before a validated view exists. | Test (TC-009) |
+| FR-009-AC-1 | Repeated derivation from the same complete inputs produces byte-identical bundle bytes and identity. | property-based-testing (TC-009) |
+| FR-009-AC-2 | A valid later revision names its exact predecessor and replacements while prior bytes remain unchanged. | unit-testing (TC-009) |
+| FR-009-AC-3 | Missing, stale, cross-authority, cross-role, self-referential, or already-branched supplied lineage refuses without a bundle. | unit-testing (TC-009) |
+| FR-009-AC-4 | Exact replay is idempotent; reusing one authority/scope/revision key for unequal bytes is an identity contradiction. | property-based-testing (TC-009) |
+| FR-009-AC-5 | Omitting, duplicating, cross-wiring, or exceeding a component bound refuses before a validated view exists. | unit-testing (TC-009) |
+
+## Error Conditions
+
+An invalid initial revision, non-increasing revision, missing or stale current
+head, known sibling successor, self-link, cross-authority/scope/role replacement,
+same-key unequal replay, malformed component, or one-over bound returns a typed
+refusal without bundle or successor-lineage output. Concurrent publication needs
+an external compare-and-swap store; this pure library validates only the exact
+lineage view supplied to the call.
 
 ## Dependencies
 

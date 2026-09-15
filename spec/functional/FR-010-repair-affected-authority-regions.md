@@ -53,7 +53,8 @@ or incremental recomputation for only that region.
 - The library SHALL retain byte-identical identities and result bytes for every
   unaffected result.
 - The library SHALL order recomputation canonically by scope, window, and result
-  identity for scheduling only; this order SHALL NOT establish event causality.
+  identity for scheduling only.
+- The scheduling order SHALL NOT establish event causality.
 - The library SHALL pass exact event-time intervals and every admissible interval
   order to the selected evaluator without using ingestion order.
 - The incremental coordinator SHALL expose a settled prefix as soon as a selected
@@ -67,17 +68,27 @@ or incremental recomputation for only that region.
 - The library SHALL preserve incomplete, pending, indeterminate, unsupported,
   refused, failed, and exhausted outcomes without promoting one to a settled
   Boolean result.
+- When a selected evaluator refuses, fails, is unsupported, or exhausts its
+  budget, the library SHALL retain that item-local outcome without emitting a
+  replacement result or changing unaffected result bytes.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-010-AC-1 | A replacement invalidates every and only explicit dependent results whose scopes/windows can observe it. | Property Test (TC-010) |
-| FR-010-AC-2 | Unaffected results retain byte-identical identities and bytes across repair. | Property Test (TC-010) |
-| FR-010-AC-3 | Batch replay and incremental repair agree exactly on settled result axes, decision-support identities, and old/new lineage for identical inputs. | Property Test (TC-010) |
-| FR-010-AC-4 | A decisive prefix is emitted before end-of-input, while an unresolved prefix remains non-settled until a decisive witness, decisive counterexample, or matching closure exists. | Test (TC-010) |
-| FR-010-AC-5 | Out-of-order arrival and overlapping event-time intervals never become a total semantic order; every admissible order reaches the evaluator. | Property Test (TC-010) |
-| FR-010-AC-6 | Cycles, unknown dependency identities, foreign revisions, and one-over work/state bounds return their typed outcomes without a partial repair plan or promoted result. | Test (TC-010) |
+| FR-010-AC-1 | A replacement invalidates every and only explicit dependent results whose scopes/windows can observe it. | property-based-testing (TC-010) |
+| FR-010-AC-2 | Unaffected results retain byte-identical identities and bytes across repair. | property-based-testing (TC-010) |
+| FR-010-AC-3 | Batch replay and incremental repair agree exactly on settled result axes, decision-support identities, and old/new lineage for identical inputs. | property-based-testing (TC-010) |
+| FR-010-AC-4 | A decisive prefix is emitted before end-of-input, while an unresolved prefix remains non-settled until a decisive witness, decisive counterexample, or matching closure exists. | unit-testing (TC-010) |
+| FR-010-AC-5 | Out-of-order arrival and overlapping event-time intervals never become a total semantic order; every admissible order reaches the evaluator. | property-based-testing (TC-010) |
+| FR-010-AC-6 | Cycles, unknown dependency identities, foreign revisions, and one-over work/state bounds return their typed outcomes without a partial repair plan or promoted result. | unit-testing (TC-010) |
+
+## Error Conditions
+
+An invalid replacement, unknown or foreign dependency identity, contradictory
+scope/window, malformed cycle edge, exceeded node/edge/state/work limit, or
+evaluator refusal/failure/unsupported/exhausted response returns its typed code.
+No such path emits a partial repair plan or replacement result.
 
 ## Dependencies
 

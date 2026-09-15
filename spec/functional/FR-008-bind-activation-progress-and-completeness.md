@@ -20,10 +20,10 @@ relationships:
 
 ## Description
 
-When constructing assessment authority for an obligation, the library SHALL bind
-an immutable activation capture and SHALL preserve activation, progress, closure,
-completeness, lateness, verdict contribution, and settlement contribution as
-independent typed facts.
+When constructing assessment authority for an obligation, the library SHALL
+produce a record that binds one immutable activation capture and represents
+activation, progress, closure, completeness, lateness, verdict contribution, and
+settlement contribution as independent typed facts.
 
 ## Inputs
 
@@ -70,12 +70,20 @@ independent typed facts.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-008-AC-1 | Equal captured values under distinct triggers create distinct activation identities and retain their original observation provenance. | Test (TC-008) |
-| FR-008-AC-2 | Inactive, active, and activation-unknown remain independent of verdict and settlement; no omitted axis is inferred from another. | Property Test (TC-008) |
-| FR-008-AC-3 | Silence covers a deadline only when the matching progress interval is definitely beyond it and covers every required source. | Test (TC-008) |
-| FR-008-AC-4 | Overlapping progress/deadline intervals, missing sources, open closure, and incomplete or contradicted evidence remain distinct non-conclusive facts. | Property Test (TC-008) |
-| FR-008-AC-5 | Definitely timely, definitely late, and uncertain-lateness outcomes follow interval endpoints and never ingestion order. | Property Test (TC-008) |
-| FR-008-AC-6 | Any foreign or cross-wired scope authority refuses without changing an unaffected axis or emitting a fallback result. | Test (TC-008) |
+| FR-008-AC-1 | Equal captured values under distinct triggers create distinct activation identities and retain their original observation provenance. | unit-testing (TC-008) |
+| FR-008-AC-2 | Inactive, active, and activation-unknown remain independent of verdict and settlement; no omitted axis is inferred from another. | property-based-testing (TC-008) |
+| FR-008-AC-3 | Silence covers a deadline only when the matching progress interval is definitely beyond it and covers every required source. | unit-testing (TC-008) |
+| FR-008-AC-4 | Overlapping progress/deadline intervals, missing sources, open closure, and incomplete or contradicted evidence remain distinct non-conclusive facts. | property-based-testing (TC-008) |
+| FR-008-AC-5 | Definitely timely, definitely late, and uncertain-lateness outcomes follow interval endpoints and never ingestion order. | property-based-testing (TC-008) |
+| FR-008-AC-6 | Any foreign or cross-wired scope authority refuses without changing an unaffected axis or emitting a fallback result. | unit-testing (TC-008) |
+
+## Error Conditions
+
+An empty or duplicate capture, unknown activation state, invalid interval,
+missing required source, foreign population/window/clock, mismatched authority
+revision, cross-wired contribution support, or exceeded limit returns a typed
+incomplete or refusal code. No error path emits a partially validated assessment
+record.
 
 ## Dependencies
 

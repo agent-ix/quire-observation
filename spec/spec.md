@@ -10,6 +10,7 @@ tags:
   - OB01
   - OB02
   - OB03
+  - C00
 depends_on: []
 standards_alignment:
   - iso-iec-ieee-29148
