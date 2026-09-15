@@ -185,7 +185,148 @@ fn partial_selection(record: &AdmittedRecord) -> authority::partial::Selection {
     )
 }
 
+fn activation_interval(earliest: i128, latest: i128) -> authority::partial::EventTimeInterval {
+    authority::partial::EventTimeInterval::new(
+        id("clock:event-time"),
+        id("1"),
+        id("USD"),
+        earliest,
+        latest,
+        Limits::owner_max(),
+    )
+    .expect("valid activation interval")
+}
+
+fn activation_selection(
+    record: &AdmittedRecord,
+    proofs: authority::activation::AuthorityProofs,
+) -> authority::activation::Selection {
+    authority::activation::Selection::new(
+        authority::activation::ActivationSelection::new(
+            id("obligation:refund"),
+            record.identity.clone(),
+            activation_interval(8, 12),
+            vec![authority::activation::Capture::new(
+                id("capture:refund-amount"),
+                record.identity.clone(),
+                id("decimal"),
+                "12.00".to_owned(),
+                id("source:payments"),
+            )],
+            authority::activation::ActivationState::Active,
+        ),
+        authority::activation::ProgressSelection::new(
+            activation_interval(0, 29),
+            activation_interval(30, 30),
+        ),
+        activation_interval(8, 12),
+        activation_interval(10, 20),
+        proofs,
+    )
+}
+
+fn capture_selection(record: &AdmittedRecord) -> authority::capture::Selection {
+    authority::capture::Selection::new(
+        id("trigger:refund-request"),
+        Anchor::TimestampNanos(10),
+        vec![authority::capture::Binding::new(
+            id("capture:refund-amount"),
+            id("binding:refund"),
+            record.identity.clone(),
+        )],
+    )
+}
+
+fn progress_authority_selection() -> authority::progress::Selection {
+    authority::progress::Selection::new(
+        authority::clock::Selection::new(id("clock:event-time"), id("1")),
+        vec![id("source:payments")],
+        boundary(OpenClosed::Closed),
+        OpenClosed::Closed,
+        id("trigger:refund-request"),
+        cutoff(40),
+        id("restoration:O1"),
+    )
+}
+
+fn closure_selection() -> authority::closure::Selection {
+    authority::closure::Selection::new(
+        id("clock:event-time"),
+        id("1"),
+        vec![id("source:payments")],
+        boundary(OpenClosed::Closed),
+        OpenClosed::Closed,
+    )
+}
+
+fn completeness_selection(record: &AdmittedRecord) -> authority::completeness::Selection {
+    authority::completeness::Selection::new(
+        id("boundary:O1"),
+        vec![authority::completeness::Fact::new(
+            id("member:O1"),
+            Some(record.identity.clone()),
+            authority::completeness::FactStatus::Available,
+        )],
+    )
+}
+
+fn activation_proofs(
+    context: Context<'_>,
+    record: &AdmittedRecord,
+    limits: Limits,
+) -> authority::activation::AuthorityProofs {
+    let capture_selection = capture_selection(record);
+    let capture_document = authority::capture::derive(context, &capture_selection, limits)
+        .expect("derive capture proof");
+    let capture = authority::capture::read(
+        capture_document.bytes(),
+        context,
+        &capture_selection,
+        limits,
+    )
+    .expect("strict-read capture proof");
+    let progress_selection = progress_authority_selection();
+    let progress_document = authority::progress::derive(context, &progress_selection, limits)
+        .expect("derive progress proof");
+    let progress = authority::progress::read(
+        progress_document.bytes(),
+        context,
+        &progress_selection,
+        limits,
+    )
+    .expect("strict-read progress proof");
+    let closure_selection = closure_selection();
+    let closure_document = authority::closure::derive(context, &closure_selection, limits)
+        .expect("derive closure proof");
+    let closure = authority::closure::read(
+        closure_document.bytes(),
+        context,
+        &closure_selection,
+        limits,
+    )
+    .expect("strict-read closure proof");
+    let completeness_selection = completeness_selection(record);
+    let completeness_document =
+        authority::completeness::derive(context, &completeness_selection, limits)
+            .expect("derive completeness proof");
+    let completeness = authority::completeness::read(
+        completeness_document.bytes(),
+        context,
+        &completeness_selection,
+        limits,
+    )
+    .expect("strict-read completeness proof");
+    authority::activation::AuthorityProofs::new(
+        &capture,
+        Some(&progress),
+        Some(&closure),
+        Some(&completeness),
+    )
+    .expect("compose strict-read activation proofs")
+}
+
 struct Documents {
+    activation: authority::Document,
     observation: authority::Document,
     population: authority::Document,
     position: authority::Document,
@@ -200,6 +341,7 @@ struct Documents {
 
 #[derive(Clone, Copy)]
 enum ArtifactKind {
+    Activation,
     Observation,
     Population,
     Position,
@@ -220,7 +362,14 @@ fn derive_all(
     let limits = Limits::owner_max();
     let context = Context::new(history, owner, subject, 1, None);
     let record = &history.qualified().records()[0];
+    let proofs = activation_proofs(context, record, limits);
     Documents {
+        activation: authority::activation::derive(
+            context,
+            &activation_selection(record, proofs),
+            limits,
+        )
+        .expect("derive activation authority"),
         observation: authority::observation::derive(
             context,
             &authority::observation::Selection::new(record.identity.clone(), cutoff(40)),
@@ -250,56 +399,15 @@ fn derive_all(
         .expect("derive clock"),
         partial: authority::partial::derive(context, &partial_selection(record), limits)
             .expect("derive partial fact"),
-        capture: authority::capture::derive(
-            context,
-            &authority::capture::Selection::new(
-                id("trigger:refund-request"),
-                Anchor::TimestampNanos(10),
-                vec![authority::capture::Binding::new(
-                    id("capture:refund-amount"),
-                    id("binding:refund"),
-                    record.identity.clone(),
-                )],
-            ),
-            limits,
-        )
-        .expect("derive capture"),
-        progress: authority::progress::derive(
-            context,
-            &authority::progress::Selection::new(
-                authority::clock::Selection::new(id("clock:event-time"), id("1")),
-                vec![id("source:payments")],
-                boundary(OpenClosed::Closed),
-                OpenClosed::Closed,
-                id("trigger:refund-request"),
-                cutoff(40),
-                id("restoration:O1"),
-            ),
-            limits,
-        )
-        .expect("derive progress"),
-        closure: authority::closure::derive(
-            context,
-            &authority::closure::Selection::new(
-                id("clock:event-time"),
-                id("1"),
-                vec![id("source:payments")],
-                boundary(OpenClosed::Closed),
-                OpenClosed::Closed,
-            ),
-            limits,
-        )
-        .expect("derive closure"),
+        capture: authority::capture::derive(context, &capture_selection(record), limits)
+            .expect("derive capture"),
+        progress: authority::progress::derive(context, &progress_authority_selection(), limits)
+            .expect("derive progress"),
+        closure: authority::closure::derive(context, &closure_selection(), limits)
+            .expect("derive closure"),
         completeness: authority::completeness::derive(
             context,
-            &authority::completeness::Selection::new(
-                id("boundary:O1"),
-                vec![authority::completeness::Fact::new(
-                    id("member:O1"),
-                    Some(record.identity.clone()),
-                    authority::completeness::FactStatus::Available,
-                )],
-            ),
+            &completeness_selection(record),
             limits,
         )
         .expect("derive completeness"),
@@ -328,6 +436,16 @@ fn reader_accepts(
     let record = &qualified.records()[0];
     let limits = Limits::owner_max();
     match kind {
+        ArtifactKind::Activation => {
+            let proofs = activation_proofs(context, record, limits);
+            authority::activation::read(
+                bytes,
+                context,
+                &activation_selection(record, proofs),
+                limits,
+            )
+            .is_ok()
+        }
         ArtifactKind::Observation => authority::observation::read(
             bytes,
             context,
@@ -508,7 +626,7 @@ fn replace_once(bytes: &[u8], from: &[u8], to: &[u8]) -> Vec<u8> {
 
 #[trace("TC-004", "FR-004-AC-1")]
 #[test]
-fn tc004_all_ten_owner_contracts_derive_canonical_documents() {
+fn tc004_all_eleven_owner_contracts_derive_canonical_documents() {
     let qualified = qualified();
     let owner = owner();
     let subject = subject(&qualified);
@@ -518,6 +636,7 @@ fn tc004_all_ten_owner_contracts_derive_canonical_documents() {
         "sha256-jcs:51daded8bd0ade3b3ce5addc3e5e58318cf661dad0e3f80b8a58be1e33eb5ccb"
     );
     let contracts = [
+        documents.activation.contract(),
         documents.observation.contract(),
         documents.population.contract(),
         documents.position.contract(),
@@ -529,11 +648,12 @@ fn tc004_all_ten_owner_contracts_derive_canonical_documents() {
         documents.completeness.contract(),
         documents.availability.contract(),
     ];
-    assert_eq!(contracts.len(), 10);
+    assert_eq!(contracts.len(), 11);
     assert!(contracts
         .iter()
         .all(|contract| contract.starts_with("quire.observation.")));
     for document in [
+        &documents.activation,
         &documents.observation,
         &documents.population,
         &documents.position,
@@ -554,7 +674,7 @@ fn tc004_all_ten_owner_contracts_derive_canonical_documents() {
 #[test]
 fn tc004_error_code_catalog_is_closed_and_round_trips_exactly() {
     let codes = authority::ErrorCode::all();
-    assert_eq!(codes.len(), 14);
+    assert_eq!(codes.len(), 18);
     let mut labels = codes
         .iter()
         .map(|code| {
@@ -975,6 +1095,7 @@ fn tc004_every_required_field_is_missing_duplicate_and_order_strict() {
     let subject = subject(&qualified);
     let documents = derive_all(History::batch(&qualified), &owner, &subject);
     let artifacts = [
+        (ArtifactKind::Activation, &documents.activation),
         (ArtifactKind::Observation, &documents.observation),
         (ArtifactKind::Population, &documents.population),
         (ArtifactKind::Position, &documents.position),
@@ -1105,6 +1226,14 @@ fn tc004_independent_state_vocabularies_reject_cross_coercion() {
     let documents = derive_all(History::batch(&qualified), &owner, &subject);
     let mutations = [
         (
+            ArtifactKind::Activation,
+            replace_once(
+                documents.activation.bytes(),
+                b"\"activation\":\"active\"",
+                b"\"activation\":\"complete\"",
+            ),
+        ),
+        (
             ArtifactKind::Observation,
             replace_once(
                 documents.observation.bytes(),
@@ -1167,6 +1296,7 @@ fn tc004_batch_and_incremental_history_are_byte_identical() {
         &owner,
         &subject,
     );
+    assert_eq!(batch.activation.bytes(), incremental.activation.bytes());
     assert_eq!(batch.observation.bytes(), incremental.observation.bytes());
     assert_eq!(batch.population.bytes(), incremental.population.bytes());
     assert_eq!(batch.position.bytes(), incremental.position.bytes());

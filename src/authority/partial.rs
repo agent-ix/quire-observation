@@ -172,7 +172,7 @@ impl EventTimeInterval {
         })
     }
 
-    fn validate_limits(&self, limits: Limits) -> Result<()> {
+    pub(crate) fn validate_limits(&self, limits: Limits) -> Result<()> {
         let string_bytes = self
             .clock_identity
             .as_str()

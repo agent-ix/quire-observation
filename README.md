@@ -7,10 +7,10 @@ The library admits records only when their selected package, producer,
 binding, source/schema, subject, relationship, population/window, clock range,
 and resource limits are explicit and compatible. It returns `Available`,
 `Incomplete`, or `Refused`; it never treats absent evidence as Boolean false.
-It also publishes ten canonical bounded owner contracts for observation,
-population, position, clock, partial values, capture, progress, closure,
-completeness, and result availability. Consumers receive only strict-read
-validated views.
+It also publishes eleven canonical bounded owner contracts for activation,
+observation, population, position, clock, partial values, capture, progress,
+closure, completeness, and result availability. Consumers receive only
+strict-read validated views.
 
 It accepts a selected `native-linked-package/1` descriptor and consumes the
 constructor-private `AdmittedStaticBundle` from the FCD Producer interface 1.2
@@ -23,6 +23,7 @@ protocol conformance interpretation, or evidence-store ownership.
 
 | Module | Contract | Schema SHA-256 | Public reader |
 | --- | --- | --- | --- |
+| `authority::activation` | `quire.observation.activation-scope-authority/v1` | `6d8b3b41a7fdc9b7d4dba085809b396bc41e41c89f9c512ff1580108d43663e8` | `activation::read` |
 | `authority::observation` | `quire.observation.record/v2` | `8737683a5971aabcb39bbc5f0842fa1d7c1db5c8f283b8b2544c6364c682f882` | `observation::read` |
 | `authority::population` | `quire.observation.population/v2` | `bceba1a2a69d150af05a7f7bea52769560849fd24a8582cb35b0937eee263c01` | `population::read` |
 | `authority::position` | `quire.observation.position-ledger/v1` | `aac2fd7fc1b129e24afec397900647f3fe8977341b9907662a3852ac5430211a` | `position::read` |

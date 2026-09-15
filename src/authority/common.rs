@@ -134,6 +134,14 @@ pub enum ErrorCode {
     ContractMismatch,
     /// A document or selection differs from independently supplied authority.
     ExpectedMismatch,
+    /// A required observation-authority premise is absent.
+    MissingPremise,
+    /// Activation capture authority is incomplete or cross-wired.
+    CaptureMismatch,
+    /// Evaluator contribution support is absent or cross-wired.
+    SupportMismatch,
+    /// A strict-read owner identity, subject, clock, or revision is cross-wired.
+    AuthorityMismatch,
     /// Multiple observations claim one declared order position.
     AmbiguousOrder,
     /// A Boolean possibility set is empty or inconsistent with its reason.
@@ -145,7 +153,7 @@ pub enum ErrorCode {
 }
 
 impl ErrorCode {
-    const ALL: [Self; 14] = [
+    const ALL: [Self; 18] = [
         Self::InvalidSelection,
         Self::IdentityMismatch,
         Self::RevisionMismatch,
@@ -156,6 +164,10 @@ impl ErrorCode {
         Self::NonCanonical,
         Self::ContractMismatch,
         Self::ExpectedMismatch,
+        Self::MissingPremise,
+        Self::CaptureMismatch,
+        Self::SupportMismatch,
+        Self::AuthorityMismatch,
         Self::AmbiguousOrder,
         Self::InvalidPossibilitySet,
         Self::InvalidInterval,
@@ -191,6 +203,10 @@ impl ErrorCode {
             Self::NonCanonical => "QOBS-AUTH-NONCANONICAL",
             Self::ContractMismatch => "QOBS-AUTH-CONTRACT-MISMATCH",
             Self::ExpectedMismatch => "QOBS-AUTH-EXPECTED-MISMATCH",
+            Self::MissingPremise => "QOBS-AUTH-MISSING-PREMISE",
+            Self::CaptureMismatch => "QOBS-AUTH-CAPTURE-MISMATCH",
+            Self::SupportMismatch => "QOBS-AUTH-SUPPORT-MISMATCH",
+            Self::AuthorityMismatch => "QOBS-AUTH-AUTHORITY-MISMATCH",
             Self::AmbiguousOrder => "QOBS-AUTH-AMBIGUOUS-ORDER",
             Self::InvalidPossibilitySet => "QOBS-AUTH-INVALID-POSSIBILITY-SET",
             Self::InvalidInterval => "QOBS-AUTH-INVALID-INTERVAL",
@@ -647,6 +663,12 @@ impl<'a> Context<'a> {
     #[must_use]
     pub const fn subject(self) -> &'a SubjectSelection {
         self.subject
+    }
+
+    /// Returns the exact owner-document revision being derived.
+    #[must_use]
+    pub const fn revision(self) -> u64 {
+        self.revision
     }
 }
 

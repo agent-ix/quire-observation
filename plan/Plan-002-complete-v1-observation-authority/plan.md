@@ -29,7 +29,7 @@ selected temporal and protocol evaluators retain their own semantics.
 ### Functional Requirements
 
 - [x] **FR-007**: preserve coherent partial values and exact interval-order uncertainty.
-- [ ] **FR-008**: bind immutable activation capture and independent scope-authority axes.
+- [x] **FR-008**: bind immutable activation capture and independent scope-authority axes.
 - [ ] **FR-009**: publish canonical revisioned I07 bundles and strict lineage views.
 - [ ] **FR-010**: derive bounded affected regions and coordinate replay/incremental parity.
 - [ ] **FR-011**: evaluate exact filter/count/sum queries over closed qualified populations.
@@ -78,7 +78,7 @@ integration test and uses pinned strict readers rather than copied producer sema
 
 - [x] **TC-007**: coherent value sets, exact interval relations, cross-wire refusals and
   presentation-order metamorphisms for FR-007-AC-1 through FR-007-AC-5.
-- [ ] **TC-008**: activation identity, immutable captures, independent state products,
+- [x] **TC-008**: activation identity, immutable captures, independent state products,
   silence coverage and lateness for FR-008-AC-1 through FR-008-AC-6.
 - [ ] **TC-009**: canonical revision bytes, predecessor/replacement lineage, replay,
   stale/branched views and strict-reader mutations for FR-009-AC-1 through FR-009-AC-5.
@@ -141,7 +141,7 @@ Task-016 -> Task-017 -> Task-018 -> Task-019 -> Task-020 --\
 | Task | Track | Owns (references) | Verified by (verifies) | Status |
 | --- | --- | --- | --- | --- |
 | Task-016 | A | FR-007, NFR-003 | TC-007, TC-012 | done |
-| Task-017 | A | FR-008, NFR-003 | TC-008, TC-012 | not_started |
+| Task-017 | A | FR-008, NFR-003 | TC-008, TC-012 | done |
 | Task-018 | A | FR-009, NFR-003 | TC-009, TC-012 | not_started |
 | Task-019 | A | FR-010, NFR-003 | TC-010, TC-012 | not_started |
 | Task-020 | A | FR-010 | TC-010 | not_started |

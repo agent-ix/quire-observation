@@ -9,6 +9,7 @@
 
 mod common;
 
+pub mod activation;
 pub mod availability;
 pub mod capture;
 pub mod clock;

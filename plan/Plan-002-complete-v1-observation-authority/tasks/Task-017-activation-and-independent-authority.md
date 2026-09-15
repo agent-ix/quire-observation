@@ -2,7 +2,7 @@
 id: Task-017
 title: "FR-008 — activation and independent scope authority"
 type: Task
-status: not_started
+status: done
 track: A
 priority: P0
 relationships:
@@ -26,11 +26,11 @@ completeness, lateness, verdict contribution and settlement contribution remain 
 
 ## Subtasks
 
-- [ ] Write the TC-008 state-product, silence-boundary and cross-wire failures first.
-- [ ] Derive activation identity from trigger, interval and canonical complete capture set.
-- [ ] Preserve original captured values/provenance across later observations.
-- [ ] Implement exact progress coverage and three-way lateness from interval relations.
-- [ ] Refuse foreign authority without changing any unaffected axis or emitting fallback.
+- [x] Write the TC-008 state-product, silence-boundary and cross-wire failures first.
+- [x] Derive activation identity from trigger, interval and canonical complete capture set.
+- [x] Preserve original captured values/provenance across later observations.
+- [x] Implement exact progress coverage and three-way lateness from interval relations.
+- [x] Refuse foreign authority without changing any unaffected axis or emitting fallback.
 
 ## Deliverables
 

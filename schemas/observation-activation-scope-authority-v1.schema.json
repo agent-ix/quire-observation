@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "urn:agent-ix:quire-observation:activation-scope-authority:1",
+  "title": "Observation activation and scope authority v1", "type": "object", "additionalProperties": false,
+  "required": ["contract", "identity", "revision", "authority", "subject", "payload", "predecessor", "limits"],
+  "properties": {
+    "contract": {"const": "quire.observation.activation-scope-authority/v1"}, "identity": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "revision": {"type": "integer", "minimum": 1}, "authority": {"$ref": "observation-record-v1.schema.json#/$defs/authority"}, "subject": {"$ref": "observation-record-v1.schema.json#/$defs/subject"},
+    "payload": {"type": "object", "additionalProperties": false, "required": ["activation_identity", "obligation_identity", "trigger_observation_identity", "activation_interval", "captures", "capture_authority", "activation", "deadline_interval", "progress_interval", "required_sources", "covered_sources", "progress", "silence", "progress_authority", "closure", "closure_authority", "evidence", "completeness_authority", "event_interval", "cutoff_interval", "lateness", "verdict", "settlement"], "properties": {
+      "activation_identity": {"type": "string", "pattern": "^sha256-jcs:[0-9a-f]{64}$"}, "obligation_identity": {"type": "string", "minLength": 1}, "trigger_observation_identity": {"type": "string", "minLength": 1},
+      "activation_interval": {"$ref": "#/$defs/interval"}, "captures": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/capture"}}, "capture_authority": {"$ref": "#/$defs/proof"}, "activation": {"enum": ["inactive", "active", "unknown"]},
+      "deadline_interval": {"$ref": "#/$defs/interval"}, "progress_interval": {"$ref": "#/$defs/interval"}, "required_sources": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "covered_sources": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+      "progress": {"enum": ["open", "closed", "incomplete"]}, "silence": {"$ref": "#/$defs/silence"}, "progress_authority": {"$ref": "#/$defs/optionalProof"}, "closure": {"enum": ["open", "closed", "incomplete"]}, "closure_authority": {"$ref": "#/$defs/optionalProof"}, "evidence": {"enum": ["complete", "incomplete", "contradicted"]}, "completeness_authority": {"$ref": "#/$defs/optionalProof"},
+      "event_interval": {"$ref": "#/$defs/interval"}, "cutoff_interval": {"$ref": "#/$defs/interval"}, "lateness": {"enum": ["definitely-timely", "definitely-late", "uncertain"]}, "verdict": {"$ref": "#/$defs/optionalContribution"}, "settlement": {"$ref": "#/$defs/optionalContribution"}
+    }},
+    "predecessor": {"$ref": "observation-record-v1.schema.json#/$defs/predecessor"}, "limits": {"$ref": "observation-record-v1.schema.json#/$defs/limits"}
+  },
+  "$defs": {
+    "interval": {"type": "object", "additionalProperties": false, "required": ["clock_identity", "clock_revision", "unit", "earliest", "latest"], "properties": {"clock_identity": {"type": "string", "minLength": 1}, "clock_revision": {"type": "string", "minLength": 1}, "unit": {"type": "string", "minLength": 1}, "earliest": {"$ref": "observation-record-v1.schema.json#/$defs/integerText"}, "latest": {"$ref": "observation-record-v1.schema.json#/$defs/integerText"}}},
+    "capture": {"type": "object", "additionalProperties": false, "required": ["identity", "source_observation_identity", "value_type", "canonical_value", "provenance_identity"], "properties": {"identity": {"type": "string", "minLength": 1}, "source_observation_identity": {"type": "string", "minLength": 1}, "value_type": {"type": "string", "minLength": 1}, "canonical_value": {"type": "string"}, "provenance_identity": {"type": "string", "minLength": 1}}},
+    "silence": {"oneOf": [{"type": "object", "additionalProperties": false, "required": ["state"], "properties": {"state": {"const": "covered"}}}, {"type": "object", "additionalProperties": false, "required": ["state", "reasons"], "properties": {"state": {"const": "incomplete"}, "reasons": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["progress-not-definitely-beyond", "missing-required-source", "missing-progress-authority"]}}}}]},
+    "proof": {"type": "object", "additionalProperties": false, "required": ["document_identity", "revision"], "properties": {"document_identity": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "revision": {"type": "integer", "minimum": 1}}},
+    "optionalProof": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/proof"}]},
+    "contribution": {"type": "object", "additionalProperties": false, "required": ["identity", "support"], "properties": {"identity": {"type": "string", "minLength": 1}, "support": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}}},
+    "optionalContribution": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/contribution"}]}
+  }
+}
