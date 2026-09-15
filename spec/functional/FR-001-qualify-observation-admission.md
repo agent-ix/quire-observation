@@ -6,7 +6,7 @@ relationships:
   - target: "ix://agent-ix/quire-observation/US-001"
     type: "implements"
   - target: "ix://agent-ix/quire-observation/FR-005"
-    type: "refined-by"
+    type: "references"
 ---
 # FR-001: Qualify observation admission without ambient inference
 

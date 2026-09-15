@@ -10,15 +10,18 @@ relationships: []
 
 **As a** native Quire assessment consumer
 **I want** observations to arrive with their selected identities, scope, and
-availability status
-**So that** I can assess an obligation without treating missing or unrelated
-telemetry as evidence.
+availability status, including uncertainty and revision lineage
+**So that** I can assess and repair an obligation without treating missing,
+unrelated, late, or ambiguously timed telemetry as definitive evidence.
 
 ## Context
 
 Orders, shipments, payment attempts, and refunds may share provider or trace
 infrastructure but remain different business subjects. A finite assessment also
-needs explicit population, window, clock, progress, and closure premises.
+needs explicit population, window, clock, progress, and closure premises. A
+consumer must be able to settle a decisive prefix, revise only affected work when
+authority changes, and query a complete related-workflow population without
+silently using arrival order or an open population.
 
 ## Acceptance Examples (Illustrative)
 
@@ -33,6 +36,21 @@ needs explicit population, window, clock, progress, and closure premises.
 - **Given** a required provider effect is unavailable for a selected scope
 - **When** the consumer submits the assessment request
 - **Then** it receives an explicit incomplete outcome rather than a false value.
+
+### US-001-EX-3: Revisioned late observation
+
+- **Given** a settled result and a later authority revision that replaces one
+  supporting observation
+- **When** the consumer requests a repair plan
+- **Then** the prior authority remains immutable, only dependent results are
+  invalidated, and the replacement retains explicit old/new lineage.
+
+### US-001-EX-4: Closed related-refund aggregate
+
+- **Given** a complete authority-qualified refund population for one order
+- **When** the consumer requests the declared exact sum
+- **Then** every and only related refund effect participates once, while an open,
+  stale, foreign, ambiguous, or over-bound population yields no definitive sum.
 
 ## Dependencies (Contextual)
 
