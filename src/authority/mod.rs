@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Agent-IX
 
 //! Canonical, bounded observation-owner artifacts.
@@ -15,6 +15,7 @@ pub mod clock;
 pub mod closure;
 pub mod completeness;
 pub mod observation;
+pub mod partial;
 pub mod population;
 pub mod position;
 pub mod progress;

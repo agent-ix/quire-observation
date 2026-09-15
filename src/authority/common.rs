@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Agent-IX
 
 //! Shared bounded envelope, identity, history, and strict-reader machinery.
@@ -136,10 +136,16 @@ pub enum ErrorCode {
     ExpectedMismatch,
     /// Multiple observations claim one declared order position.
     AmbiguousOrder,
+    /// A Boolean possibility set is empty or inconsistent with its reason.
+    InvalidPossibilitySet,
+    /// An event-time interval has an invalid identity or reversed endpoints.
+    InvalidInterval,
+    /// Two intervals name different clock, revision, or unit domains.
+    IntervalDomainMismatch,
 }
 
 impl ErrorCode {
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 14] = [
         Self::InvalidSelection,
         Self::IdentityMismatch,
         Self::RevisionMismatch,
@@ -151,6 +157,9 @@ impl ErrorCode {
         Self::ContractMismatch,
         Self::ExpectedMismatch,
         Self::AmbiguousOrder,
+        Self::InvalidPossibilitySet,
+        Self::InvalidInterval,
+        Self::IntervalDomainMismatch,
     ];
 
     /// Returns every stable code exactly once.
@@ -183,6 +192,9 @@ impl ErrorCode {
             Self::ContractMismatch => "QOBS-AUTH-CONTRACT-MISMATCH",
             Self::ExpectedMismatch => "QOBS-AUTH-EXPECTED-MISMATCH",
             Self::AmbiguousOrder => "QOBS-AUTH-AMBIGUOUS-ORDER",
+            Self::InvalidPossibilitySet => "QOBS-AUTH-INVALID-POSSIBILITY-SET",
+            Self::InvalidInterval => "QOBS-AUTH-INVALID-INTERVAL",
+            Self::IntervalDomainMismatch => "QOBS-AUTH-INTERVAL-DOMAIN-MISMATCH",
         }
     }
 }

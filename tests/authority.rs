@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Agent-IX
 
 //! TC-004: canonical observation-owner artifacts.
@@ -163,11 +163,34 @@ fn cutoff(instant_nanos: i128) -> authority::observation::CutoffSelection {
     )
 }
 
+fn partial_selection(record: &AdmittedRecord) -> authority::partial::Selection {
+    authority::partial::Selection::new(
+        record.identity.clone(),
+        authority::partial::PossibilitySet::new(
+            false,
+            true,
+            authority::partial::ValueReason::Known,
+        )
+        .expect("coherent known value"),
+        authority::partial::EventTimeInterval::new(
+            id("clock:event-time"),
+            id("1"),
+            id("USD"),
+            8,
+            12,
+            Limits::owner_max(),
+        )
+        .expect("valid partial interval"),
+        11,
+    )
+}
+
 struct Documents {
     observation: authority::Document,
     population: authority::Document,
     position: authority::Document,
     clock: authority::Document,
+    partial: authority::Document,
     capture: authority::Document,
     progress: authority::Document,
     closure: authority::Document,
@@ -181,6 +204,7 @@ enum ArtifactKind {
     Population,
     Position,
     Clock,
+    Partial,
     Capture,
     Progress,
     Closure,
@@ -224,6 +248,8 @@ fn derive_all(
             limits,
         )
         .expect("derive clock"),
+        partial: authority::partial::derive(context, &partial_selection(record), limits)
+            .expect("derive partial fact"),
         capture: authority::capture::derive(
             context,
             &authority::capture::Selection::new(
@@ -332,6 +358,9 @@ fn reader_accepts(
             limits,
         )
         .is_ok(),
+        ArtifactKind::Partial => {
+            authority::partial::read(bytes, context, &partial_selection(record), limits).is_ok()
+        }
         ArtifactKind::Capture => authority::capture::read(
             bytes,
             context,
@@ -479,7 +508,7 @@ fn replace_once(bytes: &[u8], from: &[u8], to: &[u8]) -> Vec<u8> {
 
 #[trace("TC-004", "FR-004-AC-1")]
 #[test]
-fn tc004_all_nine_owner_contracts_derive_canonical_documents() {
+fn tc004_all_ten_owner_contracts_derive_canonical_documents() {
     let qualified = qualified();
     let owner = owner();
     let subject = subject(&qualified);
@@ -493,13 +522,14 @@ fn tc004_all_nine_owner_contracts_derive_canonical_documents() {
         documents.population.contract(),
         documents.position.contract(),
         documents.clock.contract(),
+        documents.partial.contract(),
         documents.capture.contract(),
         documents.progress.contract(),
         documents.closure.contract(),
         documents.completeness.contract(),
         documents.availability.contract(),
     ];
-    assert_eq!(contracts.len(), 9);
+    assert_eq!(contracts.len(), 10);
     assert!(contracts
         .iter()
         .all(|contract| contract.starts_with("quire.observation.")));
@@ -508,6 +538,7 @@ fn tc004_all_nine_owner_contracts_derive_canonical_documents() {
         &documents.population,
         &documents.position,
         &documents.clock,
+        &documents.partial,
         &documents.capture,
         &documents.progress,
         &documents.closure,
@@ -523,7 +554,7 @@ fn tc004_all_nine_owner_contracts_derive_canonical_documents() {
 #[test]
 fn tc004_error_code_catalog_is_closed_and_round_trips_exactly() {
     let codes = authority::ErrorCode::all();
-    assert_eq!(codes.len(), 11);
+    assert_eq!(codes.len(), 14);
     let mut labels = codes
         .iter()
         .map(|code| {
@@ -948,6 +979,7 @@ fn tc004_every_required_field_is_missing_duplicate_and_order_strict() {
         (ArtifactKind::Population, &documents.population),
         (ArtifactKind::Position, &documents.position),
         (ArtifactKind::Clock, &documents.clock),
+        (ArtifactKind::Partial, &documents.partial),
         (ArtifactKind::Capture, &documents.capture),
         (ArtifactKind::Progress, &documents.progress),
         (ArtifactKind::Closure, &documents.closure),

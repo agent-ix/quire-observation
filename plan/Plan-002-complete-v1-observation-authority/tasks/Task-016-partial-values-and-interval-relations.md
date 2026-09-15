@@ -2,7 +2,7 @@
 id: Task-016
 title: "FR-007 — partial values and interval relations"
 type: Task
-status: not_started
+status: done
 track: A
 priority: P0
 relationships:
@@ -24,11 +24,11 @@ canonical QObs authority primitives.
 
 ## Subtasks
 
-- [ ] Write failing TC-007 cases and generated interval/value properties first.
-- [ ] Define closed value-reason and interval-order types with no Boolean fallback.
-- [ ] Validate clock, revision, unit, endpoint and effective-limit identity before comparison.
-- [ ] Canonically encode/decode the fact through a constructor-private validated view.
-- [ ] Prove ingestion order and midpoint mutations cannot affect the relation.
+- [x] Write failing TC-007 cases and generated interval/value properties first.
+- [x] Define closed value-reason and interval-order types with no Boolean fallback.
+- [x] Validate clock, revision, unit, endpoint and effective-limit identity before comparison.
+- [x] Canonically encode/decode the fact through a constructor-private validated view.
+- [x] Prove ingestion order and midpoint mutations cannot affect the relation.
 
 ## Deliverables
 
