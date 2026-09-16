@@ -11,6 +11,7 @@ enum SourceId {
     Common,
     Partial,
     Activation,
+    Progress,
     Bundle,
     Repair,
     Coordination,
@@ -45,13 +46,19 @@ const SOURCES: &[Source] = &[
         id: SourceId::Activation,
         path: "src/authority/activation.rs",
         text: include_str!("../src/authority/activation.rs"),
-        sha256: "b8a16c34433ebcfc834bf838326bfd151502cce1dc1835d8321a275b9c0e6429",
+        sha256: "21b351568b63feb48ec178cae803c365e760383b4cefa3a00e1653077f0355a2",
+    },
+    Source {
+        id: SourceId::Progress,
+        path: "src/authority/progress.rs",
+        text: include_str!("../src/authority/progress.rs"),
+        sha256: "d8729681558c5fe067d3968af8057bbcfbf8335a979ecc087f444d85da87b23b",
     },
     Source {
         id: SourceId::Bundle,
         path: "src/authority/bundle.rs",
         text: include_str!("../src/authority/bundle.rs"),
-        sha256: "cdfe30fa584583e4f66f5add2cbc7614efedd19ba2e2b02a92fba1de836341ad",
+        sha256: "752c833a4103edca25f9e3ed029dce9fcaf1a98e5b701a12ab9c8e71067f0d2e",
     },
     Source {
         id: SourceId::Repair,
@@ -63,7 +70,7 @@ const SOURCES: &[Source] = &[
         id: SourceId::Coordination,
         path: "src/authority/coordination.rs",
         text: include_str!("../src/authority/coordination.rs"),
-        sha256: "116b1cb9598f079971763837bf1f690c1c1962e3fd0123b86ea2c5e64bd5e856",
+        sha256: "5be19d0e20d935f75534fbaa19b17614b118e3952969768366d2a7be1207eec5",
     },
     Source {
         id: SourceId::Query,
@@ -81,7 +88,7 @@ const SOURCES: &[Source] = &[
         id: SourceId::AuthorityEvidence,
         path: "tests/authority.rs",
         text: include_str!("authority.rs"),
-        sha256: "69ce60239edd809fde1973a854ca1f6ff6bbec890eaba38aab5fdbfcd310eeba",
+        sha256: "5ceab5286f5e138d81d9bc617bb62ba779d833fc9fe033ab7cdd4f2223315edc",
     },
     Source {
         id: SourceId::PartialEvidence,
@@ -93,7 +100,7 @@ const SOURCES: &[Source] = &[
         id: SourceId::ActivationEvidence,
         path: "tests/activation_authority.rs",
         text: include_str!("activation_authority.rs"),
-        sha256: "b34c49cd93dcdcfa05364491340d1711904bb6122bcb0cbfdd47582e405b50e9",
+        sha256: "0dc4bedb202654e23bbe20830cdc3d5b6ed92501007f48ec251124173efdcc11",
     },
 ];
 
@@ -288,6 +295,20 @@ const ROWS: &[AuditRow] = &[
         checked_conversion_or_arithmetic: "qualified.records().len()",
         evidence_source: SourceId::ActivationEvidence,
         evidence_test: "tc008_versioned_owner_round_trips_all_independent_authority",
+    },
+    AuditRow {
+        name: "activation.trigger-absence-scan",
+        production: SourceId::Activation,
+        entrypoint: "pub fn derive(context: Context<'_>",
+        expansion:
+            ".any(|record| record.trigger_identity == selection.activation.trigger_identity)",
+        retained: "qualified.records()",
+        bound_source: SourceId::Activation,
+        limit: "max_population_entries",
+        precheck_or_charge: "qualified.records().len() > effective.max_population_entries",
+        checked_conversion_or_arithmetic: "qualified.records().len()",
+        evidence_source: SourceId::Activation,
+        evidence_test: "",
     },
     AuditRow {
         name: "activation.source-support-sets",
@@ -730,6 +751,7 @@ fn assert_evidence(row: &AuditRow) {
         "common.escaped-collection-key-classification"
             | "partial.qualified-history-lookup"
             | "activation.strict-proof-copy"
+            | "activation.trigger-absence-scan"
     ) {
         EvidenceKind::StructurallyDominated
     } else {
@@ -801,7 +823,7 @@ fn tc013_each_c00_expansion_path_names_its_dominating_bound_and_evidence() {
     }
     assert_eq!(
         ROWS.len(),
-        42,
+        43,
         "every inventoried expansion path must remain explicit"
     );
     for row in ROWS {
@@ -868,6 +890,19 @@ fn tc013_open_form_loops_are_consuming_or_metered_without_factorial_materializat
     assert!(!coordination.contains("permutations("));
     assert!(!coordination.contains("factorial"));
 
+    let bundle = source(SourceId::Bundle).text;
+    let revision_read = function_scope(bundle, "fn read_revision_for(");
+    let byte_preflight = revision_read
+        .find("preflight_for_contract(bytes, limits.effective(), contract)?")
+        .expect("historical read has a byte preflight");
+    let lineage_build = revision_read
+        .find("LineageView::from_views")
+        .expect("historical read constructs predecessor lineage");
+    assert!(
+        byte_preflight < lineage_build,
+        "historical byte preflight must dominate lineage construction"
+    );
+
     for entrypoint in ["pub fn push(&mut self", "pub fn close(&mut self"] {
         let scope = function_scope(coordination, entrypoint);
         let preflight = scope
@@ -883,8 +918,8 @@ fn tc013_open_form_loops_are_consuming_or_metered_without_factorial_materializat
     }
     let convert = function_scope(coordination, "fn convert_outcome(");
     let retained_preflight = convert
-        .find("replacement_state_bytes_before_build")
-        .expect("replacement retained size is computed before construction");
+        .find("work.ensure_state_capacity(retained_bytes)")
+        .expect("replacement retained bytes are guarded before construction");
     let replacement_build = convert
         .find("let replacement = build_replacement")
         .expect("replacement construction remains explicit");

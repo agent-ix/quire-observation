@@ -384,6 +384,7 @@ impl Contribution {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ActivationSelection {
     obligation_identity: Identity,
+    binding_identity: Identity,
     trigger_identity: Identity,
     trigger_observation_identity: Option<Identity>,
     interval: EventTimeInterval,
@@ -395,6 +396,7 @@ impl ActivationSelection {
     #[must_use]
     pub fn new(
         obligation_identity: Identity,
+        binding_identity: Identity,
         trigger_identity: Identity,
         trigger_observation_identity: Identity,
         interval: EventTimeInterval,
@@ -402,6 +404,7 @@ impl ActivationSelection {
     ) -> Self {
         Self {
             obligation_identity,
+            binding_identity,
             trigger_identity,
             trigger_observation_identity: Some(trigger_observation_identity),
             interval,
@@ -413,11 +416,13 @@ impl ActivationSelection {
     #[must_use]
     pub fn without_trigger(
         obligation_identity: Identity,
+        binding_identity: Identity,
         trigger_identity: Identity,
         interval: EventTimeInterval,
     ) -> Self {
         Self {
             obligation_identity,
+            binding_identity,
             trigger_identity,
             trigger_observation_identity: None,
             interval,
@@ -862,6 +867,15 @@ fn copy_strings(values: &[String]) -> Result<Vec<String>> {
 pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Result<Document> {
     let qualified = context.history().qualified();
     let effective = limits.effective();
+    if selection.activation.binding_identity != qualified.binding().identity
+        || selection.activation.trigger_identity != qualified.binding().trigger_identity
+    {
+        return Err(Error::new(
+            ErrorCode::AuthorityMismatch,
+            "activation binding or trigger is cross-wired from qualified history",
+            Usage::default(),
+        ));
+    }
     if qualified.records().len() > effective.max_population_entries {
         return Err(Error::new(
             ErrorCode::ResourceIncomplete,

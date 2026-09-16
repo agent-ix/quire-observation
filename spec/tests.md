@@ -77,7 +77,7 @@ relationships:
 | Test Case | Dimension A | Dimension B | Dimension C | Expected Behavior |
 |---|---|---|---|---|
 | TC-007 | value set: true/false/both | reason: known/missing/conflicting | interval: point/disjoint/overlap | admit only coherent combinations and preserve every admissible order |
-| TC-008 | activation: inactive/active/unknown | progress: covered/overlap/missing-source | completeness: complete/incomplete/contradicted | preserve axes independently without promotion |
+| TC-008 | activation: empty optional binding/admitted trigger/unknown | progress: covered/overlap/missing-source | completeness: complete/incomplete/contradicted | bind the exact qualified binding/trigger and preserve constructible axes independently without promotion |
 | TC-009 | revision: initial/later | replay: exact/conflicting | lineage: valid/missing/foreign/branch/self | emit one canonical bundle or one typed refusal |
 | TC-010 | path: batch/incremental/repair | prefix: decisive/unresolved/closed | order: total/overlap/arrival-permuted | agree on settled outputs and preserve uncertainty |
 | TC-011 | population: snapshot/window | state: closed/open/unknown/contradicted | query: filter/count/sum | emit a value only for complete admitted authority |
@@ -100,7 +100,7 @@ relationships:
 | Test Case | Error Path | Expected |
 |---|---|---|
 | TC-007 | Empty/incoherent possibility or cross-clock interval | Typed refusal; no partial fact |
-| TC-008 | Foreign/cross-wired scope authority or missing required source | Typed incomplete/refusal; unaffected axes unchanged |
+| TC-008 | Foreign binding/trigger, cross-wired scope authority, or missing required source | Typed incomplete/refusal; unaffected axes unchanged |
 | TC-009 | Stale head, known sibling, invalid replacement, or unequal replay | Typed lineage/identity refusal; prior bytes unchanged |
 | TC-010 | Unknown graph identity, evaluator failure, cycle, or exhausted bound | Item-local typed outcome; no partial plan or promoted result |
 | TC-011 | Open population, receipt substitution, wrong unit, overflow, or invalid prefix | No definitive aggregate |

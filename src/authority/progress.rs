@@ -183,6 +183,7 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
         || selection.cutoff.clock_revision() != selection.clock.clock_revision()
         || !selection.boundary.matches_range(qualified.scope().range)
         || selection.required_sources != qualified.scope().observation_sources
+        || selection.captured_trigger_identity != qualified.binding().trigger_identity
         || qualified.records().iter().any(|record| {
             &record.clock_identity != selection.clock.clock_identity()
                 || &record.clock_revision != selection.clock.clock_revision()
@@ -190,7 +191,7 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
     {
         return Err(Error::new(
             ErrorCode::ExpectedMismatch,
-            "progress boundary, source, clock or trigger is cross-wired",
+            "progress boundary, source, clock, or binding trigger is cross-wired",
             Usage::default(),
         ));
     }

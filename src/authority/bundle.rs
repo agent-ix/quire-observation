@@ -1089,6 +1089,7 @@ pub fn read_v2(
 
 // The shared reader keeps contract/profile dispatch explicit while preserving
 // the same independently supplied strict-read selections as the public APIs.
+// The strict-reader boundary keeps every independently validated owner axis explicit.
 #[allow(clippy::too_many_arguments)]
 fn read_for(
     contract: &'static str,
@@ -1105,6 +1106,7 @@ fn read_for(
     )
 }
 
+// Preflighted reads mirror the public strict-reader axes without a lossy options bag.
 #[allow(clippy::too_many_arguments)]
 fn read_for_preflighted(
     contract: &'static str,
@@ -1163,6 +1165,7 @@ pub fn read_revision_v2(
 
 // Historical reads add an independently validated predecessor to the same
 // explicit contract/profile boundary used by current-head reads.
+// Historical reads add the predecessor axis to the same explicit strict-reader boundary.
 #[allow(clippy::too_many_arguments)]
 fn read_revision_for(
     contract: &'static str,

@@ -226,6 +226,7 @@ fn activation_selection(
     authority::activation::Selection::new(
         authority::activation::ActivationSelection::new(
             id("obligation:refund"),
+            record.binding_identity.clone(),
             id("trigger:refund-request"),
             record.identity.clone(),
             activation_interval(8, 12),
@@ -3259,6 +3260,7 @@ fn query_lineage_with_authority(
     )
 }
 
+// The fixture exposes each independent query-authority axis used by the matrix.
 #[allow(clippy::too_many_arguments)]
 fn query_lineage_with_conflict(
     effects: &[(&str, &str, i128)],
@@ -3316,6 +3318,7 @@ fn query_missing_relationship_lineage() -> authority::bundle::LineageView {
     )
 }
 
+// Scope, conflict, and authority axes remain explicit so tests cannot infer them.
 #[allow(clippy::too_many_arguments)]
 fn query_lineage_with_scope_and_conflict(
     effects: &[(&str, &str, i128)],
@@ -3385,7 +3388,7 @@ fn query_lineage_with_scope_and_conflict(
         vec![id("source:payments")],
         query_boundary(scope, progress_state),
         progress_state,
-        id("trigger:refund-request"),
+        records[0].trigger_identity.clone(),
         cutoff(scope_end + 10),
         id("restoration:O1"),
     );
@@ -3429,65 +3432,46 @@ fn query_lineage_with_scope_and_conflict(
         limits,
     )
     .expect("query completeness view");
-    let trigger_absent = !effects.is_empty()
-        && effects
-            .iter()
-            .all(|(identity, _, _)| identity.starts_with("receipt:"));
-    let proofs = if trigger_absent {
-        authority::activation::AuthorityProofs::without_capture(
-            Some(&progress_view),
-            Some(&closure_view),
-            Some(&completeness_view),
-        )
-        .expect("query trigger-absent proofs")
-    } else {
-        authority::activation::AuthorityProofs::new(
-            &capture_view,
-            Some(&progress_view),
-            Some(&closure_view),
-            Some(&completeness_view),
-        )
-        .expect("query activation proofs")
-    };
+    let proofs = authority::activation::AuthorityProofs::new(
+        &capture_view,
+        Some(&progress_view),
+        Some(&closure_view),
+        Some(&completeness_view),
+    )
+    .expect("query activation proofs");
     let progress_frontier = if progress_state == OpenClosed::Closed {
         scope_end
     } else {
         scope_end - 10
     };
-    let activation = if trigger_absent {
-        authority::activation::ActivationSelection::without_trigger(
-            id("obligation:refund"),
-            id("trigger:refund-request"),
-            activation_interval(8, 12),
-        )
-    } else {
-        authority::activation::ActivationSelection::new(
-            id("obligation:refund"),
-            id("trigger:refund-request"),
-            records[0].identity.clone(),
-            activation_interval(8, 12),
-            records
-                .iter()
-                .enumerate()
-                .map(|(index, record)| {
-                    let ValueState::Present {
-                        value_type,
-                        canonical_value,
-                    } = &record.value
-                    else {
-                        panic!("query record value must be present");
-                    };
-                    authority::activation::Capture::new(
-                        id(format!("capture:refund:{index}").as_str()),
-                        record.identity.clone(),
-                        value_type.clone(),
-                        canonical_value.clone(),
-                        id("source:payments"),
-                    )
-                })
-                .collect(),
-        )
-    };
+    let captures = records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| {
+            let ValueState::Present {
+                value_type,
+                canonical_value,
+            } = &record.value
+            else {
+                panic!("query record value must be present");
+            };
+            authority::activation::Capture::new(
+                id(format!("capture:refund:{index}").as_str()),
+                record.identity.clone(),
+                value_type.clone(),
+                canonical_value.clone(),
+                id("source:payments"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let activation = authority::activation::ActivationSelection::new(
+        id("obligation:refund"),
+        qualified.binding().identity.clone(),
+        records[0].trigger_identity.clone(),
+        records[0].identity.clone(),
+        activation_interval(8, 12),
+        captures.clone(),
+    );
     let activation_selection = authority::activation::Selection::new(
         activation,
         authority::activation::ProgressSelection::new(
@@ -3501,17 +3485,21 @@ fn query_lineage_with_scope_and_conflict(
     let activation = authority::activation::derive(context, &activation_selection, limits)
         .expect("query activation");
     let additional_activation_selection = additional_activation.then(|| {
-        let proofs = authority::activation::AuthorityProofs::without_capture(
+        let proofs = authority::activation::AuthorityProofs::new(
+            &capture_view,
             None,
             Some(&closure_view),
             Some(&completeness_view),
         )
         .expect("additional query activation proofs");
         authority::activation::Selection::new(
-            authority::activation::ActivationSelection::without_trigger(
+            authority::activation::ActivationSelection::new(
                 id("obligation:refund-alt"),
-                id("trigger:chargeback-request"),
+                qualified.binding().identity.clone(),
+                records[0].trigger_identity.clone(),
+                records[0].identity.clone(),
                 activation_interval(8, 12),
+                captures,
             ),
             authority::activation::ProgressSelection::new(
                 activation_interval(query_range(scope).0, scope_end - 1),
@@ -3768,6 +3756,7 @@ fn query_selection(
     )
 }
 
+// Query selection tests cross-wire each semantic axis independently.
 #[allow(clippy::too_many_arguments)]
 fn query_selection_with_axes(
     lineage: &authority::bundle::LineageView,
@@ -3992,7 +3981,7 @@ fn tc011_exact_multi_activation_selection_never_uses_an_unselected_payload() {
         .filter_map(|fact| match fact.payload() {
             EmbeddedPayloadRef::Activation(value) => Some((
                 value
-                    .capture_authority()
+                    .progress_authority()
                     .map(|authority| id(authority.document_identity)),
                 value.activation(),
             )),
@@ -4008,13 +3997,13 @@ fn tc011_exact_multi_activation_selection_never_uses_an_unselected_payload() {
     assert_eq!(
         pairs
             .iter()
-            .filter(|((capture, _), _)| capture.is_some())
+            .filter(|((progress, _), _)| progress.is_some())
             .count(),
         1,
-        "one activation is active and one is independently inactive",
+        "one activation has progress authority and one does not",
     );
 
-    for ((capture_authority, activation_state), activation) in &pairs {
+    for ((progress_authority, activation_state), activation) in &pairs {
         let selection = query_selection_with_overrides(
             &lineage,
             DuplicatePolicy::OccurrencePreserving,
@@ -4033,8 +4022,7 @@ fn tc011_exact_multi_activation_selection_never_uses_an_unselected_payload() {
         let evaluation =
             authority::query::evaluate(&lineage, &selection, authority::query::Limits::owner_max())
                 .expect("each exact authority pair is queryable");
-        if let Some(capture_authority) = capture_authority {
-            assert_eq!(capture_authority, &capture_component);
+        if progress_authority.is_some() {
             assert_eq!(
                 *activation_state,
                 authority::activation::ActivationState::Active
@@ -4046,7 +4034,7 @@ fn tc011_exact_multi_activation_selection_never_uses_an_unselected_payload() {
         } else {
             assert_eq!(
                 *activation_state,
-                authority::activation::ActivationState::Inactive
+                authority::activation::ActivationState::Active
             );
             assert!(matches!(
                 evaluation.outcome(),
@@ -4071,7 +4059,7 @@ fn tc011_exact_multi_activation_selection_never_uses_an_unselected_payload() {
             activation_component_identity: Some(
                 pairs
                     .iter()
-                    .find(|((capture, _), _)| capture.is_some())
+                    .find(|((progress, _), _)| progress.is_some())
                     .expect("active activation")
                     .1
                     .clone(),
@@ -4231,7 +4219,7 @@ fn tc011_replayed_receipts_never_create_business_effects() {
                 ORDER_KIND.as_bytes(),
                 b"order:O1",
                 SHIPMENT_KIND.as_bytes(),
-                "signal:receipt",
+                "signal:refund",
             ),
             authority::query::Limits::owner_max(),
         )
@@ -7663,7 +7651,7 @@ fn tc009_successor_replay_and_same_key_contradiction_are_exact() {
         successor.document().bytes(),
         context,
         &Selection::new(Vec::new(), Vec::new()),
-        Some(initial.view()),
+        None,
         Limits {
             max_input_bytes: successor.document().bytes().len() - 1,
             ..Limits::owner_max()
@@ -7671,6 +7659,18 @@ fn tc009_successor_replay_and_same_key_contradiction_are_exact() {
     )
     .expect_err("historical one-over input refuses before lineage and selection work");
     assert_eq!(byte_first.code(), authority::ErrorCode::ResourceIncomplete);
+    let lineage_first = authority::bundle::read_revision(
+        successor.document().bytes(),
+        context,
+        &Selection::new(Vec::new(), Vec::new()),
+        None,
+        Limits::owner_max(),
+    )
+    .expect_err("valid-size historical input requires the exact predecessor first");
+    assert_eq!(
+        lineage_first.code(),
+        authority::ErrorCode::PredecessorMismatch
+    );
 
     let known_child = LineageView::from_views(
         initial.view(),

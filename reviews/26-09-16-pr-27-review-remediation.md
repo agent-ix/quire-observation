@@ -38,7 +38,7 @@ staged owner merge completes issue #23 or the C00 plan.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | high | Removed caller-selected activation state and caller-asserted absence. Every selection carries an exact semantic trigger identity; absence rejects any matching admitted history and progress must bind the same trigger. An admitted trigger plus matching strict capture authority derives `active`; a proven trigger-absent closed/complete scope derives `inactive`; every other proven-absent scope derives `unknown`. | FR-008, TC-008 Cartesian and negative-control oracles, `activation::derive` |
+| FND-001 | high | Removed caller-selected activation state and caller-asserted absence. Every selection carries the exact qualified binding and semantic trigger; activation and progress reject foreign binding triggers. Absence is exercised by an empty optional binding and rejects matching admitted history. An admitted trigger plus matching strict capture authority derives `active`; a proven trigger-absent closed/complete scope derives `inactive`; every other constructible proven-absent scope derives `unknown`. | FR-008, TC-008 Cartesian and negative-control oracles, `activation::derive`, `progress::derive` |
 | FND-002 | medium | Reconciled FR-008 success/error semantics: semantic unknown and missing-source coverage are valid explicit incomplete facts, not refusal paths. | FR-008 Error Conditions, TC-008 |
 | FND-003 | medium | Reconciled NFR-003 matrix status to complete. | TM-001, TC-010, TC-012, TC-013 |
 | FND-004 | high | Exact role-plus-component resolution now carries the selected embedded payload into query evaluation; either of two activation facts is independently queryable and a foreign selected component refuses. | `query::selected_fact`, `tc011_exact_multi_activation_selection_never_uses_an_unselected_payload` |
@@ -49,11 +49,12 @@ staged owner merge completes issue #23 or the C00 plan.
 | FND-009 | medium | Incremental prefix capacity is computed from a borrowed evaluator outcome and checked before cloning or terminal-state promotion. | TC-010 rollback and exact/one-over state evidence |
 | FND-010 | medium | Historical revision readers now byte-preflight before predecessor lineage construction and reuse the observed usage in the strict reader. | TC-009 historical one-over negative control, `bundle::read_revision_for` |
 | FND-011 | high | Terminal outcome clones are dominated by full outcome-state capacity checks; decisive replacement retained size is counted before canonical wire/result allocation. | TC-010 rollback evidence, TC-013 ordering assertions |
-| FND-012 | medium | Multi-activation selection evidence now pairs one active and one independently inactive payload, so payload substitution changes the observable query outcome. | TC-011 exact multi-role oracle |
+| FND-012 | medium | Multi-activation selection evidence now pairs two active payloads that differ in progress authority, so payload substitution changes a complete query into a foreign-authority refusal. | TC-011 exact multi-role oracle |
+| FND-013 | medium | TC-013 now revision-pins progress, inventories the bounded trigger-absence scan, and asserts byte-preflight-before-lineage plus capacity-guard-before-replacement ordering. The historical negative control pairs oversized bytes with a missing predecessor so the old order fails observably. | TC-009, TC-013 |
 
 ## Revision-bound resource evidence
 
-TC-013 now inventories 42 scoped expansion/allocation paths instead of 28. The added rows bind
+TC-013 now inventories 43 scoped expansion/allocation paths instead of 28. The added rows bind
 escaped-key classification, preflighted strict deserialization, all three byte-first readers, activation record indexing, charged
 dependency preparation, support-index allocation, binary support lookup, prefix preallocation,
 and exact multi-role query selection. Current reviewed SHA-256 values are:
@@ -62,14 +63,14 @@ and exact multi-role query selection. Current reviewed SHA-256 values are:
 | --- | --- |
 | `src/authority/common.rs` | `379bcf5cd4bf014cb0b4633bc76b188e4aed308f2532db3fd5028d99a2d870bd` |
 | `src/authority/partial.rs` | `33de9f39f3e422bf2d364ceba7e302101b230d4fe6a3ce8d4f6ce4cf8a0e8237` |
-| `src/authority/activation.rs` | `b8a16c34433ebcfc834bf838326bfd151502cce1dc1835d8321a275b9c0e6429` |
-| `src/authority/progress.rs` | `da5ac2bbc3c541cd6d43b346b5786be48b6057a002ebce743d2be38bd2a47265` |
-| `src/authority/bundle.rs` | `cdfe30fa584583e4f66f5add2cbc7614efedd19ba2e2b02a92fba1de836341ad` |
-| `src/authority/coordination.rs` | `116b1cb9598f079971763837bf1f690c1c1962e3fd0123b86ea2c5e64bd5e856` |
+| `src/authority/activation.rs` | `21b351568b63feb48ec178cae803c365e760383b4cefa3a00e1653077f0355a2` |
+| `src/authority/progress.rs` | `d8729681558c5fe067d3968af8057bbcfbf8335a979ecc087f444d85da87b23b` |
+| `src/authority/bundle.rs` | `752c833a4103edca25f9e3ed029dce9fcaf1a98e5b701a12ab9c8e71067f0d2e` |
+| `src/authority/coordination.rs` | `5be19d0e20d935f75534fbaa19b17614b118e3952969768366d2a7be1207eec5` |
 | `src/authority/query.rs` | `26eaaf49db4113d5c011bf474a496e189351e9274de01be911ac8f1d82ec612f` |
 | `tests/partial_interval.rs` | `711adfb64cfb0827dd9d5a62ad65081fc1321eb5d6089d660b8bd6e33e1a1d59` |
-| `tests/activation_authority.rs` | `b34c49cd93dcdcfa05364491340d1711904bb6122bcb0cbfdd47582e405b50e9` |
-| `tests/authority.rs` | `69ce60239edd809fde1973a854ca1f6ff6bbec890eaba38aab5fdbfcd310eeba` |
+| `tests/activation_authority.rs` | `0dc4bedb202654e23bbe20830cdc3d5b6ed92501007f48ec251124173efdcc11` |
+| `tests/authority.rs` | `5ceab5286f5e138d81d9bc617bb62ba779d833fc9fe033ab7cdd4f2223315edc` |
 
 The activation/scope-authority schema digest is
 `c17ad8b3ec10c48e535bc3a762738b979206c01af20c31775d8a9a9e0a97fab6`.

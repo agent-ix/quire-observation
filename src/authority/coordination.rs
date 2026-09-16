@@ -2226,6 +2226,7 @@ fn build_replacement(
     })
 }
 
+// Exact retained-size accounting mirrors every field built into the replacement.
 #[allow(clippy::too_many_arguments)]
 fn replacement_state_bytes_before_build(
     plan: &Plan,

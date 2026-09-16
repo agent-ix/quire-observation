@@ -59,17 +59,18 @@ fn qualified() -> Box<QualifiedObservation> {
 }
 
 fn qualified_with_value(value: &str) -> Box<QualifiedObservation> {
-    qualified_with_value_trigger_and_time(value, "trigger:refund-request", 10)
+    qualified_with_value_trigger_and_time(value, "trigger:refund-request", 10, true)
 }
 
 fn qualified_without_refund_trigger() -> Box<QualifiedObservation> {
-    qualified_with_value_trigger_and_time("12.00", "trigger:receipt-ack", 10)
+    qualified_with_value_trigger_and_time("12.00", "trigger:refund-request", 10, false)
 }
 
 fn qualified_with_value_trigger_and_time(
     value: &str,
     trigger_identity: &str,
     event_time_nanos: i128,
+    include_record: bool,
 ) -> Box<QualifiedObservation> {
     let producer = producer();
     let subject = order(&producer, "order:O1");
@@ -88,7 +89,7 @@ fn qualified_with_value_trigger_and_time(
             trigger_identity: id(trigger_identity),
             unit: id("USD"),
             subject_kind: subject.kind().clone(),
-            required: true,
+            required: include_record,
         },
         expected_subject: subject.clone(),
         relationships: vec![],
@@ -98,7 +99,10 @@ fn qualified_with_value_trigger_and_time(
             membership_rule_identity: id("unsealed-membership"),
             membership_digest: digest(0),
             membership_document: vec![],
-            required_member_identities: vec![id("member:O1")],
+            required_member_identities: include_record
+                .then(|| id("member:O1"))
+                .into_iter()
+                .collect(),
             observation_sources: vec![id("source:payments")],
             completeness_dependencies: vec![],
             progress_dependencies: vec![],
@@ -114,47 +118,54 @@ fn qualified_with_value_trigger_and_time(
                 start_nanos: 0,
                 end_nanos: 30,
             },
-            members: vec![Member {
-                object_identity: id("member:O1"),
-                record_identity: id("unsealed-record"),
-                anchor: Anchor::TimestampNanos(10),
-            }],
+            members: include_record
+                .then(|| Member {
+                    object_identity: id("member:O1"),
+                    record_identity: id("unsealed-record"),
+                    anchor: Anchor::TimestampNanos(10),
+                })
+                .into_iter()
+                .collect(),
         },
-        records: vec![AdmittedRecord {
-            identity: id("unsealed-record"),
-            binding_identity: id("binding:amount"),
-            source_identity: id("source:payments"),
-            schema_identity: id("schema:amount/v1"),
-            subject,
-            signal_identity: id("signal:amount"),
-            trigger_identity: id(trigger_identity),
-            unit: id("USD"),
-            value: ValueState::Present {
-                value_type: id("type:decimal"),
-                canonical_value: value.to_owned(),
-            },
-            visibility: Visibility::External,
-            anchor: Anchor::TimestampNanos(10),
-            event_time_nanos,
-            ingestion_time_nanos: event_time_nanos + 5,
-            causal_relationship_identity: None,
-            clock_identity: id("clock:event-time"),
-            clock_revision: id("1"),
-            clock_uncertainty_nanos: 2,
-        }],
+        records: include_record
+            .then(|| AdmittedRecord {
+                identity: id("unsealed-record"),
+                binding_identity: id("binding:amount"),
+                source_identity: id("source:payments"),
+                schema_identity: id("schema:amount/v1"),
+                subject,
+                signal_identity: id("signal:amount"),
+                trigger_identity: id(trigger_identity),
+                unit: id("USD"),
+                value: ValueState::Present {
+                    value_type: id("type:decimal"),
+                    canonical_value: value.to_owned(),
+                },
+                visibility: Visibility::External,
+                anchor: Anchor::TimestampNanos(10),
+                event_time_nanos,
+                ingestion_time_nanos: event_time_nanos + 5,
+                causal_relationship_identity: None,
+                clock_identity: id("clock:event-time"),
+                clock_revision: id("1"),
+                clock_uncertainty_nanos: 2,
+            })
+            .into_iter()
+            .collect(),
         limits: ResourceLimits {
-            max_records: 1,
-            max_members: 1,
+            max_records: usize::from(include_record),
+            max_members: usize::from(include_record),
             max_relationships: 0,
             max_required_relationships: 0,
         },
         producer,
     };
-    let record_identity =
-        authority::observation::record_identity(&request.records[0], Limits::owner_max())
+    if let Some(record) = request.records.first_mut() {
+        let record_identity = authority::observation::record_identity(record, Limits::owner_max())
             .expect("derive observation identity");
-    request.records[0].identity = record_identity.clone();
-    request.scope.members[0].record_identity = record_identity;
+        record.identity = record_identity.clone();
+        request.scope.members[0].record_identity = record_identity;
+    }
     authority::population::assign_request_identities(&mut request, Limits::owner_max())
         .expect("derive population identities");
     match admit(request) {
@@ -218,6 +229,7 @@ fn authority_proofs(
     )
 }
 
+// The Cartesian fixture keeps each independent FR-008 authority axis explicit.
 #[allow(clippy::too_many_arguments)]
 fn authority_proofs_for_trigger(
     qualified: &QualifiedObservation,
@@ -230,8 +242,9 @@ fn authority_proofs_for_trigger(
     trigger_identity: &str,
 ) -> AuthorityProofs {
     let context = Context::new(History::batch(qualified), owner, subject, 1, None);
-    let record = &qualified.records()[0];
+    let record = qualified.records().first();
     let capture_view = include_capture.then(|| {
+        let record = record.expect("capture authority requires an admitted trigger record");
         let capture_selection = authority::capture::Selection::new(
             id(trigger_identity),
             Anchor::TimestampNanos(10),
@@ -308,49 +321,65 @@ fn authority_proofs_for_trigger(
         }
     };
 
-    let (status, observation_identity) = match evidence {
-        EvidenceState::Complete => (
-            authority::completeness::FactStatus::Available,
-            Some(record.identity.clone()),
-        ),
-        EvidenceState::Incomplete => (authority::completeness::FactStatus::Incomplete, None),
-        EvidenceState::Contradicted => (
-            authority::completeness::FactStatus::Contradicted,
-            Some(record.identity.clone()),
-        ),
+    let completeness_view = if record.is_none() && evidence == EvidenceState::Incomplete {
+        None
+    } else {
+        let facts = match (record, evidence) {
+            (None, EvidenceState::Complete) => Vec::new(),
+            (None, EvidenceState::Contradicted) => {
+                panic!("empty qualified history cannot carry contradicted evidence")
+            }
+            (None, EvidenceState::Incomplete) => unreachable!("handled above"),
+            (Some(record), evidence) => {
+                let (status, observation_identity) = match evidence {
+                    EvidenceState::Complete => (
+                        authority::completeness::FactStatus::Available,
+                        Some(record.identity.clone()),
+                    ),
+                    EvidenceState::Incomplete => {
+                        (authority::completeness::FactStatus::Incomplete, None)
+                    }
+                    EvidenceState::Contradicted => (
+                        authority::completeness::FactStatus::Contradicted,
+                        Some(record.identity.clone()),
+                    ),
+                };
+                vec![authority::completeness::Fact::new(
+                    id("member:O1"),
+                    observation_identity,
+                    status,
+                )]
+            }
+        };
+        let completeness_selection =
+            authority::completeness::Selection::new(id("boundary:O1"), facts);
+        let completeness_document =
+            authority::completeness::derive(context, &completeness_selection, Limits::owner_max())
+                .expect("derive completeness authority");
+        Some(
+            authority::completeness::read(
+                completeness_document.bytes(),
+                context,
+                &completeness_selection,
+                Limits::owner_max(),
+            )
+            .expect("strict-read completeness authority"),
+        )
     };
-    let completeness_selection = authority::completeness::Selection::new(
-        id("boundary:O1"),
-        vec![authority::completeness::Fact::new(
-            id("member:O1"),
-            observation_identity,
-            status,
-        )],
-    );
-    let completeness_document =
-        authority::completeness::derive(context, &completeness_selection, Limits::owner_max())
-            .expect("derive completeness authority");
-    let completeness_view = authority::completeness::read(
-        completeness_document.bytes(),
-        context,
-        &completeness_selection,
-        Limits::owner_max(),
-    )
-    .expect("strict-read completeness authority");
 
     if include_capture {
         AuthorityProofs::new(
             capture_view.as_ref().expect("capture view requested"),
             progress_view.as_ref(),
             closure_view.as_ref(),
-            Some(&completeness_view),
+            completeness_view.as_ref(),
         )
         .expect("compose strict-read authority proofs")
     } else {
         AuthorityProofs::without_capture(
             progress_view.as_ref(),
             closure_view.as_ref(),
-            Some(&completeness_view),
+            completeness_view.as_ref(),
         )
         .expect("compose trigger-absent authority proofs")
     }
@@ -397,7 +426,6 @@ fn selection_axes(
     subject: &SubjectSelection,
     axes: AxesCase,
 ) -> Selection {
-    let record = &qualified.records()[0];
     let proofs = authority_proofs(
         qualified,
         owner,
@@ -415,6 +443,10 @@ fn selection_axes(
         proofs,
     );
     if axes.include_contributions {
+        let record = qualified
+            .records()
+            .first()
+            .expect("contributions require an admitted support record");
         selected.with_contributions(
             Some(Contribution::new(
                 id("verdict:eligible"),
@@ -436,10 +468,14 @@ fn activation_selection(
     canonical_value: &str,
     provenance_identity: &str,
 ) -> ActivationSelection {
-    let record = &qualified.records()[0];
     if trigger == TriggerCase::Admitted {
+        let record = qualified
+            .records()
+            .first()
+            .expect("admitted activation requires a trigger record");
         ActivationSelection::new(
             id("obligation:refund"),
+            qualified.binding().identity.clone(),
             id("trigger:refund-request"),
             record.identity.clone(),
             interval(8, 12),
@@ -454,6 +490,7 @@ fn activation_selection(
     } else {
         ActivationSelection::without_trigger(
             id("obligation:refund"),
+            qualified.binding().identity.clone(),
             id("trigger:refund-request"),
             interval(8, 12),
         )
@@ -645,6 +682,11 @@ fn tc008_derived_activation_crosses_independent_scope_and_contribution_axes() {
                     EvidenceState::Contradicted,
                 ] {
                     for include_contributions in [false, true] {
+                        if trigger == TriggerCase::Absent
+                            && (evidence == EvidenceState::Contradicted || include_contributions)
+                        {
+                            continue;
+                        }
                         let selected = selection_axes(
                             &qualified,
                             &owner,
@@ -705,7 +747,11 @@ fn tc008_derived_activation_crosses_independent_scope_and_contribution_axes() {
                             payload.closure_authority().is_some(),
                             closure != ExecutionState::Incomplete
                         );
-                        assert!(payload.completeness_authority().is_some());
+                        assert_eq!(
+                            payload.completeness_authority().is_some(),
+                            !(trigger == TriggerCase::Absent
+                                && evidence == EvidenceState::Incomplete)
+                        );
                         assert_eq!(payload.verdict().is_some(), include_contributions);
                         assert_eq!(payload.settlement().is_some(), include_contributions);
                     }
@@ -759,9 +805,30 @@ fn tc008_trigger_absence_is_proved_for_the_exact_selected_trigger() {
         false,
         "trigger:refund-request",
     );
+    let foreign_binding = Selection::new(
+        ActivationSelection::without_trigger(
+            id("obligation:refund"),
+            id("binding:foreign"),
+            absent.binding().trigger_identity.clone(),
+            interval(8, 12),
+        ),
+        progress_selection(ExecutionState::Closed),
+        interval(8, 12),
+        interval(10, 20),
+        foreign_progress.clone(),
+    );
+    let error = authority::activation::derive(
+        Context::new(History::batch(&absent), &owner, &absent_subject, 1, None),
+        &foreign_binding,
+        Limits::owner_max(),
+    )
+    .expect_err("absence authority cannot cross-wire the qualified binding");
+    assert_eq!(error.code(), ErrorCode::AuthorityMismatch);
+
     let cross_wired = Selection::new(
         ActivationSelection::without_trigger(
             id("obligation:refund"),
+            absent.binding().identity.clone(),
             id("trigger:chargeback-request"),
             interval(8, 12),
         ),
@@ -1235,6 +1302,7 @@ fn tc008_owner_refuses_foreign_scope_clock_even_when_intervals_agree() {
     let selected = Selection::new(
         ActivationSelection::new(
             id("obligation:refund"),
+            qualified.binding().identity.clone(),
             id("trigger:refund-request"),
             record.identity.clone(),
             foreign(8, 12),
@@ -1304,6 +1372,7 @@ fn tc008_owner_refuses_cross_wired_source_capture_and_support_authority() {
         base(
             ActivationSelection::new(
                 id("obligation:refund"),
+                qualified.binding().identity.clone(),
                 id("trigger:refund-request"),
                 id("observation:absent-trigger"),
                 interval(8, 12),
@@ -1320,6 +1389,7 @@ fn tc008_owner_refuses_cross_wired_source_capture_and_support_authority() {
         base(
             ActivationSelection::new(
                 id("obligation:refund"),
+                qualified.binding().identity.clone(),
                 id("trigger:refund-request"),
                 record.identity.clone(),
                 interval(8, 12),
