@@ -806,7 +806,7 @@ fn tc004_all_eleven_owner_contracts_derive_canonical_documents() {
 #[test]
 fn tc004_error_code_catalog_is_closed_and_round_trips_exactly() {
     let codes = authority::ErrorCode::all();
-    assert_eq!(codes.len(), 22);
+    assert_eq!(codes.len(), 25);
     let mut labels = codes
         .iter()
         .map(|code| {
@@ -2641,6 +2641,855 @@ fn successor_bundle_selection(
     let replacement = Replacement::new(&prior, &successor).expect("same-role replacement");
     components[index] = successor;
     Selection::new(components, vec![replacement])
+}
+
+fn repair_bundle_pair() -> (
+    authority::bundle::Publication,
+    authority::bundle::Publication,
+) {
+    use authority::availability::DependencyState;
+    use authority::bundle::Selection;
+
+    let qualified = qualified();
+    let owner = owner();
+    let subject = subject(&qualified);
+    let history = History::batch(&qualified);
+    let documents = derive_all(history, &owner, &subject);
+    let initial = authority::bundle::publish(
+        Context::new(history, &owner, &subject, 1, None),
+        &Selection::new(bundle_components(&documents), vec![]),
+        None,
+        Limits::owner_max(),
+    )
+    .expect("publish initial repair bundle");
+    let successor_selection = successor_bundle_selection(
+        history,
+        &owner,
+        &subject,
+        &documents,
+        2,
+        vec![],
+        DependencyState::Available,
+    );
+    let successor = authority::bundle::publish(
+        Context::new(history, &owner, &subject, 2, Some(initial.document())),
+        &successor_selection,
+        Some(initial.lineage()),
+        Limits::owner_max(),
+    )
+    .expect("publish successor repair bundle");
+    (initial, successor)
+}
+
+fn repair_region(start_nanos: i128, end_nanos: i128) -> authority::repair::Region {
+    authority::repair::Region::new(
+        id("window:O1"),
+        id("clock:event-time"),
+        id("1"),
+        ClockRange::Timestamp {
+            start_nanos,
+            end_nanos,
+        },
+    )
+    .expect("valid repair region")
+}
+
+fn repair_selection(
+    initial: &authority::bundle::Publication,
+    successor: &authority::bundle::Publication,
+) -> authority::repair::Selection {
+    use authority::repair::{DependencyEdge, FactRegion, PriorResult, Selection};
+
+    let replacement = successor
+        .view()
+        .payload()
+        .replacements()
+        .next()
+        .expect("availability replacement");
+    Selection::new(
+        initial.view().identity().clone(),
+        vec![
+            FactRegion::new(
+                Identity::new(replacement.prior_identity()),
+                repair_region(8, 12),
+            ),
+            FactRegion::new(
+                Identity::new(replacement.successor_identity()),
+                repair_region(20, 24),
+            ),
+        ],
+        vec![
+            PriorResult::new(
+                id("result:direct"),
+                repair_region(0, 20),
+                b"direct-v1".to_vec(),
+            ),
+            PriorResult::new(
+                id("result:composed"),
+                repair_region(5, 25),
+                b"composed-v1".to_vec(),
+            ),
+            PriorResult::new(
+                id("result:outside"),
+                repair_region(24, 30),
+                b"outside-v1".to_vec(),
+            ),
+            PriorResult::new(
+                id("result:isolated"),
+                repair_region(0, 20),
+                b"isolated-v1".to_vec(),
+            ),
+            PriorResult::new(
+                id("result:successor-only"),
+                repair_region(20, 24),
+                b"successor-only-v1".to_vec(),
+            ),
+        ],
+        vec![
+            DependencyEdge::new(
+                Identity::new(replacement.prior_identity()),
+                id("result:direct"),
+            ),
+            DependencyEdge::new(id("result:direct"), id("result:composed")),
+            DependencyEdge::new(
+                Identity::new(replacement.prior_identity()),
+                id("result:outside"),
+            ),
+            DependencyEdge::new(
+                Identity::new(replacement.prior_identity()),
+                id("result:successor-only"),
+            ),
+        ],
+    )
+}
+
+#[trace("TC-010", "FR-010-AC-1", "FR-010-AC-2")]
+#[test]
+fn tc010_plan_contains_only_explicit_observable_closure_and_retains_other_bytes() {
+    let (initial, successor) = repair_bundle_pair();
+    let selection = repair_selection(&initial, &successor);
+    let first = authority::repair::plan(
+        initial.view(),
+        successor.view(),
+        &selection,
+        authority::repair::Limits::owner_max(),
+    )
+    .expect("derive repair plan");
+    let second = authority::repair::plan(
+        initial.view(),
+        successor.view(),
+        &selection,
+        authority::repair::Limits::owner_max(),
+    )
+    .expect("repeat repair plan");
+
+    assert_eq!(first.bytes(), second.bytes());
+    assert_eq!(first.identity(), second.identity());
+    assert_eq!(
+        first.affected().map(Identity::as_str).collect::<Vec<_>>(),
+        ["result:composed", "result:direct", "result:successor-only"]
+    );
+    assert_eq!(
+        first
+            .recomputation_order()
+            .map(Identity::as_str)
+            .collect::<Vec<_>>(),
+        ["result:direct", "result:composed", "result:successor-only"]
+    );
+    let unaffected = first
+        .unaffected()
+        .map(|result| (result.identity().as_str(), result.bytes()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        unaffected,
+        [
+            ("result:isolated", b"isolated-v1".as_slice()),
+            ("result:outside", b"outside-v1".as_slice()),
+        ]
+    );
+    let replacement = successor
+        .view()
+        .payload()
+        .replacements()
+        .next()
+        .expect("one replacement");
+    let changed = first
+        .changed_facts()
+        .next()
+        .expect("changed fact inventory");
+    assert_eq!(first.changed_facts().len(), 1);
+    assert_eq!(
+        changed.role(),
+        authority::bundle::ComponentRole::Availability
+    );
+    assert_eq!(
+        changed.prior_identity().as_str(),
+        replacement.prior_identity()
+    );
+    assert_eq!(
+        changed.successor_identity().as_str(),
+        replacement.successor_identity()
+    );
+    assert_eq!(
+        changed.prior_region().range(),
+        ClockRange::Timestamp {
+            start_nanos: 8,
+            end_nanos: 12,
+        }
+    );
+    assert_eq!(
+        changed.successor_region().range(),
+        ClockRange::Timestamp {
+            start_nanos: 20,
+            end_nanos: 24,
+        }
+    );
+    let shifted_facts = selection
+        .fact_regions()
+        .iter()
+        .map(|fact| {
+            if fact.identity().as_str() == replacement.successor_identity() {
+                authority::repair::FactRegion::new(fact.identity().clone(), repair_region(20, 23))
+            } else {
+                fact.clone()
+            }
+        })
+        .collect();
+    let shifted = authority::repair::Selection::new(
+        selection.authority_revision().clone(),
+        shifted_facts,
+        selection.prior_results().to_vec(),
+        selection.edges().to_vec(),
+    );
+    let shifted_plan = authority::repair::plan(
+        initial.view(),
+        successor.view(),
+        &shifted,
+        authority::repair::Limits::owner_max(),
+    )
+    .expect("same affected set with a distinct successor region");
+    assert_eq!(
+        first.affected().collect::<Vec<_>>(),
+        shifted_plan.affected().collect::<Vec<_>>()
+    );
+    assert_ne!(first.bytes(), shifted_plan.bytes());
+    assert_ne!(first.identity(), shifted_plan.identity());
+}
+
+#[trace("TC-010", "FR-010-AC-1")]
+#[test]
+fn tc010_half_open_overlap_is_exact_for_every_clock_family_and_authority_axis() {
+    use authority::repair::Region;
+
+    let event = |scope: &str, clock: &str, revision: &str, start, end_exclusive| {
+        Region::new(
+            id(scope),
+            id(clock),
+            id(revision),
+            ClockRange::EventPosition {
+                start,
+                end_exclusive,
+            },
+        )
+        .expect("valid event-position region")
+    };
+    let fixed = |epoch_nanos, period_nanos, start, end_exclusive| {
+        Region::new(
+            id("window:O1"),
+            id("clock:fixed"),
+            id("1"),
+            ClockRange::FixedSample {
+                start,
+                end_exclusive,
+                epoch_nanos,
+                period_nanos,
+            },
+        )
+        .expect("valid fixed-sample region")
+    };
+    let timestamp = |start_nanos, end_nanos| repair_region(start_nanos, end_nanos);
+
+    assert!(
+        event("window:O1", "clock:event", "1", 0, 10).overlaps(&event(
+            "window:O1",
+            "clock:event",
+            "1",
+            9,
+            11
+        ))
+    );
+    assert!(
+        !event("window:O1", "clock:event", "1", 0, 10).overlaps(&event(
+            "window:O1",
+            "clock:event",
+            "1",
+            10,
+            20
+        ))
+    );
+    assert!(fixed(100, 5, 0, 10).overlaps(&fixed(100, 5, 9, 11)));
+    assert!(!fixed(100, 5, 0, 10).overlaps(&fixed(100, 5, 10, 20)));
+    assert!(!fixed(100, 5, 0, 10).overlaps(&fixed(101, 5, 0, 10)));
+    assert!(timestamp(0, 10).overlaps(&timestamp(9, 11)));
+    assert!(!timestamp(0, 10).overlaps(&timestamp(10, 20)));
+    assert!(
+        !event("window:O1", "clock:event", "1", 0, 10).overlaps(&event(
+            "window:other",
+            "clock:event",
+            "1",
+            0,
+            10
+        ))
+    );
+    assert!(
+        !event("window:O1", "clock:event", "1", 0, 10).overlaps(&event(
+            "window:O1",
+            "clock:other",
+            "1",
+            0,
+            10
+        ))
+    );
+    assert!(
+        !event("window:O1", "clock:event", "1", 0, 10).overlaps(&event(
+            "window:O1",
+            "clock:event",
+            "2",
+            0,
+            10
+        ))
+    );
+}
+
+#[trace("TC-010", "FR-010-AC-1")]
+#[test]
+fn tc010_independent_results_schedule_by_scope_window_then_identity() {
+    use authority::repair::{DependencyEdge, FactRegion, PriorResult, Selection};
+
+    let (initial, successor) = repair_bundle_pair();
+    let replacement = successor
+        .view()
+        .payload()
+        .replacements()
+        .next()
+        .expect("replacement seed");
+    let results = [
+        ("result:b", repair_region(5, 15)),
+        ("result:z", repair_region(0, 20)),
+        ("result:a", repair_region(5, 15)),
+    ];
+    let selection = Selection::new(
+        initial.view().identity().clone(),
+        vec![
+            FactRegion::new(
+                Identity::new(replacement.prior_identity()),
+                repair_region(8, 12),
+            ),
+            FactRegion::new(
+                Identity::new(replacement.successor_identity()),
+                repair_region(8, 12),
+            ),
+        ],
+        results
+            .iter()
+            .map(|(identity, region)| {
+                PriorResult::new(id(identity), region.clone(), identity.as_bytes().to_vec())
+            })
+            .collect(),
+        results
+            .iter()
+            .map(|(identity, _)| {
+                DependencyEdge::new(Identity::new(replacement.prior_identity()), id(identity))
+            })
+            .collect(),
+    );
+    let plan = authority::repair::plan(
+        initial.view(),
+        successor.view(),
+        &selection,
+        authority::repair::Limits::owner_max(),
+    )
+    .expect("independent result schedule");
+    assert_eq!(
+        plan.recomputation_order()
+            .map(Identity::as_str)
+            .collect::<Vec<_>>(),
+        ["result:z", "result:a", "result:b"]
+    );
+}
+
+#[trace("TC-010", "FR-010-AC-6")]
+#[test]
+fn tc010_cycle_unknown_identity_and_foreign_revision_refuse_without_plan() {
+    use authority::repair::{DependencyEdge, Selection};
+
+    let (initial, successor) = repair_bundle_pair();
+    let baseline = repair_selection(&initial, &successor);
+    let cycle = Selection::new(
+        baseline.authority_revision().clone(),
+        baseline.fact_regions().to_vec(),
+        baseline.prior_results().to_vec(),
+        vec![
+            DependencyEdge::new(id("result:direct"), id("result:composed")),
+            DependencyEdge::new(id("result:composed"), id("result:direct")),
+        ],
+    );
+    assert_eq!(
+        authority::repair::plan(
+            initial.view(),
+            successor.view(),
+            &cycle,
+            authority::repair::Limits::owner_max(),
+        )
+        .expect_err("cycle must refuse without a plan")
+        .code(),
+        authority::ErrorCode::DependencyCycle
+    );
+
+    let unknown = Selection::new(
+        baseline.authority_revision().clone(),
+        baseline.fact_regions().to_vec(),
+        baseline.prior_results().to_vec(),
+        vec![DependencyEdge::new(
+            id("result:missing"),
+            id("result:direct"),
+        )],
+    );
+    assert_eq!(
+        authority::repair::plan(
+            initial.view(),
+            successor.view(),
+            &unknown,
+            authority::repair::Limits::owner_max(),
+        )
+        .expect_err("unknown dependency identity must refuse")
+        .code(),
+        authority::ErrorCode::InvalidDependency
+    );
+
+    let foreign = Selection::new(
+        id("bundle:foreign-revision"),
+        baseline.fact_regions().to_vec(),
+        baseline.prior_results().to_vec(),
+        baseline.edges().to_vec(),
+    );
+    assert_eq!(
+        authority::repair::plan(
+            initial.view(),
+            successor.view(),
+            &foreign,
+            authority::repair::Limits::owner_max(),
+        )
+        .expect_err("foreign graph revision must refuse")
+        .code(),
+        authority::ErrorCode::ForeignRevision
+    );
+}
+
+#[trace("TC-010", "FR-010-AC-1", "FR-010-AC-6")]
+#[test]
+fn tc010_only_replacements_seed_invalidation_and_clock_domains_cannot_cross_wire() {
+    use authority::repair::{DependencyEdge, FactRegion, PriorResult, Selection};
+
+    let (initial, successor) = repair_bundle_pair();
+    let baseline = repair_selection(&initial, &successor);
+    let non_replaced = initial
+        .view()
+        .payload()
+        .components()
+        .find(|component| component.role() == authority::bundle::ComponentRole::Observation)
+        .expect("non-replaced observation component");
+    let mut facts = baseline.fact_regions().to_vec();
+    facts.push(FactRegion::new(
+        Identity::new(non_replaced.identity()),
+        repair_region(8, 12),
+    ));
+    let non_seeded = Selection::new(
+        baseline.authority_revision().clone(),
+        facts.clone(),
+        baseline.prior_results().to_vec(),
+        vec![DependencyEdge::new(
+            Identity::new(non_replaced.identity()),
+            id("result:isolated"),
+        )],
+    );
+    let plan = authority::repair::plan(
+        initial.view(),
+        successor.view(),
+        &non_seeded,
+        authority::repair::Limits::owner_max(),
+    )
+    .expect("non-replaced facts cannot seed invalidation");
+    assert_eq!(plan.affected().len(), 0);
+    assert_eq!(plan.unaffected().len(), baseline.prior_results().len());
+
+    let contradictory_results = baseline
+        .prior_results()
+        .iter()
+        .enumerate()
+        .map(|(index, result)| {
+            if index == 0 {
+                PriorResult::new(
+                    result.identity().clone(),
+                    authority::repair::Region::new(
+                        id("window:O1"),
+                        id("clock:event-time"),
+                        id("1"),
+                        ClockRange::EventPosition {
+                            start: 0,
+                            end_exclusive: 20,
+                        },
+                    )
+                    .expect("individually valid cross-wired domain"),
+                    result.bytes().to_vec(),
+                )
+            } else {
+                result.clone()
+            }
+        })
+        .collect();
+    let contradictory = Selection::new(
+        baseline.authority_revision().clone(),
+        baseline.fact_regions().to_vec(),
+        contradictory_results,
+        baseline.edges().to_vec(),
+    );
+    assert_eq!(
+        authority::repair::plan(
+            initial.view(),
+            successor.view(),
+            &contradictory,
+            authority::repair::Limits::owner_max(),
+        )
+        .expect_err("one clock revision cannot mix clock families")
+        .code(),
+        authority::ErrorCode::IntervalDomainMismatch
+    );
+
+    assert_eq!(
+        authority::repair::Region::new(
+            id("window:O1"),
+            id("clock:event-time"),
+            id("1"),
+            ClockRange::Timestamp {
+                start_nanos: 10,
+                end_nanos: 10,
+            },
+        )
+        .expect_err("empty half-open repair window")
+        .code(),
+        authority::ErrorCode::InvalidInterval
+    );
+
+    for foreign_region in [
+        authority::repair::Region::new(
+            id("window:foreign"),
+            id("clock:event-time"),
+            id("1"),
+            ClockRange::Timestamp {
+                start_nanos: 8,
+                end_nanos: 12,
+            },
+        )
+        .expect("valid foreign scope region"),
+        authority::repair::Region::new(
+            id("window:O1"),
+            id("clock:foreign"),
+            id("99"),
+            ClockRange::Timestamp {
+                start_nanos: 8,
+                end_nanos: 12,
+            },
+        )
+        .expect("valid foreign clock region"),
+    ] {
+        let cross_wired_facts = baseline
+            .fact_regions()
+            .iter()
+            .map(|fact| FactRegion::new(fact.identity().clone(), foreign_region.clone()))
+            .collect();
+        let cross_wired = Selection::new(
+            baseline.authority_revision().clone(),
+            cross_wired_facts,
+            baseline.prior_results().to_vec(),
+            baseline.edges().to_vec(),
+        );
+        assert_eq!(
+            authority::repair::plan(
+                initial.view(),
+                successor.view(),
+                &cross_wired,
+                authority::repair::Limits::owner_max(),
+            )
+            .expect_err("uniformly cross-wired fact regions must refuse")
+            .code(),
+            authority::ErrorCode::AuthorityMismatch
+        );
+    }
+    let foreign_results = baseline
+        .prior_results()
+        .iter()
+        .map(|result| {
+            PriorResult::new(
+                result.identity().clone(),
+                authority::repair::Region::new(
+                    id("window:foreign"),
+                    id("clock:event-time"),
+                    id("1"),
+                    result.region().range(),
+                )
+                .expect("valid but foreign result scope"),
+                result.bytes().to_vec(),
+            )
+        })
+        .collect();
+    let cross_wired_results = Selection::new(
+        baseline.authority_revision().clone(),
+        baseline.fact_regions().to_vec(),
+        foreign_results,
+        baseline.edges().to_vec(),
+    );
+    assert_eq!(
+        authority::repair::plan(
+            initial.view(),
+            successor.view(),
+            &cross_wired_results,
+            authority::repair::Limits::owner_max(),
+        )
+        .expect_err("prior results require prior bundle authority")
+        .code(),
+        authority::ErrorCode::AuthorityMismatch
+    );
+}
+
+#[trace("TC-010", "FR-010-AC-6")]
+#[test]
+fn tc010_each_planner_limit_admits_exact_and_refuses_one_over() {
+    let (initial, successor) = repair_bundle_pair();
+    let selection = repair_selection(&initial, &successor);
+    let baseline = authority::repair::plan(
+        initial.view(),
+        successor.view(),
+        &selection,
+        authority::repair::Limits::owner_max(),
+    )
+    .expect("baseline repair plan");
+    let usage = baseline.usage();
+    let region_identity_bytes = |region: &authority::repair::Region| {
+        region.scope_identity().as_str().len()
+            + region.clock_identity().as_str().len()
+            + region.clock_revision().as_str().len()
+    };
+    let expected_state_bytes = selection
+        .fact_regions()
+        .iter()
+        .map(|fact| fact.identity().as_str().len() + region_identity_bytes(fact.region()))
+        .sum::<usize>()
+        + selection
+            .prior_results()
+            .iter()
+            .map(|result| {
+                result.bytes().len()
+                    + result.identity().as_str().len()
+                    + region_identity_bytes(result.region())
+            })
+            .sum::<usize>();
+    assert_eq!(
+        usage.nodes,
+        selection.fact_regions().len() + selection.prior_results().len()
+    );
+    assert_eq!(usage.edges, selection.edges().len());
+    assert_eq!(usage.retained_results, selection.prior_results().len());
+    assert_eq!(usage.retained_bytes, expected_state_bytes);
+    let exact = authority::repair::Limits {
+        max_nodes: usage.nodes,
+        max_edges: usage.edges,
+        max_work: usage.work,
+        max_retained_results: usage.retained_results,
+        max_retained_bytes: usage.retained_bytes,
+        max_output_bytes: baseline.bytes().len(),
+    };
+    assert!(authority::repair::plan(initial.view(), successor.view(), &selection, exact).is_ok());
+    let count_preflight = authority::repair::plan(
+        initial.view(),
+        successor.view(),
+        &selection,
+        authority::repair::Limits {
+            max_nodes: usage.nodes - 1,
+            ..exact
+        },
+    )
+    .expect_err("count preflight must refuse before state traversal");
+    assert_eq!(
+        count_preflight.code(),
+        authority::ErrorCode::ResourceIncomplete
+    );
+    assert_eq!(count_preflight.usage().visited_fields, 0);
+
+    for lower in [
+        authority::repair::Limits {
+            max_nodes: usage.nodes - 1,
+            ..exact
+        },
+        authority::repair::Limits {
+            max_edges: usage.edges - 1,
+            ..exact
+        },
+        authority::repair::Limits {
+            max_work: usage.work - 1,
+            ..exact
+        },
+        authority::repair::Limits {
+            max_retained_results: usage.retained_results - 1,
+            ..exact
+        },
+        authority::repair::Limits {
+            max_retained_bytes: usage.retained_bytes - 1,
+            ..exact
+        },
+        authority::repair::Limits {
+            max_output_bytes: baseline.bytes().len() - 1,
+            ..exact
+        },
+    ] {
+        assert_eq!(
+            authority::repair::plan(initial.view(), successor.view(), &selection, lower)
+                .expect_err("one-over planner resource must refuse")
+                .code(),
+            authority::ErrorCode::ResourceIncomplete
+        );
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[trace("TC-010", "FR-010-AC-1", "FR-010-AC-2")]
+    #[test]
+    fn tc010_generated_dags_match_reference_closure_and_permutation(
+        edge_flags in any::<[bool; 15]>(),
+        observable in any::<[bool; 5]>(),
+    ) {
+        use authority::repair::{DependencyEdge, FactRegion, PriorResult, Selection};
+
+        let (initial, successor) = repair_bundle_pair();
+        let replacement = successor
+            .view()
+            .payload()
+            .replacements()
+            .next()
+            .expect("replacement seed");
+        let result_ids = [
+            "result:generated:0",
+            "result:generated:1",
+            "result:generated:2",
+            "result:generated:3",
+            "result:generated:4",
+        ];
+        let mut edges = Vec::new();
+        for (index, result_identity) in result_ids.iter().enumerate() {
+            if edge_flags[index] {
+                edges.push(DependencyEdge::new(
+                    Identity::new(replacement.prior_identity()),
+                    id(result_identity),
+                ));
+            }
+        }
+        let mut flag_index = result_ids.len();
+        for source in 0..result_ids.len() {
+            for dependent in source + 1..result_ids.len() {
+                if edge_flags[flag_index] {
+                    edges.push(DependencyEdge::new(
+                        id(result_ids[source]),
+                        id(result_ids[dependent]),
+                    ));
+                }
+                flag_index += 1;
+            }
+        }
+        let results = result_ids
+            .iter()
+            .enumerate()
+            .map(|(index, identity)| {
+                PriorResult::new(
+                    id(identity),
+                    if observable[index] {
+                        repair_region(0, 20)
+                    } else {
+                        repair_region(24, 30)
+                    },
+                    format!("generated-prior-{index}").into_bytes(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let selection = Selection::new(
+            initial.view().identity().clone(),
+            vec![
+                FactRegion::new(
+                    Identity::new(replacement.prior_identity()),
+                    repair_region(8, 12),
+                ),
+                FactRegion::new(
+                    Identity::new(replacement.successor_identity()),
+                    repair_region(8, 12),
+                ),
+            ],
+            results.clone(),
+            edges.clone(),
+        );
+        let plan = authority::repair::plan(
+            initial.view(),
+            successor.view(),
+            &selection,
+            authority::repair::Limits::owner_max(),
+        )
+        .expect("generated acyclic repair graph");
+
+        let mut reachable = [false; 5];
+        reachable.copy_from_slice(&edge_flags[..result_ids.len()]);
+        let mut flag_index = result_ids.len();
+        for source in 0..result_ids.len() {
+            for dependent in source + 1..result_ids.len() {
+                if edge_flags[flag_index] && reachable[source] {
+                    reachable[dependent] = true;
+                }
+                flag_index += 1;
+            }
+        }
+        let mut expected = result_ids
+            .iter()
+            .enumerate()
+            .filter_map(|(index, identity)| {
+                (reachable[index] && observable[index]).then_some(*identity)
+            })
+            .collect::<Vec<_>>();
+        expected.sort_unstable();
+        prop_assert_eq!(
+            plan.affected().map(Identity::as_str).collect::<Vec<_>>(),
+            expected
+        );
+
+        edges.reverse();
+        let mut permuted_facts = selection.fact_regions().to_vec();
+        permuted_facts.reverse();
+        let mut permuted_results = results;
+        permuted_results.reverse();
+        let permuted = Selection::new(
+            initial.view().identity().clone(),
+            permuted_facts,
+            permuted_results,
+            edges,
+        );
+        let permuted_plan = authority::repair::plan(
+            initial.view(),
+            successor.view(),
+            &permuted,
+            authority::repair::Limits::owner_max(),
+        )
+        .expect("edge permutation");
+        prop_assert_eq!(plan.bytes(), permuted_plan.bytes());
+        prop_assert_eq!(plan.identity(), permuted_plan.identity());
+    }
 }
 
 #[trace("TC-009", "FR-009-AC-2", "FR-009-AC-4")]

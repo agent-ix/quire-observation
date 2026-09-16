@@ -131,7 +131,7 @@ pub struct Usage {
     pub conflicts: usize,
     /// Direct lineage children visited or retained.
     pub lineage_children: usize,
-    /// Object members and array elements visited.
+    /// Object members, array elements, or explicit planner units visited.
     pub visited_fields: usize,
 }
 
@@ -182,10 +182,16 @@ pub enum ErrorCode {
     InvalidReplacement,
     /// One authority/scope/revision key names unequal canonical bytes.
     IdentityContradiction,
+    /// A dependency edge names an absent or contradictory graph node.
+    InvalidDependency,
+    /// A dependency graph is qualified by a different authority revision.
+    ForeignRevision,
+    /// An explicit dependency graph contains a directed cycle.
+    DependencyCycle,
 }
 
 impl ErrorCode {
-    const ALL: [Self; 22] = [
+    const ALL: [Self; 25] = [
         Self::InvalidSelection,
         Self::IdentityMismatch,
         Self::RevisionMismatch,
@@ -208,6 +214,9 @@ impl ErrorCode {
         Self::KnownSibling,
         Self::InvalidReplacement,
         Self::IdentityContradiction,
+        Self::InvalidDependency,
+        Self::ForeignRevision,
+        Self::DependencyCycle,
     ];
 
     /// Returns every stable code exactly once.
@@ -251,6 +260,9 @@ impl ErrorCode {
             Self::KnownSibling => "QOBS-AUTH-KNOWN-SIBLING",
             Self::InvalidReplacement => "QOBS-AUTH-INVALID-REPLACEMENT",
             Self::IdentityContradiction => "QOBS-AUTH-IDENTITY-CONTRADICTION",
+            Self::InvalidDependency => "QOBS-AUTH-INVALID-DEPENDENCY",
+            Self::ForeignRevision => "QOBS-AUTH-FOREIGN-REVISION",
+            Self::DependencyCycle => "QOBS-AUTH-DEPENDENCY-CYCLE",
         }
     }
 }

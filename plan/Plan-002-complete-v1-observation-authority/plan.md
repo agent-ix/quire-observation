@@ -143,7 +143,7 @@ Task-016 -> Task-017 -> Task-018 -> Task-019 -> Task-020 --\
 | Task-016 | A | FR-007, NFR-003 | TC-007, TC-012 | done |
 | Task-017 | A | FR-008, NFR-003 | TC-008, TC-012 | done |
 | Task-018 | A | FR-009, NFR-003 | TC-009, TC-012 | done |
-| Task-019 | A | FR-010, NFR-003 | TC-010, TC-012 | not_started |
+| Task-019 | A | FR-010, NFR-003 | TC-010, TC-012 | done |
 | Task-020 | A | FR-010 | TC-010 | not_started |
 | Task-021 | B | FR-011, NFR-003 | TC-011, TC-012 | not_started |
 | Task-022 | C | NFR-003 | TC-012, TC-013 | not_started |

@@ -2,7 +2,7 @@
 id: Task-019
 title: "FR-010 — bounded affected-region planning"
 type: Task
-status: not_started
+status: done
 track: A
 priority: P0
 relationships:
@@ -26,11 +26,11 @@ edges while retaining every unaffected result byte-for-byte.
 
 ## Subtasks
 
-- [ ] Write TC-010 closure-oracle, cycle, unknown-identity and one-over tests first.
-- [ ] Seed invalidation only from FR-009 replacement relations.
-- [ ] Traverse explicit edges with checked node/edge/work accounting and cycle safety.
-- [ ] Filter dependents by exact observable scope/window and order only for scheduling.
-- [ ] Retain unaffected identities/bytes and refuse without a partial plan.
+- [x] Write TC-010 closure-oracle, cycle, unknown-identity and one-over tests first.
+- [x] Seed invalidation only from FR-009 replacement relations.
+- [x] Traverse explicit edges with checked node/edge/work accounting and cycle safety.
+- [x] Filter dependents by exact observable scope/window and order only for scheduling.
+- [x] Retain unaffected identities/bytes and refuse without a partial plan.
 
 ## Deliverables
 

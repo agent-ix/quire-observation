@@ -21,6 +21,7 @@ pub mod partial;
 pub mod population;
 pub mod position;
 pub mod progress;
+pub mod repair;
 
 pub use common::{
     AuthoritySelection, BoundaryRef, Context, Document, Error, ErrorCode, History,

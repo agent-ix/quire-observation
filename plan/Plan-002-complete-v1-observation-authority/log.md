@@ -26,3 +26,10 @@ description: "Chronological log of changes to the Plan-002 bundle."
   Schema; and the full TC-009 property, mutation, cross-wire and exact/one-over matrix.
   Independent semantic and Rust reviews are clean. Reconciled coverage is 70/88 backed rows
   with FR-009 at 5/5 and zero status lies; NFR-003 remains planned for Tasks 022 and 024.
+* **2026-09-15** — Completed Task-019 with a pure bounded affected-region planner over
+  validated direct bundle revisions; exact prior/successor fact regions; bundle-bound
+  scope/clock authority; replacement-only explicit graph closure; dependency-safe canonical
+  scheduling; byte-identical unaffected retention; typed cycle, unknown and foreign refusals;
+  and exact/one-over count, work, state and output limits. Independent semantic and Rust
+  reviews are clean. Reconciled coverage is 74/88 backed rows with FR-010 at 3/6; evaluator
+  coordination, decisive prefixes and path parity remain correctly assigned to Task-020.
