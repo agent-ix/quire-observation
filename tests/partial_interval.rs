@@ -319,7 +319,7 @@ fn tc007_ingestion_position_and_midpoint_are_not_semantic_order_inputs() {
     assert!(!expected.after());
 }
 
-#[trace("TC-007", "FR-007-AC-1", "FR-007-AC-4")]
+#[trace("TC-007", "FR-007-AC-1", "FR-007-AC-4", "TC-012", "NFR-003-AC-2")]
 #[test]
 fn tc007_partial_fact_is_canonical_strictly_read_and_fail_closed() {
     let qualified = qualified();
@@ -351,11 +351,107 @@ fn tc007_partial_fact_is_canonical_strictly_read_and_fail_closed() {
     assert_eq!(view.payload().interval().latest, "12");
     assert_eq!(view.payload().ingestion_position(), "15");
 
-    let mut one_byte = Limits::owner_max();
-    one_byte.max_output_bytes = 1;
-    let error = authority::partial::derive(context, &selection, one_byte)
-        .expect_err("bounded derivation must fail without a partial fact");
-    assert_eq!(error.code(), ErrorCode::ResourceIncomplete);
+    for (exact, lower) in [
+        (
+            Limits {
+                max_depth: first.usage().depth,
+                ..Limits::owner_max()
+            },
+            Limits {
+                max_depth: first.usage().depth - 1,
+                ..Limits::owner_max()
+            },
+        ),
+        (
+            Limits {
+                max_string_bytes: first.usage().string_bytes,
+                ..Limits::owner_max()
+            },
+            Limits {
+                max_string_bytes: first.usage().string_bytes - 1,
+                ..Limits::owner_max()
+            },
+        ),
+        (
+            Limits {
+                max_visited_fields: first.usage().visited_fields,
+                ..Limits::owner_max()
+            },
+            Limits {
+                max_visited_fields: first.usage().visited_fields - 1,
+                ..Limits::owner_max()
+            },
+        ),
+    ] {
+        authority::partial::derive(context, &selection, exact)
+            .expect("exact partial structural bound admits");
+        let first_error = authority::partial::derive(context, &selection, lower)
+            .expect_err("one-over partial structural bound");
+        let repeated_error = authority::partial::derive(context, &selection, lower)
+            .expect_err("repeated one-over partial structural bound");
+        assert_eq!(first_error, repeated_error);
+        assert_eq!(first_error.code(), ErrorCode::ResourceIncomplete);
+    }
+
+    let mut output_size = first.bytes().len();
+    let output_exact = (0..8)
+        .find_map(|_| {
+            let limits = Limits {
+                max_output_bytes: output_size,
+                ..Limits::owner_max()
+            };
+            let document = authority::partial::derive(context, &selection, limits)
+                .expect("candidate exact partial output limit");
+            if document.bytes().len() == output_size {
+                Some((limits, document))
+            } else {
+                output_size = document.bytes().len();
+                None
+            }
+        })
+        .expect("partial output usage reaches a fixed point");
+    let output_lower = Limits {
+        max_output_bytes: output_exact.0.max_output_bytes - 1,
+        ..Limits::owner_max()
+    };
+    let first_error = authority::partial::derive(context, &selection, output_lower)
+        .expect_err("one-over partial output bound");
+    let repeated_error = authority::partial::derive(context, &selection, output_lower)
+        .expect_err("repeated one-over partial output bound");
+    assert_eq!(first_error, repeated_error);
+    assert_eq!(first_error.code(), ErrorCode::ResourceIncomplete);
+
+    let mut input_size = first.bytes().len();
+    let input_exact = (0..8)
+        .find_map(|_| {
+            let limits = Limits {
+                max_input_bytes: input_size,
+                ..Limits::owner_max()
+            };
+            let document = authority::partial::derive(context, &selection, limits)
+                .expect("candidate exact partial input limit");
+            if document.bytes().len() == input_size {
+                Some((limits, document))
+            } else {
+                input_size = document.bytes().len();
+                None
+            }
+        })
+        .expect("partial input usage reaches a fixed point");
+    authority::partial::read(input_exact.1.bytes(), context, &selection, input_exact.0)
+        .expect("exact partial input bound admits");
+    let input_lower = Limits {
+        max_input_bytes: input_exact.0.max_input_bytes - 1,
+        ..input_exact.0
+    };
+    let first_error =
+        authority::partial::read(input_exact.1.bytes(), context, &selection, input_lower)
+            .expect_err("one-over partial input bound");
+    let repeated_error =
+        authority::partial::read(input_exact.1.bytes(), context, &selection, input_lower)
+            .expect_err("repeated one-over partial input bound");
+    assert_eq!(first_error, repeated_error);
+    assert_eq!(first_error.code(), ErrorCode::ResourceIncomplete);
 
     let cross_wired = authority::partial::Selection::new(
         qualified.records()[0].identity.clone(),

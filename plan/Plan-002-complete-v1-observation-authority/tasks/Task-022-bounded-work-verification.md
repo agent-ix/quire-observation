@@ -2,7 +2,7 @@
 id: Task-022
 title: "NFR-003 — bounded-work property and static verification"
 type: Task
-status: not_started
+status: done
 track: C
 priority: P0
 relationships:
@@ -26,11 +26,11 @@ traversal, order representation, arithmetic loop, retained object and output byt
 
 ## Subtasks
 
-- [ ] Generate equal-input and presentation/arrival permutation fixtures across all modules.
-- [ ] Exercise every exact and one-over caller-lowered limit with no partial retained output.
-- [ ] Inventory each loop/allocation and map it to a dominating checked bound.
-- [ ] Reject recursion, factorial order materialization, unbounded retry and unchecked casts.
-- [ ] Bind TC-012 and TC-013 tags to the same reviewed source revision.
+- [x] Generate equal-input and presentation/arrival permutation fixtures across all modules.
+- [x] Exercise every exact and one-over caller-lowered limit with no partial retained output.
+- [x] Inventory each loop/allocation and map it to a dominating checked bound.
+- [x] Reject recursion, factorial order materialization, unbounded retry and unchecked casts.
+- [x] Bind TC-012 and TC-013 tags to the same reviewed source revision.
 
 ## Deliverables
 

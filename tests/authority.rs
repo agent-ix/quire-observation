@@ -2798,7 +2798,12 @@ fn tc009_v2_round_trips_only_the_exact_structurally_empty_profile() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(32))]
 
-    #[trace("TC-009", "FR-009-AC-1", "FR-009-AC-4")]
+    #[trace(
+        "TC-009",
+        "FR-009-AC-1",
+        "FR-009-AC-4",
+        "TC-012"
+    )]
     #[test]
     fn tc009_generated_component_permutations_and_replays_are_idempotent(
         swaps in prop::collection::vec(0usize..11, 0..48)
@@ -3839,7 +3844,7 @@ fn sum_plan_for(
     }
 }
 
-#[trace("TC-011", "FR-011-AC-1", "FR-011-AC-3", "FR-011-AC-4")]
+#[trace("TC-011", "FR-011-AC-1", "FR-011-AC-3", "FR-011-AC-4", "TC-012")]
 #[test]
 fn tc011_closed_population_obeys_duplicate_policy_and_exact_sum() {
     use authority::bundle::EmbeddedPayloadRef;
@@ -3851,16 +3856,25 @@ fn tc011_closed_population_obeys_duplicate_policy_and_exact_sum() {
         &[0, 1],
         &[0, 1],
     );
+    let deduplicating_selection = query_selection(
+        &lineage,
+        DuplicatePolicy::EffectIdentityDeduplicating,
+        sum_plan(-1_000, 1_000),
+    );
     let deduplicating = authority::query::evaluate(
         &lineage,
-        &query_selection(
-            &lineage,
-            DuplicatePolicy::EffectIdentityDeduplicating,
-            sum_plan(-1_000, 1_000),
-        ),
+        &deduplicating_selection,
         authority::query::Limits::owner_max(),
     )
     .expect("complete deduplicating sum");
+    let repeated = authority::query::evaluate(
+        &lineage,
+        &deduplicating_selection,
+        authority::query::Limits::owner_max(),
+    )
+    .expect("repeat identical deduplicating sum");
+    assert_eq!(deduplicating.identity(), repeated.identity());
+    assert_eq!(deduplicating.bytes(), repeated.bytes());
     let Outcome::Complete(result) = deduplicating.outcome() else {
         panic!("closed authority must produce a complete sum");
     };
@@ -4714,12 +4728,12 @@ fn tc011_each_query_limit_admits_exact_and_refuses_one_over() {
             ..exact
         },
     ] {
-        assert_eq!(
-            authority::query::evaluate(&lineage, &selection, lower)
-                .expect_err("one-over query limit")
-                .code(),
-            authority::ErrorCode::ResourceIncomplete
-        );
+        let first_error = authority::query::evaluate(&lineage, &selection, lower)
+            .expect_err("one-over query limit");
+        let repeated_error = authority::query::evaluate(&lineage, &selection, lower)
+            .expect_err("repeated one-over query limit");
+        assert_eq!(first_error, repeated_error);
+        assert_eq!(first_error.code(), authority::ErrorCode::ResourceIncomplete);
     }
 }
 
@@ -4753,7 +4767,7 @@ proptest! {
         }
     }
 
-    #[trace("TC-011", "FR-011-AC-1", "FR-011-AC-4", "TC-012", "NFR-003-AC-2")]
+    #[trace("TC-011", "FR-011-AC-1", "FR-011-AC-4", "TC-012")]
     #[test]
     fn tc011_generated_effect_policies_match_an_independent_ordered_fold(
         cases in prop::collection::vec((0u8..3, -20i16..21), 1..6),
@@ -5298,7 +5312,7 @@ fn permuted_coordinator_inputs(
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(32))]
 
-    #[trace("TC-010", "FR-010-AC-3", "FR-010-AC-5")]
+    #[trace("TC-010", "FR-010-AC-3", "FR-010-AC-5", "TC-012")]
     #[test]
     fn tc010_generated_arrival_permutations_preserve_semantic_bytes(
         reverse_jobs in any::<bool>(),
@@ -5603,13 +5617,17 @@ fn tc010_run_and_replacement_bind_selection_evidence_profile_and_lineage() {
     assert_ne!(baseline_direct.identity(), changed_direct.identity());
 }
 
-struct ForgedClosureEvaluator;
+#[derive(Default)]
+struct ForgedClosureEvaluator {
+    calls: usize,
+}
 
 impl authority::coordination::Evaluator for ForgedClosureEvaluator {
     fn evaluate(
         &mut self,
         request: authority::coordination::Request<'_>,
     ) -> authority::coordination::EvaluatorOutcome {
+        self.calls += 1;
         authority::coordination::EvaluatorOutcome::Decisive {
             disposition: authority::coordination::Disposition::Violated,
             support: authority::coordination::DecisionSupport::new(
@@ -5807,7 +5825,7 @@ fn tc010_foreign_input_open_closure_and_forged_support_refuse() {
         );
     }
 
-    let mut forged_evaluator = ForgedClosureEvaluator;
+    let mut forged_evaluator = ForgedClosureEvaluator::default();
     let mut forged = authority::coordination::IncrementalRun::start(
         &plan,
         &selection,
@@ -5815,16 +5833,19 @@ fn tc010_foreign_input_open_closure_and_forged_support_refuse() {
         authority::coordination::Limits::owner_max(),
     )
     .expect("valid selection with forged evaluator response");
-    assert_eq!(
-        forged
-            .push(
-                &id("result:direct"),
-                job_inputs(&batch, &id("result:direct"))[0].clone(),
-            )
-            .expect_err("unbound closure support cannot promote")
-            .code(),
-        authority::ErrorCode::SupportMismatch
-    );
+    let forged_input = job_inputs(&batch, &id("result:direct"))[0].clone();
+    for attempt in 0..2 {
+        assert_eq!(
+            forged
+                .push(&id("result:direct"), forged_input.clone())
+                .expect_err("unbound closure support cannot promote")
+                .code(),
+            authority::ErrorCode::SupportMismatch,
+            "attempt {attempt} must reach the evaluator, not duplicate-input rejection"
+        );
+    }
+    drop(forged);
+    assert_eq!(forged_evaluator.calls, 2);
 }
 
 struct DependencyUnavailableEvaluator {
@@ -5866,7 +5887,7 @@ fn tc010_unreplaced_dependency_propagates_incomplete_without_stale_evaluation() 
     ));
 }
 
-#[trace("TC-010", "FR-010-AC-6")]
+#[trace("TC-010", "FR-010-AC-6", "TC-012", "NFR-003-AC-2")]
 #[test]
 fn tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths() {
     let plan = coordinator_plan();
@@ -5898,7 +5919,7 @@ fn tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths(
             possible_orders: 12,
             evaluator_calls: 3,
             work: 137,
-            state_bytes: 7_116,
+            state_bytes: 7_197,
             output_bytes: 2_252,
         }
     );
@@ -5918,6 +5939,18 @@ fn tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths(
         exact,
     )
     .is_ok());
+    let possible_order_error = authority::coordination::run_batch(
+        &plan,
+        &selection,
+        &batch,
+        &mut ScriptedEvaluator::default(),
+        authority::coordination::Limits {
+            max_possible_orders: usage.possible_orders - 1,
+            ..exact
+        },
+    )
+    .expect_err("one-over possible-order limit reports observed work");
+    assert_eq!(possible_order_error.usage().visited_fields, 65);
     for lower in [
         authority::coordination::Limits {
             max_jobs: usage.jobs - 1,
@@ -5944,18 +5977,24 @@ fn tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths(
             ..exact
         },
     ] {
-        assert_eq!(
-            authority::coordination::run_batch(
-                &plan,
-                &selection,
-                &batch,
-                &mut ScriptedEvaluator::default(),
-                lower,
-            )
-            .expect_err("one-over batch limit")
-            .code(),
-            authority::ErrorCode::ResourceIncomplete
-        );
+        let first_error = authority::coordination::run_batch(
+            &plan,
+            &selection,
+            &batch,
+            &mut ScriptedEvaluator::default(),
+            lower,
+        )
+        .expect_err("one-over batch limit");
+        let repeated_error = authority::coordination::run_batch(
+            &plan,
+            &selection,
+            &batch,
+            &mut ScriptedEvaluator::default(),
+            lower,
+        )
+        .expect_err("repeated one-over batch limit");
+        assert_eq!(first_error, repeated_error);
+        assert_eq!(first_error.code(), authority::ErrorCode::ResourceIncomplete);
     }
 
     let mut evaluator = ScriptedEvaluator::default();
@@ -5979,7 +6018,7 @@ fn tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths(
             possible_orders: 21,
             evaluator_calls: 5,
             work: 144,
-            state_bytes: 7_964,
+            state_bytes: 8_045,
             output_bytes: 2_252,
         }
     );
@@ -6025,22 +6064,226 @@ fn tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths(
             ..exact
         },
     ] {
-        assert_eq!(
-            drive_incremental(
-                &plan,
-                &selection,
-                &batch,
-                &mut ScriptedEvaluator::default(),
-                lower,
-            )
-            .expect_err("one-over incremental limit")
-            .code(),
-            authority::ErrorCode::ResourceIncomplete
-        );
+        let first_error = drive_incremental(
+            &plan,
+            &selection,
+            &batch,
+            &mut ScriptedEvaluator::default(),
+            lower,
+        )
+        .expect_err("one-over incremental limit");
+        let repeated_error = drive_incremental(
+            &plan,
+            &selection,
+            &batch,
+            &mut ScriptedEvaluator::default(),
+            lower,
+        )
+        .expect_err("repeated one-over incremental limit");
+        assert_eq!(first_error, repeated_error);
+        assert_eq!(first_error.code(), authority::ErrorCode::ResourceIncomplete);
     }
 }
 
-#[trace("TC-010", "FR-010-AC-4", "FR-010-AC-6")]
+struct RetrySizedPendingEvaluator {
+    calls: usize,
+    first_reason: Identity,
+    retry_reason: Identity,
+}
+
+struct CloseRetryPendingEvaluator {
+    calls: usize,
+    long_reason: Identity,
+    short_reason: Identity,
+}
+
+impl authority::coordination::Evaluator for CloseRetryPendingEvaluator {
+    fn evaluate(
+        &mut self,
+        _request: authority::coordination::Request<'_>,
+    ) -> authority::coordination::EvaluatorOutcome {
+        self.calls += 1;
+        let reason = if self.calls == 3 {
+            self.long_reason.clone()
+        } else {
+            self.short_reason.clone()
+        };
+        authority::coordination::EvaluatorOutcome::Pending(reason)
+    }
+}
+
+impl authority::coordination::Evaluator for RetrySizedPendingEvaluator {
+    fn evaluate(
+        &mut self,
+        _request: authority::coordination::Request<'_>,
+    ) -> authority::coordination::EvaluatorOutcome {
+        self.calls += 1;
+        let reason = if self.calls == 1 {
+            self.first_reason.clone()
+        } else {
+            self.retry_reason.clone()
+        };
+        authority::coordination::EvaluatorOutcome::Pending(reason)
+    }
+}
+
+#[trace("TC-010", "FR-010-AC-6", "TC-012", "NFR-003-AC-2")]
+#[test]
+fn tc010_failed_post_evaluator_state_is_not_retained_across_retry() {
+    let plan = coordinator_plan();
+    let batch = coordinator_batch_inputs();
+    let selection = coordinator_selection(&batch);
+    let direct_identity = id("result:direct");
+    let input = job_inputs(&batch, &direct_identity)[0].clone();
+
+    let mut lower = 0usize;
+    let mut upper = authority::coordination::Limits::owner_max().max_state_bytes;
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2;
+        let mut evaluator = PendingEvaluator;
+        let starts = authority::coordination::IncrementalRun::start(
+            &plan,
+            &selection,
+            &mut evaluator,
+            authority::coordination::Limits {
+                max_state_bytes: middle,
+                ..authority::coordination::Limits::owner_max()
+            },
+        )
+        .is_ok();
+        if starts {
+            upper = middle;
+        } else {
+            lower = middle + 1;
+        }
+    }
+    let retained_start_bytes = lower;
+    let long_reason = id(&format!("reason:{}", "x".repeat(2_048)));
+    let retry_reason = id("reason:retry");
+    let post_evaluator_limit = retained_start_bytes
+        .checked_add(long_reason.as_str().len())
+        .expect("bounded test state limit");
+    let mut evaluator = RetrySizedPendingEvaluator {
+        calls: 0,
+        first_reason: long_reason,
+        retry_reason,
+    };
+    let mut stream = authority::coordination::IncrementalRun::start(
+        &plan,
+        &selection,
+        &mut evaluator,
+        authority::coordination::Limits {
+            max_state_bytes: post_evaluator_limit,
+            ..authority::coordination::Limits::owner_max()
+        },
+    )
+    .expect("limit admits exactly the prepared state");
+    assert_eq!(
+        stream
+            .push(&direct_identity, input.clone())
+            .expect_err("long reason fits, but retaining its prefix exceeds the limit")
+            .code(),
+        authority::ErrorCode::ResourceIncomplete
+    );
+    stream
+        .push(&direct_identity, input)
+        .expect("retry retains only the smaller accepted prefix after rollback");
+    drop(stream);
+    assert_eq!(evaluator.calls, 2);
+}
+
+#[trace("TC-010", "FR-010-AC-6", "TC-012", "NFR-003-AC-2")]
+#[test]
+fn tc010_failed_close_state_is_rolled_back_while_call_usage_remains_exact() {
+    let plan = coordinator_plan();
+    let batch = coordinator_batch_inputs();
+    let selection = coordinator_selection(&batch);
+    let direct_identity = id("result:direct");
+    let direct_inputs = job_inputs(&batch, &direct_identity).to_vec();
+    let long_reason = id(&format!("reason:{}", "x".repeat(100_000)));
+    let short_reason = id("reason:retry");
+
+    let closes_with = |max_state_bytes| {
+        let mut evaluator = CloseRetryPendingEvaluator {
+            calls: 0,
+            long_reason: long_reason.clone(),
+            short_reason: short_reason.clone(),
+        };
+        let Ok(mut stream) = authority::coordination::IncrementalRun::start(
+            &plan,
+            &selection,
+            &mut evaluator,
+            authority::coordination::Limits {
+                max_state_bytes,
+                ..authority::coordination::Limits::owner_max()
+            },
+        ) else {
+            return false;
+        };
+        for input in &direct_inputs {
+            if stream.push(&direct_identity, input.clone()).is_err() {
+                return false;
+            }
+        }
+        stream.close(&direct_identity).is_ok()
+    };
+    let mut lower = 0usize;
+    let mut upper = authority::coordination::Limits::owner_max().max_state_bytes;
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2;
+        if closes_with(middle) {
+            upper = middle;
+        } else {
+            lower = middle + 1;
+        }
+    }
+    let post_evaluator_limit = lower - 1;
+    let mut evaluator = CloseRetryPendingEvaluator {
+        calls: 0,
+        long_reason,
+        short_reason,
+    };
+    let mut stream = authority::coordination::IncrementalRun::start(
+        &plan,
+        &selection,
+        &mut evaluator,
+        authority::coordination::Limits {
+            max_state_bytes: post_evaluator_limit,
+            ..authority::coordination::Limits::owner_max()
+        },
+    )
+    .expect("limit admits the prepared coordinator state");
+    for input in direct_inputs {
+        stream
+            .push(&direct_identity, input)
+            .expect("short nonterminal prefix fits");
+    }
+    assert_eq!(
+        stream
+            .close(&direct_identity)
+            .expect_err("long close result fits staging but not its final prefix")
+            .code(),
+        authority::ErrorCode::ResourceIncomplete
+    );
+    stream
+        .close(&direct_identity)
+        .expect("smaller close retry succeeds after retained-state rollback");
+    for identity in plan.recomputation_order().skip(1) {
+        for input in job_inputs(&batch, identity) {
+            stream
+                .push(identity, input.clone())
+                .expect("remaining input stays within the released state budget");
+        }
+        stream
+            .close(identity)
+            .expect("remaining job closes after failed-state rollback");
+    }
+    let run = stream.finish().expect("retry-completed run");
+    assert_eq!(run.usage().evaluator_calls, evaluator.calls);
+    assert!(run.usage().evaluator_calls >= 4);
+}
+
+#[trace("TC-010", "FR-010-AC-4", "FR-010-AC-6", "TC-012", "NFR-003-AC-2")]
 #[test]
 fn tc010_late_incremental_refusal_exposes_only_nonpromoted_settlement() {
     use authority::coordination::PrefixOutcome;
@@ -6070,13 +6313,18 @@ fn tc010_late_incremental_refusal_exposes_only_nonpromoted_settlement() {
     stream
         .close(&id("result:direct"))
         .expect("close direct certificate");
+    let composed_input = job_inputs(&batch, &id("result:composed"))[0].clone();
     let error = stream
-        .push(
-            &id("result:composed"),
-            job_inputs(&batch, &id("result:composed"))[0].clone(),
-        )
+        .push(&id("result:composed"), composed_input.clone())
         .expect_err("later pairwise-order work exceeds zero bound");
+    let repeated_error = stream
+        .push(&id("result:composed"), composed_input)
+        .expect_err("rejected input is rolled back and reaches the same resource guard on retry");
     assert_eq!(error.code(), authority::ErrorCode::ResourceIncomplete);
+    assert_eq!(
+        repeated_error.code(),
+        authority::ErrorCode::ResourceIncomplete
+    );
     // No `Run` exists and PrefixOutcome has no promoted-replacement variant.
 }
 
@@ -6837,7 +7085,7 @@ fn tc010_only_replacements_seed_invalidation_and_clock_domains_cannot_cross_wire
     );
 }
 
-#[trace("TC-010", "FR-010-AC-6")]
+#[trace("TC-010", "FR-010-AC-6", "TC-012", "NFR-003-AC-2")]
 #[test]
 fn tc010_each_planner_limit_admits_exact_and_refuses_one_over() {
     let (initial, successor) = repair_bundle_pair();
@@ -6934,19 +7182,26 @@ fn tc010_each_planner_limit_admits_exact_and_refuses_one_over() {
             ..exact
         },
     ] {
-        assert_eq!(
+        let first_error =
             authority::repair::plan(initial.view(), successor.view(), &selection, lower)
-                .expect_err("one-over planner resource must refuse")
-                .code(),
-            authority::ErrorCode::ResourceIncomplete
-        );
+                .expect_err("one-over planner resource must refuse");
+        let repeated_error =
+            authority::repair::plan(initial.view(), successor.view(), &selection, lower)
+                .expect_err("repeated one-over planner resource must refuse");
+        assert_eq!(first_error, repeated_error);
+        assert_eq!(first_error.code(), authority::ErrorCode::ResourceIncomplete);
     }
 }
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(32))]
 
-    #[trace("TC-010", "FR-010-AC-1", "FR-010-AC-2")]
+    #[trace(
+        "TC-010",
+        "FR-010-AC-1",
+        "FR-010-AC-2",
+        "TC-012"
+    )]
     #[test]
     fn tc010_generated_dags_match_reference_closure_and_permutation(
         edge_flags in any::<[bool; 15]>(),
@@ -7387,7 +7642,7 @@ fn tc009_stale_and_known_sibling_lineage_refuse_distinctly() {
     assert_eq!(error.code(), authority::ErrorCode::KnownSibling);
 }
 
-#[trace("TC-009", "FR-009-AC-5")]
+#[trace("TC-009", "FR-009-AC-5", "TC-012", "NFR-003-AC-2")]
 #[test]
 fn tc009_component_replacement_and_lineage_bounds_fail_closed() {
     use authority::availability::DependencyState;
@@ -7588,7 +7843,7 @@ fn tc009_component_replacement_and_lineage_bounds_fail_closed() {
 
     let initial = authority::bundle::publish(
         context,
-        &Selection::new(components, vec![]),
+        &Selection::new(components.clone(), vec![]),
         None,
         Limits::owner_max(),
     )
@@ -7652,7 +7907,7 @@ fn tc009_component_replacement_and_lineage_bounds_fail_closed() {
         },
     )
     .expect("exact replacement bound admits");
-    LineageView::from_views(
+    let supplied_lineage = LineageView::from_views(
         initial.view(),
         std::slice::from_ref(successor.view()),
         Limits {
@@ -7661,6 +7916,30 @@ fn tc009_component_replacement_and_lineage_bounds_fail_closed() {
         },
     )
     .expect("exact lineage-child bound admits");
+    let source_bytes = initial.view().bytes().len() + successor.view().bytes().len();
+    LineageView::from_views(
+        initial.view(),
+        std::slice::from_ref(successor.view()),
+        Limits {
+            max_input_bytes: source_bytes,
+            ..Limits::owner_max()
+        },
+    )
+    .expect("exact aggregate lineage source-byte bound admits");
+    let source_error = LineageView::from_views(
+        initial.view(),
+        std::slice::from_ref(successor.view()),
+        Limits {
+            max_input_bytes: source_bytes - 1,
+            ..Limits::owner_max()
+        },
+    )
+    .expect_err("one-over aggregate lineage source-byte bound");
+    assert_eq!(
+        source_error.code(),
+        authority::ErrorCode::ResourceIncomplete
+    );
+    assert_eq!(source_error.usage().wire_bytes, source_bytes);
     let lineage_limits = Limits {
         max_lineage_children: 0,
         ..Limits::owner_max()
@@ -7673,4 +7952,16 @@ fn tc009_component_replacement_and_lineage_bounds_fail_closed() {
     .expect_err("one-over lineage-child bound");
     assert_eq!(error.code(), authority::ErrorCode::ResourceIncomplete);
     assert_eq!(error.usage().lineage_children, 1);
+    let replay_under_lower_current_limit = authority::bundle::publish(
+        context,
+        &Selection::new(bundle_components(&documents), vec![]),
+        Some(&supplied_lineage),
+        lineage_limits,
+    )
+    .expect_err("supplied lineage must obey the current child limit");
+    assert_eq!(
+        replay_under_lower_current_limit.code(),
+        authority::ErrorCode::ResourceIncomplete
+    );
+    assert_eq!(replay_under_lower_current_limit.usage().lineage_children, 1);
 }

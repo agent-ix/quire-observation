@@ -738,6 +738,33 @@ impl LineageView {
         if direct_children.len() > effective.max_lineage_children {
             return Err(resource_error(0, 0, 0, direct_children.len()));
         }
+        let source_bytes = direct_children
+            .iter()
+            .try_fold(head.bytes().len(), |total, child| {
+                total.checked_add(child.bytes().len())
+            });
+        let Some(source_bytes) = source_bytes else {
+            return Err(Error::new(
+                ErrorCode::ResourceIncomplete,
+                "lineage source byte count overflowed",
+                Usage {
+                    wire_bytes: usize::MAX,
+                    lineage_children: direct_children.len(),
+                    ..Usage::default()
+                },
+            ));
+        };
+        if source_bytes > effective.max_input_bytes {
+            return Err(Error::new(
+                ErrorCode::ResourceIncomplete,
+                "lineage source bytes exceed the effective input bound",
+                Usage {
+                    wire_bytes: source_bytes,
+                    lineage_children: direct_children.len(),
+                    ..Usage::default()
+                },
+            ));
+        }
         for child in direct_children {
             if child.contract() != head.contract()
                 || child.authority() != head.authority()
@@ -752,7 +779,11 @@ impl LineageView {
                 ));
             }
         }
-        let mut children: Vec<_> = direct_children.iter().map(bundle_stamp).collect();
+        let mut children = Vec::new();
+        children
+            .try_reserve_exact(direct_children.len())
+            .map_err(|_| resource_error(0, 0, 0, direct_children.len()))?;
+        children.extend(direct_children.iter().map(bundle_stamp));
         children.sort_by(|left, right| left.identity.cmp(&right.identity));
         if children
             .windows(2)
@@ -1157,6 +1188,22 @@ fn payload(
     limits: Limits,
 ) -> Result<BundleView> {
     let effective = limits.effective();
+    if let Some(lineage) = lineage {
+        if lineage.direct_children.len() > effective.max_lineage_children {
+            return Err(resource_error(0, 0, 0, lineage.direct_children.len()));
+        }
+        if lineage.document.bytes().len() > effective.max_input_bytes {
+            return Err(Error::new(
+                ErrorCode::ResourceIncomplete,
+                "supplied lineage bytes exceed the effective input bound",
+                Usage {
+                    wire_bytes: lineage.document.bytes().len(),
+                    lineage_children: lineage.direct_children.len(),
+                    ..Usage::default()
+                },
+            ));
+        }
+    }
     if selection.components.len() > effective.max_bundle_components
         || selection.replacements.len() > effective.max_replacements
         || selection.conflicts.len() > effective.max_conflicts
@@ -1499,43 +1546,68 @@ fn validate_replacements(
     components: &[&Component],
     replacements: &[Replacement],
 ) -> Result<()> {
-    let mut removed: Vec<_> = predecessor
-        .components
-        .iter()
-        .filter(|prior| {
-            !components.iter().any(|successor| {
-                successor.role() == prior.role && successor.identity() == prior.identity
-            })
-        })
-        .map(|prior| (prior.role, prior.identity.clone()))
-        .collect();
-    let mut added: Vec<_> = components
-        .iter()
-        .filter(|successor| {
-            !predecessor.components.iter().any(|prior| {
-                prior.role == successor.role() && prior.identity == successor.identity()
-            })
-        })
-        .map(|successor| (successor.role(), successor.identity().to_owned()))
-        .collect();
-    let mut declared_removed: Vec<_> = replacements
-        .iter()
-        .map(|replacement| {
-            (
-                replacement.wire.role,
-                replacement.wire.prior_identity.clone(),
-            )
-        })
-        .collect();
-    let mut declared_added: Vec<_> = replacements
-        .iter()
-        .map(|replacement| {
-            (
-                replacement.wire.role,
-                replacement.wire.successor_identity.clone(),
-            )
-        })
-        .collect();
+    let mut removed = Vec::new();
+    let mut added = Vec::new();
+    let mut declared_removed = Vec::new();
+    let mut declared_added = Vec::new();
+    removed
+        .try_reserve_exact(predecessor.components.len())
+        .map_err(|_| resource_error(components.len(), replacements.len(), 0, 0))?;
+    added
+        .try_reserve_exact(components.len())
+        .map_err(|_| resource_error(components.len(), replacements.len(), 0, 0))?;
+    declared_removed
+        .try_reserve_exact(replacements.len())
+        .map_err(|_| resource_error(components.len(), replacements.len(), 0, 0))?;
+    declared_added
+        .try_reserve_exact(replacements.len())
+        .map_err(|_| resource_error(components.len(), replacements.len(), 0, 0))?;
+    let mut prior_index = 0;
+    let mut successor_index = 0;
+    while prior_index < predecessor.components.len() && successor_index < components.len() {
+        let prior = &predecessor.components[prior_index];
+        let successor = components[successor_index];
+        match prior
+            .role
+            .cmp(&successor.role())
+            .then_with(|| prior.identity.as_str().cmp(successor.identity()))
+        {
+            std::cmp::Ordering::Less => {
+                removed.push((prior.role, prior.identity.clone()));
+                prior_index += 1;
+            }
+            std::cmp::Ordering::Greater => {
+                added.push((successor.role(), successor.identity().to_owned()));
+                successor_index += 1;
+            }
+            std::cmp::Ordering::Equal => {
+                prior_index += 1;
+                successor_index += 1;
+            }
+        }
+    }
+    removed.extend(
+        predecessor.components[prior_index..]
+            .iter()
+            .map(|prior| (prior.role, prior.identity.clone())),
+    );
+    added.extend(
+        components[successor_index..]
+            .iter()
+            .map(|successor| (successor.role(), successor.identity().to_owned())),
+    );
+    declared_removed.extend(replacements.iter().map(|replacement| {
+        (
+            replacement.wire.role,
+            replacement.wire.prior_identity.clone(),
+        )
+    }));
+    declared_added.extend(replacements.iter().map(|replacement| {
+        (
+            replacement.wire.role,
+            replacement.wire.successor_identity.clone(),
+        )
+    }));
     removed.sort_unstable();
     added.sort_unstable();
     declared_removed.sort_unstable();

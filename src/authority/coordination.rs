@@ -682,6 +682,11 @@ impl<'a> Request<'a> {
 /// Mockable opaque evaluator seam.
 pub trait Evaluator {
     /// Evaluates one exact observed prefix without ingestion metadata.
+    ///
+    /// Invocation is at-least-once: the coordinator can reject the returned
+    /// contribution during validation or resource accounting, and retrying the
+    /// same logical input invokes the evaluator again. Implementations must make
+    /// repeated identical requests safe; usage counts every invocation.
     fn evaluate(&mut self, request: Request<'_>) -> EvaluatorOutcome;
 }
 
@@ -1000,6 +1005,7 @@ struct PreparedJob<'a> {
     result_inputs: Vec<PreparedResultInput<'a>>,
 }
 
+#[derive(Clone, Copy)]
 struct Work {
     limits: Limits,
     usage: Usage,
@@ -1178,28 +1184,46 @@ impl<'a, E: Evaluator> IncrementalRun<'a, E> {
         self.current_inputs
             .try_reserve(1)
             .map_err(|_| self.work.exhausted())?;
+        self.prefixes
+            .try_reserve(1)
+            .map_err(|_| self.work.exhausted())?;
+        let prior_state_bytes = self.work.usage.state_bytes;
+        let prior_terminal = self.terminal.clone();
+        let prior_input_state = self.current_input_state;
         self.current_inputs.push(input);
         self.current_input_state = next_state;
 
-        let outcome = if let Some(terminal) = &self.terminal {
-            terminal.clone()
-        } else {
-            let prepared = &self.prepared[current];
-            let outcome = evaluate_job(
-                self.plan,
-                prepared,
-                &self.current_inputs,
-                &self.outcomes_by_identity,
-                false,
-                self.evaluator,
-                &mut self.work,
-            )?;
-            if terminal_outcome(&outcome) {
-                self.terminal = Some(outcome.clone());
+        let result = (|| {
+            let outcome = if let Some(terminal) = &self.terminal {
+                terminal.clone()
+            } else {
+                let prepared = &self.prepared[current];
+                let outcome = evaluate_job(
+                    self.plan,
+                    prepared,
+                    &self.current_inputs,
+                    &self.outcomes_by_identity,
+                    false,
+                    self.evaluator,
+                    &mut self.work,
+                )?;
+                if terminal_outcome(&outcome) {
+                    self.terminal = Some(outcome.clone());
+                }
+                outcome
+            };
+            self.record_prefix(false, outcome)
+        })();
+        match result {
+            Ok(event) => Ok(event),
+            Err(error) => {
+                self.current_inputs.pop();
+                self.current_input_state = prior_input_state;
+                self.terminal = prior_terminal;
+                self.work.usage.state_bytes = prior_state_bytes;
+                Err(error)
             }
-            outcome
-        };
-        self.record_prefix(false, outcome)
+        }
     }
 
     /// Closes the current job and returns its final observable prefix.
@@ -1214,36 +1238,47 @@ impl<'a, E: Evaluator> IncrementalRun<'a, E> {
                 "closed job does not match its external input manifest",
             ));
         }
-        let outcome = if let Some(terminal) = &self.terminal {
-            terminal.clone()
-        } else {
-            let prepared = &self.prepared[current];
-            evaluate_job(
-                self.plan,
-                prepared,
-                &self.current_inputs,
-                &self.outcomes_by_identity,
-                true,
-                self.evaluator,
-                &mut self.work,
-            )?
+        let prior_state_bytes = self.work.usage.state_bytes;
+        let staged = (|| {
+            let outcome = if let Some(terminal) = &self.terminal {
+                terminal.clone()
+            } else {
+                let prepared = &self.prepared[current];
+                evaluate_job(
+                    self.plan,
+                    prepared,
+                    &self.current_inputs,
+                    &self.outcomes_by_identity,
+                    true,
+                    self.evaluator,
+                    &mut self.work,
+                )?
+            };
+            let (selection_digest, record_identity, selected) = {
+                let prepared = &self.prepared[current];
+                let digest = derive_selection_digest(
+                    prepared,
+                    &self.current_inputs,
+                    &self.outcomes_by_identity,
+                    &mut self.work,
+                )?;
+                charge_outcome_record(prepared, &outcome, &mut self.work)?;
+                (
+                    digest,
+                    prepared.job.result_identity.clone(),
+                    prepared.job.selected.clone(),
+                )
+            };
+            let event = self.record_prefix(true, outcome.clone())?;
+            Ok((outcome, selection_digest, record_identity, selected, event))
+        })();
+        let (outcome, selection_digest, record_identity, selected, event) = match staged {
+            Ok(staged) => staged,
+            Err(error) => {
+                self.work.usage.state_bytes = prior_state_bytes;
+                return Err(error);
+            }
         };
-        let (selection_digest, record_identity, selected) = {
-            let prepared = &self.prepared[current];
-            let digest = derive_selection_digest(
-                prepared,
-                &self.current_inputs,
-                &self.outcomes_by_identity,
-                &mut self.work,
-            )?;
-            charge_outcome_record(prepared, &outcome, &mut self.work)?;
-            (
-                digest,
-                prepared.job.result_identity.clone(),
-                prepared.job.selected.clone(),
-            )
-        };
-        let event = self.record_prefix(true, outcome.clone())?;
         self.outcomes.push(OutcomeRecord {
             result_identity: record_identity.clone(),
             selected,
@@ -1803,7 +1838,11 @@ fn derive_orders(inputs: &[EvaluatorInput<'_>], work: &mut Work) -> Result<Vec<I
                         .checked_add(1)
                         .ok_or_else(|| work.exhausted())?;
                     if next > work.limits.max_possible_orders {
-                        return Err(resource_error("possible-order limit exceeded"));
+                        return Err(Error::new(
+                            ErrorCode::ResourceIncomplete,
+                            "possible-order limit exceeded",
+                            work.authority_usage(),
+                        ));
                     }
                     work.tick()?;
                     orders.try_reserve(1).map_err(|_| work.exhausted())?;
@@ -2350,6 +2389,11 @@ fn charge_outcome_record(
 }
 
 fn job_state_bytes(job: &Job, work: &Work) -> Result<usize> {
+    let result_input_bytes = job.result_inputs.iter().try_fold(0usize, |total, input| {
+        total
+            .checked_add(result_input_state_bytes(input, work)?)
+            .ok_or_else(|| work.exhausted())
+    })?;
     checked_state_sum(
         [
             job.result_identity.as_str().len(),
@@ -2359,6 +2403,7 @@ fn job_state_bytes(job: &Job, work: &Work) -> Result<usize> {
                 .as_ref()
                 .map_or(0, |closure| closure.bytes().len()),
             std::mem::size_of::<InputManifest>(),
+            result_input_bytes,
         ],
         work,
     )

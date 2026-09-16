@@ -48,3 +48,9 @@ description: "Chronological log of changes to the Plan-002 bundle."
   API and fixtures. Independent semantic and Rust reviews are clean. Reconciled fallback
   coverage is 87/89 backed rows with zero status lies; only NFR-003-AC-1 and TC-013 remain
   unbacked, and Plan-002 is 6/9 complete.
+* **2026-09-15** — Completed Task-022 with revision-bound TC-012 reproducibility and exact/
+  one-over evidence plus a 28-path TC-013 static inventory. Closed aggregate lineage input,
+  linear replacement-diff, dependency precharge, duplicated coordinator-state, transactional
+  retry, and measured error-usage findings. Independent Rust and inventory reviews are clean;
+  all 111 tests pass, fallback trace coverage is 89/89 with zero status lies, and Plan-002 is
+  7/9 complete.

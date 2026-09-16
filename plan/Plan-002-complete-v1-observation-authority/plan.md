@@ -37,7 +37,7 @@ selected temporal and protocol evaluators retain their own semantics.
 
 ### Non-Functional Requirements
 
-- [ ] **NFR-003**: reproduce every C00 result under finite caller-lowered bounds.
+- [x] **NFR-003**: reproduce every C00 result under finite caller-lowered bounds.
 
 ## Dependency Graph
 
@@ -97,9 +97,9 @@ integration test and uses pinned strict readers rather than copied producer sema
 
 ### Verification
 
-- [ ] **TC-012**: generated equal-input, permutation and exact/one-over resource properties
+- [x] **TC-012**: generated equal-input, permutation and exact/one-over resource properties
   for NFR-003-AC-2.
-- [ ] **TC-013**: static inventory proving every expansion/allocation path has a dominating
+- [x] **TC-013**: static inventory proving every expansion/allocation path has a dominating
   checked limit for NFR-003-AC-1.
 
 ## Remaining Work
@@ -150,7 +150,7 @@ Task-016 -> Task-017 -> Task-018 -> Task-019 -> Task-020 --\
 | Task-019 | A | FR-010, NFR-003 | TC-010, TC-012 | done |
 | Task-020 | A | FR-010 | TC-010 | done |
 | Task-021 | B | FR-011, NFR-003 | TC-011, TC-012 | done |
-| Task-022 | C | NFR-003 | TC-012, TC-013 | not_started |
+| Task-022 | C | NFR-003 | TC-012, TC-013 | done |
 | Task-023 | C | FR-007..FR-011 | IT-002 | not_started |
 | Task-024 | Gate | FR-007..FR-011, NFR-003 | TC-007..TC-013, IT-002 | not_started |
 

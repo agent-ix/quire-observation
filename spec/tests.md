@@ -69,8 +69,8 @@ relationships:
 | TC-009 | Publish immutable revisioned authority bundles | Property | P0 | FR-009-AC-1..FR-009-AC-6 | ✅ complete |
 | TC-010 | Agree batch, incremental and repaired authority | Property | P0 | FR-010-AC-1..FR-010-AC-6 | ✅ complete |
 | TC-011 | Evaluate closed related-workflow populations | Property | P0 | FR-011-AC-1..FR-011-AC-6 | ✅ complete |
-| TC-012 | Bound and reproduce C00 observation work | Property | P0 | NFR-003-AC-2 | 🚧 planned |
-| TC-013 | Audit bounded iteration and allocation | Static | P0 | NFR-003-AC-1 | 🚧 planned |
+| TC-012 | Bound and reproduce C00 observation work | Property | P0 | NFR-003-AC-2 | ✅ complete |
+| TC-013 | Audit bounded iteration and allocation | Static | P0 | NFR-003-AC-1 | ✅ complete |
 
 ## Option Permutation Matrix
 

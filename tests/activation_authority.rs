@@ -640,7 +640,7 @@ fn tc008_every_assessment_axis_remains_independently_selected() {
     }
 }
 
-#[trace("TC-008", "FR-008-AC-3", "FR-008-AC-4")]
+#[trace("TC-008", "FR-008-AC-3", "FR-008-AC-4", "TC-012")]
 #[test]
 fn tc008_silence_requires_definitely_beyond_progress_and_every_source() {
     let required = [id("source:a"), id("source:b")];
@@ -653,6 +653,17 @@ fn tc008_silence_requires_definitely_beyond_progress_and_every_source() {
             Limits::owner_max(),
         )
         .expect("same-domain progress"),
+        SilenceCoverage::Covered,
+    );
+    assert_eq!(
+        authority::activation::silence_coverage(
+            &interval(0, 10),
+            &interval(11, 20),
+            &required,
+            &[id("source:b"), id("source:a")],
+            Limits::owner_max(),
+        )
+        .expect("source presentation order is not semantic"),
         SilenceCoverage::Covered,
     );
 
@@ -755,7 +766,9 @@ fn tc008_cross_wired_clock_authority_refuses_without_fallback() {
     "FR-008-AC-3",
     "FR-008-AC-4",
     "FR-008-AC-5",
-    "FR-008-AC-6"
+    "FR-008-AC-6",
+    "TC-012",
+    "NFR-003-AC-2"
 )]
 #[test]
 fn tc008_versioned_owner_round_trips_all_independent_authority() {
@@ -797,6 +810,128 @@ fn tc008_versioned_owner_round_trips_all_independent_authority() {
     assert_eq!(payload.completeness_authority().unwrap().revision, 1);
     assert_eq!(payload.verdict().unwrap().identity, "verdict:eligible");
     assert_eq!(payload.settlement().unwrap().identity, "settlement:pending");
+
+    for (exact, lower) in [
+        (
+            Limits {
+                max_depth: first.usage().depth,
+                ..Limits::owner_max()
+            },
+            Limits {
+                max_depth: first.usage().depth - 1,
+                ..Limits::owner_max()
+            },
+        ),
+        (
+            Limits {
+                max_string_bytes: first.usage().string_bytes,
+                ..Limits::owner_max()
+            },
+            Limits {
+                max_string_bytes: first.usage().string_bytes - 1,
+                ..Limits::owner_max()
+            },
+        ),
+        (
+            Limits {
+                max_visited_fields: first.usage().visited_fields,
+                ..Limits::owner_max()
+            },
+            Limits {
+                max_visited_fields: first.usage().visited_fields - 1,
+                ..Limits::owner_max()
+            },
+        ),
+        (
+            Limits {
+                max_capture_bindings: first.usage().capture_bindings,
+                ..Limits::owner_max()
+            },
+            Limits {
+                max_capture_bindings: first.usage().capture_bindings - 1,
+                ..Limits::owner_max()
+            },
+        ),
+        (
+            Limits {
+                max_required_sources: first.usage().required_sources,
+                ..Limits::owner_max()
+            },
+            Limits {
+                max_required_sources: first.usage().required_sources - 1,
+                ..Limits::owner_max()
+            },
+        ),
+    ] {
+        authority::activation::derive(context, &selected, exact)
+            .expect("exact activation resource bound admits");
+        let first_error = authority::activation::derive(context, &selected, lower)
+            .expect_err("one-over activation resource bound");
+        let repeated_error = authority::activation::derive(context, &selected, lower)
+            .expect_err("repeated one-over activation resource bound");
+        assert_eq!(first_error, repeated_error);
+        assert_eq!(first_error.code(), ErrorCode::ResourceIncomplete);
+    }
+
+    let mut output_size = first.bytes().len();
+    let output_exact = (0..8)
+        .find_map(|_| {
+            let limits = Limits {
+                max_output_bytes: output_size,
+                ..Limits::owner_max()
+            };
+            let document = authority::activation::derive(context, &selected, limits)
+                .expect("candidate exact activation output limit");
+            if document.bytes().len() == output_size {
+                Some((limits, document))
+            } else {
+                output_size = document.bytes().len();
+                None
+            }
+        })
+        .expect("activation output usage reaches a fixed point");
+    let output_lower = Limits {
+        max_output_bytes: output_exact.0.max_output_bytes - 1,
+        ..Limits::owner_max()
+    };
+    let first_error = authority::activation::derive(context, &selected, output_lower)
+        .expect_err("one-over activation output bound");
+    let repeated_error = authority::activation::derive(context, &selected, output_lower)
+        .expect_err("repeated one-over activation output bound");
+    assert_eq!(first_error, repeated_error);
+    assert_eq!(first_error.code(), ErrorCode::ResourceIncomplete);
+
+    let mut input_size = first.bytes().len();
+    let input_exact = (0..8)
+        .find_map(|_| {
+            let limits = Limits {
+                max_input_bytes: input_size,
+                ..Limits::owner_max()
+            };
+            let document = authority::activation::derive(context, &selected, limits)
+                .expect("candidate exact activation input limit");
+            if document.bytes().len() == input_size {
+                Some((limits, document))
+            } else {
+                input_size = document.bytes().len();
+                None
+            }
+        })
+        .expect("activation input usage reaches a fixed point");
+    authority::activation::read(input_exact.1.bytes(), context, &selected, input_exact.0)
+        .expect("exact activation input bound admits");
+    let input_lower = Limits {
+        max_input_bytes: input_exact.0.max_input_bytes - 1,
+        ..input_exact.0
+    };
+    let first_error =
+        authority::activation::read(input_exact.1.bytes(), context, &selected, input_lower)
+            .expect_err("one-over activation input bound");
+    let repeated_error =
+        authority::activation::read(input_exact.1.bytes(), context, &selected, input_lower)
+            .expect_err("repeated one-over activation input bound");
+    assert_eq!(first_error, repeated_error);
+    assert_eq!(first_error.code(), ErrorCode::ResourceIncomplete);
 
     let mismatched = selection(&qualified, &owner, &subject, ActivationState::Unknown);
     let error =

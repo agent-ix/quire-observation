@@ -900,27 +900,44 @@ pub fn plan(prior: &View, successor: &View, selection: &Selection, limits: Limit
     affected.sort_by(|left, right| left.identity.cmp(&right.identity));
     unaffected.sort_by(|left, right| left.identity.cmp(&right.identity));
 
-    let mut dependencies = selection
+    let mut dependency_count = 0usize;
+    let mut dependency_bytes = 0usize;
+    for edge in selection
         .edges
         .iter()
         .filter(|edge| affected_identities.contains(edge.dependent_identity.as_str()))
-        .cloned()
-        .collect::<Vec<_>>();
-    dependencies.sort();
-    for edge in &dependencies {
+    {
         work.tick()?;
+        dependency_count = dependency_count
+            .checked_add(1)
+            .ok_or_else(|| work.exhausted())?;
         let edge_bytes = edge
             .source_identity
             .as_str()
             .len()
             .checked_add(edge.dependent_identity.as_str().len())
             .ok_or_else(|| work.exhausted())?;
-        work.retained_bytes = work
-            .retained_bytes
+        dependency_bytes = dependency_bytes
             .checked_add(edge_bytes)
             .ok_or_else(|| work.exhausted())?;
-        ensure_state_bytes(&work)?;
     }
+    work.retained_bytes = work
+        .retained_bytes
+        .checked_add(dependency_bytes)
+        .ok_or_else(|| work.exhausted())?;
+    ensure_state_bytes(&work)?;
+    let mut dependencies = Vec::new();
+    dependencies
+        .try_reserve_exact(dependency_count)
+        .map_err(|_| work.exhausted())?;
+    dependencies.extend(
+        selection
+            .edges
+            .iter()
+            .filter(|edge| affected_identities.contains(edge.dependent_identity.as_str()))
+            .cloned(),
+    );
+    dependencies.sort();
     work.tick()?;
     let closure_identity = successor_closure_identity(successor)?;
     work.retained_bytes = work
