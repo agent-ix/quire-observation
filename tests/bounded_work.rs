@@ -81,7 +81,7 @@ const SOURCES: &[Source] = &[
         id: SourceId::AuthorityEvidence,
         path: "tests/authority.rs",
         text: include_str!("authority.rs"),
-        sha256: "37ad7f155b132619679999eaeb6735602c7924f3e14f766ec320fe7e85c90c41",
+        sha256: "b6047cf5e17dff91f8c8f296a1165696518025bb4982efc95113545be8cb0d01",
     },
     Source {
         id: SourceId::PartialEvidence,

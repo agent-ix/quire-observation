@@ -33,8 +33,9 @@ or incremental recomputation for only that region.
 
 ## Outputs
 
-- A deterministic repair plan containing changed facts, affected result
-  identities, retained unaffected identities, and canonical recomputation order.
+- A deterministic `quire.observation.repair-plan/v1` repair plan containing
+  changed facts, affected result identities, retained unaffected identities,
+  and canonical recomputation order.
 - Retained prior and replacement result records with their evidence digests and
   explicit supersession links after the selected evaluator returns.
 - A typed incomplete, unsupported, refused, or exhausted outcome without a
@@ -82,6 +83,7 @@ or incremental recomputation for only that region.
 | FR-010-AC-4 | A decisive prefix is emitted before end-of-input, while an unresolved prefix remains non-settled until a decisive witness, decisive counterexample, or matching closure exists. | unit-testing (TC-010) |
 | FR-010-AC-5 | Out-of-order arrival and overlapping event-time intervals never become a total semantic order; every admissible order reaches the evaluator. | property-based-testing (TC-010) |
 | FR-010-AC-6 | Cycles, unknown dependency identities, foreign revisions, and one-over work/state bounds return their typed outcomes without a partial repair plan or promoted result. | unit-testing (TC-010) |
+| FR-010-AC-7 | The public repair-plan contract constant and every emitted canonical repair plan name exactly `quire.observation.repair-plan/v1`; the label is immutable within v1. | unit-testing (TC-010) |
 
 ## Error Conditions
 

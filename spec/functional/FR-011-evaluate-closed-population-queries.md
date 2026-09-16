@@ -40,8 +40,9 @@ request.
 
 ## Outputs
 
-- A canonical ordered member/accounting record and exact Boolean, count, or sum
-  value when the population and every required fact are complete.
+- A canonical `quire.observation.closed-population-query/v1` ordered
+  member/accounting record and exact Boolean, count, or sum value when the
+  population and every required fact are complete.
 - A typed incomplete or refused result with no partial definitive aggregate.
 
 ## Behavior
@@ -81,6 +82,7 @@ request.
 | FR-011-AC-4 | Replayed receipts do not create effects, while distinct admitted effects and occurrence-preserving duplicate values remain distinguishable. | unit-testing (TC-011) |
 | FR-011-AC-5 | Open, unknown, stale, ambiguous, contradicted, incomplete, foreign, or over-bound authority produces no partial definitive aggregate. | property-based-testing (TC-011) |
 | FR-011-AC-6 | Exact sum rejects wrong representation/unit, overflow, and an invalid intermediate prefix without reordering operands. | property-based-testing (TC-011) |
+| FR-011-AC-7 | The public query contract constant and every emitted canonical query evaluation name exactly `quire.observation.closed-population-query/v1`; the label is immutable within v1. | unit-testing (TC-011) |
 
 ## Error Conditions
 

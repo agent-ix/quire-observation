@@ -3875,9 +3875,6 @@ fn tc011_closed_population_obeys_duplicate_policy_and_exact_sum() {
     .expect("repeat identical deduplicating sum");
     assert_eq!(deduplicating.identity(), repeated.identity());
     assert_eq!(deduplicating.bytes(), repeated.bytes());
-    let deduplicating_wire: serde_json::Value =
-        serde_json::from_slice(deduplicating.bytes()).expect("query evaluation is canonical JSON");
-    assert_eq!(deduplicating_wire["contract"], authority::query::CONTRACT);
     let Outcome::Complete(result) = deduplicating.outcome() else {
         panic!("closed authority must produce a complete sum");
     };
@@ -6611,9 +6608,6 @@ fn tc010_plan_contains_only_explicit_observable_closure_and_retains_other_bytes(
 
     assert_eq!(first.bytes(), second.bytes());
     assert_eq!(first.identity(), second.identity());
-    let first_wire: serde_json::Value =
-        serde_json::from_slice(first.bytes()).expect("repair plan is canonical JSON");
-    assert_eq!(first_wire["contract"], authority::repair::CONTRACT);
     assert_eq!(
         first.affected().map(Identity::as_str).collect::<Vec<_>>(),
         ["result:composed", "result:direct", "result:successor-only"]
@@ -6703,6 +6697,38 @@ fn tc010_plan_contains_only_explicit_observable_closure_and_retains_other_bytes(
     );
     assert_ne!(first.bytes(), shifted_plan.bytes());
     assert_ne!(first.identity(), shifted_plan.identity());
+}
+
+#[trace("TC-010", "FR-010-AC-7")]
+#[test]
+fn tc010_repair_contract_identity_is_owner_fixed() {
+    const REPAIR_CONTRACT_ORACLE: &str = "quire.observation.repair-plan/v1";
+
+    let plan = coordinator_plan();
+    let wire: serde_json::Value =
+        serde_json::from_slice(plan.bytes()).expect("repair plan is canonical JSON");
+    assert_eq!(authority::repair::CONTRACT, REPAIR_CONTRACT_ORACLE);
+    assert_eq!(wire["contract"], REPAIR_CONTRACT_ORACLE);
+}
+
+#[trace("TC-011", "FR-011-AC-7")]
+#[test]
+fn tc011_query_contract_identity_is_owner_fixed() {
+    const QUERY_CONTRACT_ORACLE: &str = "quire.observation.closed-population-query/v1";
+
+    let lineage = query_lineage(&[("shipment:S1", "40", 5)], &[0], &[0]);
+    let selection = query_selection(
+        &lineage,
+        authority::query::DuplicatePolicy::EffectIdentityDeduplicating,
+        count_plan(),
+    );
+    let evaluation =
+        authority::query::evaluate(&lineage, &selection, authority::query::Limits::owner_max())
+            .expect("closed query evaluation");
+    let wire: serde_json::Value =
+        serde_json::from_slice(evaluation.bytes()).expect("query evaluation is canonical JSON");
+    assert_eq!(authority::query::CONTRACT, QUERY_CONTRACT_ORACLE);
+    assert_eq!(wire["contract"], QUERY_CONTRACT_ORACLE);
 }
 
 #[trace("TC-010", "FR-010-AC-1")]

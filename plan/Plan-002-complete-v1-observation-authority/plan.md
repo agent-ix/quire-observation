@@ -84,11 +84,11 @@ integration test and uses pinned strict readers rather than copied producer sema
 - [x] **TC-009**: canonical revision bytes, predecessor/replacement lineage, replay,
   stale/branched views and strict-reader mutations for FR-009-AC-1 through FR-009-AC-5.
 - [x] **TC-010**: exact affected closure, unaffected-byte retention, decisive prefixes,
-  evaluator failure and batch/incremental parity for FR-010-AC-1 through FR-010-AC-6.
+  evaluator failure and batch/incremental parity for FR-010-AC-1 through FR-010-AC-7.
 - [x] **TC-009**: extend the completed v1 bundle coverage with the immutable v2
   empty-population profile while pinning v1 bytes and behavior unchanged.
 - [x] **TC-011**: closed membership, window boundaries, duplicate policy, receipt exclusion
-  and checked-prefix arithmetic for FR-011-AC-1 through FR-011-AC-6.
+  and checked-prefix arithmetic for FR-011-AC-1 through FR-011-AC-7.
 
 ### Integration tests
 
@@ -130,7 +130,7 @@ integration test and uses pinned strict readers rather than copied producer sema
 - **C2 = Task-023** pinned consumer integration — Hard; exit: real consumers preserve
   uncertainty, repaired lineage and aggregate accounting byte-for-byte.
 - **Gate = Task-024** completion and promotion readiness — Medium; measures trace coverage
-  and all local gates; pass: 90/90 matrix rows backed with zero status lies and no open
+  and all local gates; pass: 92/92 matrix rows backed with zero status lies and no open
   high/medium review finding.
 
 ## Parallel Execution Summary
