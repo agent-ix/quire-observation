@@ -521,9 +521,11 @@ impl ChangedFact {
 pub struct Plan {
     identity: Identity,
     bytes: Vec<u8>,
+    closure_identity: Identity,
     changed_facts: Vec<ChangedFact>,
     affected: Vec<PriorResult>,
     unaffected: Vec<PriorResult>,
+    dependencies: Vec<DependencyEdge>,
     recomputation_order: Vec<Identity>,
     usage: Usage,
 }
@@ -539,6 +541,12 @@ impl Plan {
     #[must_use]
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    /// Returns the exact successor-bundle closure authority component.
+    #[must_use]
+    pub const fn closure_identity(&self) -> &Identity {
+        &self.closure_identity
     }
 
     /// Returns the exact bundle replacement seeds.
@@ -565,6 +573,12 @@ impl Plan {
         self.unaffected.iter().map(RetainedResultRef)
     }
 
+    /// Returns every explicit direct dependency of an affected result.
+    #[must_use]
+    pub fn dependencies(&self) -> impl ExactSizeIterator<Item = &DependencyEdge> {
+        self.dependencies.iter()
+    }
+
     /// Returns the dependency-safe canonical recomputation schedule.
     #[must_use]
     pub fn recomputation_order(&self) -> impl ExactSizeIterator<Item = &Identity> {
@@ -583,10 +597,18 @@ struct PlanWire<'a> {
     contract: &'static str,
     prior_bundle_identity: &'a str,
     successor_bundle_identity: &'a str,
+    closure_identity: &'a str,
     changed_facts: Vec<ChangedFactWire<'a>>,
     affected: Vec<ResultWire<'a>>,
     unaffected: Vec<ResultWire<'a>>,
+    dependencies: Vec<DependencyWire<'a>>,
     recomputation_order: Vec<&'a str>,
+}
+
+#[derive(Serialize)]
+struct DependencyWire<'a> {
+    source_identity: &'a str,
+    dependent_identity: &'a str,
 }
 
 #[derive(Serialize)]
@@ -717,8 +739,6 @@ pub fn plan(prior: &View, successor: &View, selection: &Selection, limits: Limit
             .ok_or_else(|| work.exhausted())?;
         ensure_state_bytes(&work)?;
     }
-    let retained_bytes = work.retained_bytes;
-
     let prior_component_identities: BTreeSet<_> = prior
         .payload()
         .components()
@@ -880,6 +900,36 @@ pub fn plan(prior: &View, successor: &View, selection: &Selection, limits: Limit
     affected.sort_by(|left, right| left.identity.cmp(&right.identity));
     unaffected.sort_by(|left, right| left.identity.cmp(&right.identity));
 
+    let mut dependencies = selection
+        .edges
+        .iter()
+        .filter(|edge| affected_identities.contains(edge.dependent_identity.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    dependencies.sort();
+    for edge in &dependencies {
+        work.tick()?;
+        let edge_bytes = edge
+            .source_identity
+            .as_str()
+            .len()
+            .checked_add(edge.dependent_identity.as_str().len())
+            .ok_or_else(|| work.exhausted())?;
+        work.retained_bytes = work
+            .retained_bytes
+            .checked_add(edge_bytes)
+            .ok_or_else(|| work.exhausted())?;
+        ensure_state_bytes(&work)?;
+    }
+    work.tick()?;
+    let closure_identity = successor_closure_identity(successor)?;
+    work.retained_bytes = work
+        .retained_bytes
+        .checked_add(closure_identity.as_str().len())
+        .ok_or_else(|| work.exhausted())?;
+    ensure_state_bytes(&work)?;
+    let retained_bytes = work.retained_bytes;
+
     let mut usage = Usage {
         nodes,
         edges: selection.edges.len(),
@@ -892,8 +942,11 @@ pub fn plan(prior: &View, successor: &View, selection: &Selection, limits: Limit
         prior,
         successor,
         &changed_facts,
-        &affected,
-        &unaffected,
+        ResultPartitions {
+            affected: &affected,
+            unaffected: &unaffected,
+        },
+        &dependencies,
         &schedule,
         effective.max_output_bytes,
     )?;
@@ -902,9 +955,11 @@ pub fn plan(prior: &View, successor: &View, selection: &Selection, limits: Limit
     Ok(Plan {
         identity,
         bytes,
+        closure_identity,
         changed_facts,
         affected,
         unaffected,
+        dependencies,
         recomputation_order: schedule,
         usage,
     })
@@ -1264,8 +1319,8 @@ fn encode_plan(
     prior: &View,
     successor: &View,
     changed: &[ChangedFact],
-    affected: &[PriorResult],
-    unaffected: &[PriorResult],
+    results: ResultPartitions<'_>,
+    dependencies: &[DependencyEdge],
     schedule: &[Identity],
     output_limit: usize,
 ) -> Result<Vec<u8>> {
@@ -1273,6 +1328,18 @@ fn encode_plan(
         contract: "quire.observation.repair-plan/v1",
         prior_bundle_identity: prior.identity().as_str(),
         successor_bundle_identity: successor.identity().as_str(),
+        closure_identity: successor
+            .payload()
+            .components()
+            .find(|component| component.role() == ComponentRole::Closure)
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorCode::MissingPremise,
+                    "successor bundle has no closure authority component",
+                    AuthorityUsage::default(),
+                )
+            })?
+            .identity(),
         changed_facts: changed
             .iter()
             .map(|fact| ChangedFactWire {
@@ -1283,11 +1350,47 @@ fn encode_plan(
                 successor_region: region_wire(&fact.successor_region),
             })
             .collect(),
-        affected: affected.iter().map(result_wire).collect::<Result<_>>()?,
-        unaffected: unaffected.iter().map(result_wire).collect::<Result<_>>()?,
+        affected: results
+            .affected
+            .iter()
+            .map(result_wire)
+            .collect::<Result<_>>()?,
+        unaffected: results
+            .unaffected
+            .iter()
+            .map(result_wire)
+            .collect::<Result<_>>()?,
+        dependencies: dependencies
+            .iter()
+            .map(|edge| DependencyWire {
+                source_identity: edge.source_identity.as_str(),
+                dependent_identity: edge.dependent_identity.as_str(),
+            })
+            .collect(),
         recomputation_order: schedule.iter().map(Identity::as_str).collect(),
     };
     to_bounded_json(&wire, output_limit)
+}
+
+fn successor_closure_identity(successor: &View) -> Result<Identity> {
+    successor
+        .payload()
+        .components()
+        .find(|component| component.role() == ComponentRole::Closure)
+        .map(|component| Identity::new(component.identity()))
+        .ok_or_else(|| {
+            Error::new(
+                ErrorCode::MissingPremise,
+                "successor bundle has no closure authority component",
+                AuthorityUsage::default(),
+            )
+        })
+}
+
+#[derive(Clone, Copy)]
+struct ResultPartitions<'a> {
+    affected: &'a [PriorResult],
+    unaffected: &'a [PriorResult],
 }
 
 fn result_wire(result: &PriorResult) -> Result<ResultWire<'_>> {

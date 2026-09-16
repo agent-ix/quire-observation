@@ -33,6 +33,13 @@ fn qualified() -> Box<QualifiedObservation> {
 }
 
 fn qualified_with_window(window_identity: &str) -> Box<QualifiedObservation> {
+    qualified_with_window_and_closure(window_identity, "closure-definition:windows")
+}
+
+fn qualified_with_window_and_closure(
+    window_identity: &str,
+    closure_definition_identity: &str,
+) -> Box<QualifiedObservation> {
     let producer = producer();
     let subject = order(&producer, "order:O1");
     let causal_identity = RelationshipIdentity::new("relationship:O1-S1").unwrap();
@@ -76,7 +83,7 @@ fn qualified_with_window(window_identity: &str) -> Box<QualifiedObservation> {
             clock_identity: id("clock:event-time"),
             clock_revision: id("1"),
             membership_complete: true,
-            closure_identity: Some(id("closure-definition:windows")),
+            closure_identity: Some(id(closure_definition_identity)),
             closure_digest: Some(digest(4)),
             kind: ScopeKind::Window {
                 window_identity: id(window_identity),
@@ -2505,6 +2512,1361 @@ proptest! {
     }
 }
 
+fn coordinator_interval(earliest: i128, latest: i128) -> authority::partial::EventTimeInterval {
+    authority::partial::EventTimeInterval::new(
+        id("clock:event-time"),
+        id("1"),
+        id("nanosecond"),
+        earliest,
+        latest,
+        Limits::owner_max(),
+    )
+    .expect("valid coordinator interval")
+}
+
+fn coordinator_input(
+    identity: &str,
+    earliest: i128,
+    latest: i128,
+    bytes: &[u8],
+) -> authority::coordination::Input {
+    authority::coordination::Input::new(
+        id(identity),
+        id("window:O1"),
+        coordinator_interval(earliest, latest),
+        bytes.to_vec(),
+    )
+}
+
+fn coordinator_plan() -> authority::repair::Plan {
+    let (initial, successor) = repair_bundle_pair();
+    authority::repair::plan(
+        initial.view(),
+        successor.view(),
+        &repair_selection(&initial, &successor),
+        authority::repair::Limits::owner_max(),
+    )
+    .expect("coordinator repair plan")
+}
+
+fn coordinator_closure_for(window_identity: &str, state: OpenClosed) -> authority::closure::View {
+    let qualified = qualified_with_window(window_identity);
+    let owner = owner();
+    let subject = subject(&qualified);
+    coordinator_closure_with(&qualified, &owner, &subject, state)
+}
+
+fn coordinator_closure_with(
+    qualified: &QualifiedObservation,
+    owner: &AuthoritySelection,
+    subject: &SubjectSelection,
+    state: OpenClosed,
+) -> authority::closure::View {
+    let history = History::batch(qualified);
+    let context = Context::new(history, owner, subject, 1, None);
+    let selection = authority::closure::Selection::new(
+        id("clock:event-time"),
+        id("1"),
+        vec![id("source:payments")],
+        boundary(state),
+        state,
+    );
+    let document = authority::closure::derive(context, &selection, Limits::owner_max())
+        .expect("derive coordinator closure");
+    authority::closure::read(document.bytes(), context, &selection, Limits::owner_max())
+        .expect("strict-read coordinator closure")
+}
+
+fn coordinator_batch_inputs() -> authority::coordination::BatchInputs {
+    use authority::coordination::{BatchInputs, JobInputs};
+
+    BatchInputs::new(vec![
+        JobInputs::new(
+            id("result:direct"),
+            vec![
+                coordinator_input("evidence:witness", 8, 12, b"witness"),
+                coordinator_input("evidence:trailing", 5, 15, b"trailing"),
+            ],
+        ),
+        JobInputs::new(
+            id("result:composed"),
+            vec![
+                coordinator_input("evidence:unresolved", 0, 10, b"unresolved"),
+                coordinator_input("evidence:tail", 5, 15, b"tail"),
+            ],
+        ),
+        JobInputs::new(
+            id("result:successor-only"),
+            vec![coordinator_input(
+                "evidence:unsupported",
+                20,
+                22,
+                b"unsupported",
+            )],
+        ),
+    ])
+}
+
+fn coordinator_profile() -> authority::coordination::PackageProfile {
+    authority::coordination::PackageProfile::new(
+        id("package:temporal"),
+        id("7"),
+        digest(7),
+        id("profile:refund"),
+        id("3"),
+        digest(3),
+    )
+}
+
+fn coordinator_selection_with_profile(
+    batch: &authority::coordination::BatchInputs,
+    closure: authority::closure::View,
+    selected: authority::coordination::PackageProfile,
+) -> authority::coordination::Selection {
+    use authority::coordination::{InputManifest, Job, ResultInput, Selection};
+
+    let manifest = |result_identity: &str| {
+        let inputs = batch
+            .jobs()
+            .iter()
+            .find(|job| job.result_identity().as_str() == result_identity)
+            .expect("coordinator job inputs")
+            .inputs();
+        InputManifest::for_inputs(inputs).expect("exact coordinator input manifest")
+    };
+    Selection::new(vec![
+        Job::new(
+            id("result:direct"),
+            selected.clone(),
+            id("nanosecond"),
+            manifest("result:direct"),
+            vec![],
+            None,
+        ),
+        Job::new(
+            id("result:composed"),
+            selected.clone(),
+            id("nanosecond"),
+            manifest("result:composed"),
+            vec![ResultInput::new(
+                id("result:direct"),
+                id("window:O1"),
+                coordinator_interval(5, 15),
+            )],
+            Some(closure),
+        ),
+        Job::new(
+            id("result:successor-only"),
+            selected,
+            id("nanosecond"),
+            manifest("result:successor-only"),
+            vec![],
+            None,
+        ),
+    ])
+}
+
+fn coordinator_selection(
+    batch: &authority::coordination::BatchInputs,
+) -> authority::coordination::Selection {
+    coordinator_selection_with_profile(
+        batch,
+        coordinator_closure_for("window:O1", OpenClosed::Closed),
+        coordinator_profile(),
+    )
+}
+
+fn job_inputs<'a>(
+    batch: &'a authority::coordination::BatchInputs,
+    identity: &Identity,
+) -> &'a [authority::coordination::Input] {
+    batch
+        .jobs()
+        .iter()
+        .find(|job| job.result_identity() == identity)
+        .expect("scheduled coordinator inputs")
+        .inputs()
+}
+
+fn drive_incremental<E: authority::coordination::Evaluator>(
+    plan: &authority::repair::Plan,
+    selection: &authority::coordination::Selection,
+    batch: &authority::coordination::BatchInputs,
+    evaluator: &mut E,
+    limits: authority::coordination::Limits,
+) -> authority::Result<authority::coordination::Run> {
+    let mut run =
+        authority::coordination::IncrementalRun::start(plan, selection, evaluator, limits)?;
+    for identity in plan.recomputation_order() {
+        for input in job_inputs(batch, identity) {
+            run.push(identity, input.clone())?;
+        }
+        run.close(identity)?;
+    }
+    run.finish()
+}
+
+#[derive(Default)]
+struct ScriptedEvaluator {
+    composed_source_bytes: Vec<Vec<u8>>,
+    lost_direct_order: bool,
+}
+
+impl authority::coordination::Evaluator for ScriptedEvaluator {
+    fn evaluate(
+        &mut self,
+        request: authority::coordination::Request<'_>,
+    ) -> authority::coordination::EvaluatorOutcome {
+        use authority::coordination::{
+            DecisionSupport, Disposition, EvaluatorOutcome, OrderRelation, SupportKind,
+        };
+
+        match request.result_identity().as_str() {
+            "result:direct" => {
+                if request.inputs().len() == 2 {
+                    let relations = request
+                        .orders()
+                        .iter()
+                        .map(|order| order.relation())
+                        .collect::<Vec<_>>();
+                    self.lost_direct_order |= relations
+                        != [
+                            OrderRelation::Before,
+                            OrderRelation::Equal,
+                            OrderRelation::After,
+                        ];
+                }
+                if request
+                    .inputs()
+                    .iter()
+                    .any(|input| input.identity().as_str() == "evidence:witness")
+                {
+                    EvaluatorOutcome::Decisive {
+                        disposition: Disposition::Satisfied,
+                        support: DecisionSupport::new(
+                            SupportKind::Witness,
+                            id("evidence:witness"),
+                            vec![id("evidence:witness")],
+                        ),
+                        canonical_result: b"direct-v2".to_vec(),
+                    }
+                } else {
+                    EvaluatorOutcome::Pending(id("reason:awaiting-witness"))
+                }
+            }
+            "result:composed" => {
+                let source = request
+                    .inputs()
+                    .iter()
+                    .find(|input| input.identity().as_str() == "result:direct")
+                    .expect("coordinator injected direct dependency");
+                self.composed_source_bytes
+                    .push(source.canonical_bytes().to_vec());
+                if request.end_of_input() {
+                    let closure = request.closure().expect("validated closure proof");
+                    EvaluatorOutcome::Decisive {
+                        disposition: Disposition::Violated,
+                        support: DecisionSupport::new(
+                            SupportKind::Closure,
+                            closure.identity().clone(),
+                            request
+                                .inputs()
+                                .iter()
+                                .map(|input| input.identity().clone())
+                                .collect(),
+                        ),
+                        canonical_result: b"composed-v2".to_vec(),
+                    }
+                } else {
+                    EvaluatorOutcome::Pending(id("reason:awaiting-closure"))
+                }
+            }
+            "result:successor-only" => {
+                EvaluatorOutcome::Unsupported(id("reason:unsupported-profile"))
+            }
+            other => panic!("unexpected coordinator result: {other}"),
+        }
+    }
+}
+
+#[trace("TC-010", "FR-010-AC-3", "FR-010-AC-4")]
+#[test]
+fn tc010_streaming_prefix_is_observable_before_tail_and_matches_batch() {
+    use authority::coordination::{Outcome, PrefixOutcome};
+
+    let plan = coordinator_plan();
+    let batch_inputs = coordinator_batch_inputs();
+    let selection = coordinator_selection(&batch_inputs);
+    let mut incremental_evaluator = ScriptedEvaluator::default();
+    let mut stream = authority::coordination::IncrementalRun::start(
+        &plan,
+        &selection,
+        &mut incremental_evaluator,
+        authority::coordination::Limits::owner_max(),
+    )
+    .expect("start without future input");
+
+    let direct_inputs = job_inputs(&batch_inputs, &id("result:direct"));
+    let decisive = stream
+        .push(&id("result:direct"), direct_inputs[0].clone())
+        .expect("witness prefix is exposed immediately");
+    assert!(!decisive.end_of_input());
+    let PrefixOutcome::Settled(early) = decisive.outcome() else {
+        panic!("witness prefix did not settle: {decisive:?}");
+    };
+    let early = early.clone();
+
+    let trailing = stream
+        .push(&id("result:direct"), direct_inputs[1].clone())
+        .expect("unrelated tail arrives only after settlement was observed");
+    let PrefixOutcome::Settled(after_tail) = trailing.outcome() else {
+        panic!("settled prefix regressed after tail: {trailing:?}");
+    };
+    assert_eq!(after_tail, &early);
+    stream
+        .close(&id("result:direct"))
+        .expect("close already-settled direct job");
+
+    let composed_inputs = job_inputs(&batch_inputs, &id("result:composed"));
+    let unresolved = stream
+        .push(&id("result:composed"), composed_inputs[0].clone())
+        .expect("unresolved composed prefix");
+    assert!(matches!(unresolved.outcome(), PrefixOutcome::Pending(_)));
+    assert!(!unresolved.end_of_input());
+    stream
+        .push(&id("result:composed"), composed_inputs[1].clone())
+        .expect("composed tail remains unresolved before closure");
+    let closed = stream
+        .close(&id("result:composed"))
+        .expect("matching validated closure settles the job");
+    assert!(matches!(closed.outcome(), PrefixOutcome::Settled(_)));
+
+    let successor_input = job_inputs(&batch_inputs, &id("result:successor-only"))[0].clone();
+    stream
+        .push(&id("result:successor-only"), successor_input)
+        .expect("successor-only prefix");
+    stream
+        .close(&id("result:successor-only"))
+        .expect("close successor-only job");
+    let incremental = stream.finish().expect("complete incremental run");
+
+    let mut batch_evaluator = ScriptedEvaluator::default();
+    let batch = authority::coordination::run_batch(
+        &plan,
+        &selection,
+        &batch_inputs,
+        &mut batch_evaluator,
+        authority::coordination::Limits::owner_max(),
+    )
+    .expect("complete batch run");
+    assert_eq!(batch.bytes(), incremental.bytes());
+    assert_eq!(batch.identity(), incremental.identity());
+    assert_eq!(
+        batch.outcomes().collect::<Vec<_>>(),
+        incremental.outcomes().collect::<Vec<_>>()
+    );
+    assert!(incremental_evaluator
+        .composed_source_bytes
+        .iter()
+        .all(|bytes| bytes == b"direct-v2"));
+    assert!(batch_evaluator
+        .composed_source_bytes
+        .iter()
+        .all(|bytes| bytes == b"direct-v2"));
+    let batch_direct = batch.outcome(&id("result:direct")).expect("direct outcome");
+    let Outcome::Replaced(batch_replacement) = batch_direct else {
+        panic!("batch direct result was not replaced");
+    };
+    assert_eq!(batch_replacement.disposition(), early.disposition());
+    assert_eq!(batch_replacement.support(), early.support());
+    assert_eq!(batch_replacement.evidence_digest(), early.evidence_digest());
+    assert_eq!(
+        batch_replacement.evaluator_digest(),
+        early.evaluator_digest()
+    );
+    assert_eq!(batch_replacement.evaluator_bytes(), early.evaluator_bytes());
+    assert_eq!(batch_replacement.prior_identity().as_str(), "result:direct");
+    assert_eq!(
+        batch_replacement.support().evidence_identities(),
+        [id("evidence:witness")]
+    );
+}
+
+struct CounterexampleEvaluator;
+
+impl authority::coordination::Evaluator for CounterexampleEvaluator {
+    fn evaluate(
+        &mut self,
+        request: authority::coordination::Request<'_>,
+    ) -> authority::coordination::EvaluatorOutcome {
+        authority::coordination::EvaluatorOutcome::Decisive {
+            disposition: authority::coordination::Disposition::Violated,
+            support: authority::coordination::DecisionSupport::new(
+                authority::coordination::SupportKind::Counterexample,
+                request.inputs()[0].identity().clone(),
+                vec![request.inputs()[0].identity().clone()],
+            ),
+            canonical_result: b"violated-v2".to_vec(),
+        }
+    }
+}
+
+#[trace("TC-010", "FR-010-AC-4")]
+#[test]
+fn tc010_counterexample_prefix_settles_before_end_of_input() {
+    let plan = coordinator_plan();
+    let batch = coordinator_batch_inputs();
+    let selection = coordinator_selection(&batch);
+    let mut evaluator = CounterexampleEvaluator;
+    let mut stream = authority::coordination::IncrementalRun::start(
+        &plan,
+        &selection,
+        &mut evaluator,
+        authority::coordination::Limits::owner_max(),
+    )
+    .expect("start counterexample stream");
+    let event = stream
+        .push(
+            &id("result:direct"),
+            job_inputs(&batch, &id("result:direct"))[0].clone(),
+        )
+        .expect("counterexample prefix");
+    assert!(!event.end_of_input());
+    assert!(matches!(
+        event.outcome(),
+        authority::coordination::PrefixOutcome::Settled(settled)
+            if settled.disposition() == authority::coordination::Disposition::Violated
+                && settled.support().kind()
+                    == authority::coordination::SupportKind::Counterexample
+    ));
+}
+
+#[derive(Clone, Copy)]
+enum FailureMode {
+    Incomplete,
+    Indeterminate,
+    Unsupported,
+    Refused,
+    Failed,
+    Exhausted,
+}
+
+struct IsolatedFailureEvaluator {
+    mode: FailureMode,
+}
+
+impl authority::coordination::Evaluator for IsolatedFailureEvaluator {
+    fn evaluate(
+        &mut self,
+        request: authority::coordination::Request<'_>,
+    ) -> authority::coordination::EvaluatorOutcome {
+        use authority::coordination::{
+            DecisionSupport, Disposition, EvaluatorOutcome, SupportKind,
+        };
+
+        match request.result_identity().as_str() {
+            "result:direct" => EvaluatorOutcome::Decisive {
+                disposition: Disposition::Satisfied,
+                support: DecisionSupport::new(
+                    SupportKind::Witness,
+                    id("evidence:witness"),
+                    vec![id("evidence:witness")],
+                ),
+                canonical_result: b"direct-v2".to_vec(),
+            },
+            "result:composed" => match self.mode {
+                FailureMode::Incomplete => EvaluatorOutcome::Incomplete(id("reason:incomplete")),
+                FailureMode::Indeterminate => {
+                    EvaluatorOutcome::Indeterminate(id("reason:indeterminate"))
+                }
+                FailureMode::Unsupported => EvaluatorOutcome::Unsupported(id("reason:unsupported")),
+                FailureMode::Refused => EvaluatorOutcome::Refused(id("reason:refused")),
+                FailureMode::Failed => EvaluatorOutcome::Failed(id("reason:failed")),
+                FailureMode::Exhausted => EvaluatorOutcome::Exhausted(id("reason:exhausted")),
+            },
+            "result:successor-only" => EvaluatorOutcome::Pending(id("reason:pending")),
+            other => panic!("unexpected result: {other}"),
+        }
+    }
+}
+
+#[trace("TC-010", "FR-010-AC-3", "FR-010-AC-6")]
+#[test]
+fn tc010_item_local_failure_preserves_successful_sibling_and_path_parity() {
+    use authority::coordination::Outcome;
+
+    for mode in [
+        FailureMode::Incomplete,
+        FailureMode::Indeterminate,
+        FailureMode::Unsupported,
+        FailureMode::Refused,
+        FailureMode::Failed,
+        FailureMode::Exhausted,
+    ] {
+        let plan = coordinator_plan();
+        let expected_unaffected = plan
+            .unaffected()
+            .map(|result| (result.identity().clone(), result.bytes().to_vec()))
+            .collect::<Vec<_>>();
+        let inputs = coordinator_batch_inputs();
+        let selection = coordinator_selection(&inputs);
+        let mut batch_evaluator = IsolatedFailureEvaluator { mode };
+        let batch = authority::coordination::run_batch(
+            &plan,
+            &selection,
+            &inputs,
+            &mut batch_evaluator,
+            authority::coordination::Limits::owner_max(),
+        )
+        .expect("batch item-local failure");
+        let mut incremental_evaluator = IsolatedFailureEvaluator { mode };
+        let incremental = drive_incremental(
+            &plan,
+            &selection,
+            &inputs,
+            &mut incremental_evaluator,
+            authority::coordination::Limits::owner_max(),
+        )
+        .expect("incremental item-local failure");
+        assert_eq!(batch.bytes(), incremental.bytes());
+        assert!(matches!(
+            batch.outcome(&id("result:direct")),
+            Some(Outcome::Replaced(_))
+        ));
+        assert!(!matches!(
+            batch.outcome(&id("result:composed")),
+            Some(Outcome::Replaced(_))
+        ));
+        assert!(matches!(
+            (mode, batch.outcome(&id("result:composed"))),
+            (FailureMode::Incomplete, Some(Outcome::Incomplete(_)))
+                | (FailureMode::Indeterminate, Some(Outcome::Indeterminate(_)))
+                | (FailureMode::Unsupported, Some(Outcome::Unsupported(_)))
+                | (FailureMode::Refused, Some(Outcome::Refused(_)))
+                | (FailureMode::Failed, Some(Outcome::Failed(_)))
+                | (FailureMode::Exhausted, Some(Outcome::Exhausted(_)))
+        ));
+        assert!(matches!(
+            batch.outcome(&id("result:successor-only")),
+            Some(Outcome::Pending(_))
+        ));
+        let batch_unaffected = batch
+            .unaffected()
+            .map(|result| (result.identity().clone(), result.bytes().to_vec()))
+            .collect::<Vec<_>>();
+        let incremental_unaffected = incremental
+            .unaffected()
+            .map(|result| (result.identity().clone(), result.bytes().to_vec()))
+            .collect::<Vec<_>>();
+        assert_eq!(batch_unaffected, expected_unaffected);
+        assert_eq!(incremental_unaffected, expected_unaffected);
+    }
+}
+
+fn permuted_coordinator_inputs(
+    reverse_jobs: bool,
+    input_reversals: u8,
+) -> authority::coordination::BatchInputs {
+    let baseline = coordinator_batch_inputs();
+    let mut jobs = baseline.jobs().to_vec();
+    for (index, job) in jobs.iter_mut().enumerate() {
+        if input_reversals & (1 << index) != 0 {
+            let mut inputs = job.inputs().to_vec();
+            inputs.reverse();
+            *job = authority::coordination::JobInputs::new(job.result_identity().clone(), inputs);
+        }
+    }
+    if reverse_jobs {
+        jobs.reverse();
+    }
+    authority::coordination::BatchInputs::new(jobs)
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[trace("TC-010", "FR-010-AC-3", "FR-010-AC-5")]
+    #[test]
+    fn tc010_generated_arrival_permutations_preserve_semantic_bytes(
+        reverse_jobs in any::<bool>(),
+        input_reversals in 0u8..8,
+    ) {
+        let plan = coordinator_plan();
+        let baseline_inputs = coordinator_batch_inputs();
+        let baseline_selection = coordinator_selection(&baseline_inputs);
+        let mut baseline_evaluator = ScriptedEvaluator::default();
+        let baseline = authority::coordination::run_batch(
+            &plan,
+            &baseline_selection,
+            &baseline_inputs,
+            &mut baseline_evaluator,
+            authority::coordination::Limits::owner_max(),
+        )
+        .expect("baseline batch run");
+
+        let inputs = permuted_coordinator_inputs(reverse_jobs, input_reversals);
+        let mut selection = coordinator_selection(&inputs);
+        if reverse_jobs {
+            let mut jobs = selection.jobs().to_vec();
+            jobs.reverse();
+            selection = authority::coordination::Selection::new(jobs);
+        }
+        let mut batch_evaluator = ScriptedEvaluator::default();
+        let batch = authority::coordination::run_batch(
+            &plan,
+            &selection,
+            &inputs,
+            &mut batch_evaluator,
+            authority::coordination::Limits::owner_max(),
+        )
+        .expect("permuted batch run");
+        let mut incremental_evaluator = ScriptedEvaluator::default();
+        let incremental = drive_incremental(
+            &plan,
+            &selection,
+            &inputs,
+            &mut incremental_evaluator,
+            authority::coordination::Limits::owner_max(),
+        )
+        .expect("permuted incremental run");
+
+        prop_assert!(!batch_evaluator.lost_direct_order);
+        prop_assert!(!incremental_evaluator.lost_direct_order);
+        prop_assert_eq!(batch.bytes(), baseline.bytes());
+        prop_assert_eq!(incremental.bytes(), baseline.bytes());
+        prop_assert_eq!(batch.identity(), incremental.identity());
+    }
+}
+
+struct PendingEvaluator;
+
+impl authority::coordination::Evaluator for PendingEvaluator {
+    fn evaluate(
+        &mut self,
+        _request: authority::coordination::Request<'_>,
+    ) -> authority::coordination::EvaluatorOutcome {
+        authority::coordination::EvaluatorOutcome::Pending(id("reason:pending"))
+    }
+}
+
+#[trace("TC-010", "FR-010-AC-3")]
+#[test]
+fn tc010_run_and_replacement_bind_selection_evidence_profile_and_lineage() {
+    use authority::coordination::Outcome;
+
+    let plan = coordinator_plan();
+    let baseline_inputs = coordinator_batch_inputs();
+    let baseline_selection = coordinator_selection(&baseline_inputs);
+    let mut evaluator = ScriptedEvaluator::default();
+    let baseline = authority::coordination::run_batch(
+        &plan,
+        &baseline_selection,
+        &baseline_inputs,
+        &mut evaluator,
+        authority::coordination::Limits::owner_max(),
+    )
+    .expect("baseline bound run");
+    let Outcome::Replaced(baseline_direct) = baseline
+        .outcome(&id("result:direct"))
+        .expect("baseline direct outcome")
+    else {
+        panic!("baseline direct outcome not replaced");
+    };
+    let replacement_json = std::str::from_utf8(baseline_direct.bytes()).expect("replacement JSON");
+    assert!(replacement_json.contains(plan.identity().as_str()));
+    assert!(replacement_json.contains("result:direct"));
+
+    let profile_variants = [
+        authority::coordination::PackageProfile::new(
+            id("package:other"),
+            id("7"),
+            digest(7),
+            id("profile:refund"),
+            id("3"),
+            digest(3),
+        ),
+        authority::coordination::PackageProfile::new(
+            id("package:temporal"),
+            id("8"),
+            digest(7),
+            id("profile:refund"),
+            id("3"),
+            digest(3),
+        ),
+        authority::coordination::PackageProfile::new(
+            id("package:temporal"),
+            id("7"),
+            digest(8),
+            id("profile:refund"),
+            id("3"),
+            digest(3),
+        ),
+        authority::coordination::PackageProfile::new(
+            id("package:temporal"),
+            id("7"),
+            digest(7),
+            id("profile:other"),
+            id("3"),
+            digest(3),
+        ),
+        authority::coordination::PackageProfile::new(
+            id("package:temporal"),
+            id("7"),
+            digest(7),
+            id("profile:refund"),
+            id("4"),
+            digest(3),
+        ),
+        authority::coordination::PackageProfile::new(
+            id("package:temporal"),
+            id("7"),
+            digest(7),
+            id("profile:refund"),
+            id("3"),
+            digest(4),
+        ),
+    ];
+    for profile in profile_variants {
+        let selection = coordinator_selection_with_profile(
+            &baseline_inputs,
+            coordinator_closure_for("window:O1", OpenClosed::Closed),
+            profile,
+        );
+        let mut evaluator = ScriptedEvaluator::default();
+        let changed = authority::coordination::run_batch(
+            &plan,
+            &selection,
+            &baseline_inputs,
+            &mut evaluator,
+            authority::coordination::Limits::owner_max(),
+        )
+        .expect("profile-bound run");
+        assert_ne!(baseline.identity(), changed.identity());
+        let Outcome::Replaced(changed_direct) = changed
+            .outcome(&id("result:direct"))
+            .expect("changed direct outcome")
+        else {
+            panic!("changed direct outcome not replaced");
+        };
+        assert_ne!(baseline_direct.identity(), changed_direct.identity());
+    }
+
+    let mut unrelated_jobs = baseline_inputs.jobs().to_vec();
+    let direct = unrelated_jobs
+        .iter_mut()
+        .find(|job| job.result_identity().as_str() == "result:direct")
+        .expect("direct inputs");
+    let mut unrelated_inputs = direct.inputs().to_vec();
+    unrelated_inputs[1] = coordinator_input("evidence:trailing", 5, 15, b"changed-tail");
+    *direct = authority::coordination::JobInputs::new(id("result:direct"), unrelated_inputs);
+    let unrelated_batch = authority::coordination::BatchInputs::new(unrelated_jobs);
+    let unrelated_selection = coordinator_selection(&unrelated_batch);
+    let mut evaluator = ScriptedEvaluator::default();
+    let unrelated = authority::coordination::run_batch(
+        &plan,
+        &unrelated_selection,
+        &unrelated_batch,
+        &mut evaluator,
+        authority::coordination::Limits::owner_max(),
+    )
+    .expect("unrelated-tail run");
+    let Outcome::Replaced(unrelated_direct) = unrelated
+        .outcome(&id("result:direct"))
+        .expect("unrelated direct outcome")
+    else {
+        panic!("unrelated direct outcome not replaced");
+    };
+    assert_eq!(baseline_direct.identity(), unrelated_direct.identity());
+    assert_ne!(baseline.identity(), unrelated.identity());
+
+    let mut evidence_jobs = baseline_inputs.jobs().to_vec();
+    let direct = evidence_jobs
+        .iter_mut()
+        .find(|job| job.result_identity().as_str() == "result:direct")
+        .expect("direct inputs");
+    let mut evidence_inputs = direct.inputs().to_vec();
+    evidence_inputs[0] = coordinator_input("evidence:witness", 7, 12, b"changed-witness");
+    *direct = authority::coordination::JobInputs::new(id("result:direct"), evidence_inputs);
+    let evidence_batch = authority::coordination::BatchInputs::new(evidence_jobs);
+    let evidence_selection = coordinator_selection(&evidence_batch);
+    let mut evaluator = ScriptedEvaluator::default();
+    let changed_evidence = authority::coordination::run_batch(
+        &plan,
+        &evidence_selection,
+        &evidence_batch,
+        &mut evaluator,
+        authority::coordination::Limits::owner_max(),
+    )
+    .expect("changed certified evidence run");
+    let Outcome::Replaced(changed_direct) = changed_evidence
+        .outcome(&id("result:direct"))
+        .expect("changed evidence direct outcome")
+    else {
+        panic!("changed evidence direct outcome not replaced");
+    };
+    assert_ne!(baseline_direct.identity(), changed_direct.identity());
+    assert_ne!(
+        baseline_direct.evidence_digest(),
+        changed_direct.evidence_digest()
+    );
+
+    let mut pending_evaluator = PendingEvaluator;
+    let pending_baseline = authority::coordination::run_batch(
+        &plan,
+        &baseline_selection,
+        &baseline_inputs,
+        &mut pending_evaluator,
+        authority::coordination::Limits::owner_max(),
+    )
+    .expect("pending baseline selection");
+    for axis in 0..3 {
+        let mut jobs = baseline_inputs.jobs().to_vec();
+        let direct = jobs
+            .iter_mut()
+            .find(|job| job.result_identity().as_str() == "result:direct")
+            .expect("direct inputs");
+        let mut inputs = direct.inputs().to_vec();
+        inputs[0] = match axis {
+            0 => coordinator_input("evidence:renamed", 8, 12, b"witness"),
+            1 => coordinator_input("evidence:witness", 7, 12, b"witness"),
+            _ => coordinator_input("evidence:witness", 8, 12, b"changed-witness"),
+        };
+        *direct = authority::coordination::JobInputs::new(id("result:direct"), inputs);
+        let changed_inputs = authority::coordination::BatchInputs::new(jobs);
+        let changed_selection = coordinator_selection(&changed_inputs);
+        let changed = authority::coordination::run_batch(
+            &plan,
+            &changed_selection,
+            &changed_inputs,
+            &mut PendingEvaluator,
+            authority::coordination::Limits::owner_max(),
+        )
+        .expect("independently changed input axis");
+        assert_ne!(pending_baseline.identity(), changed.identity());
+    }
+
+    let (initial, successor) = repair_bundle_pair();
+    let original_selection = repair_selection(&initial, &successor);
+    let mut changed_prior_results = original_selection.prior_results().to_vec();
+    let direct = changed_prior_results
+        .iter_mut()
+        .find(|result| result.identity().as_str() == "result:direct")
+        .expect("direct prior result");
+    *direct = authority::repair::PriorResult::new(
+        direct.identity().clone(),
+        direct.region().clone(),
+        b"direct-v1-lineage-change".to_vec(),
+    );
+    let changed_plan_selection = authority::repair::Selection::new(
+        original_selection.authority_revision().clone(),
+        original_selection.fact_regions().to_vec(),
+        changed_prior_results,
+        original_selection.edges().to_vec(),
+    );
+    let changed_plan = authority::repair::plan(
+        initial.view(),
+        successor.view(),
+        &changed_plan_selection,
+        authority::repair::Limits::owner_max(),
+    )
+    .expect("plan with independently changed prior lineage bytes");
+    let changed_selection = coordinator_selection(&baseline_inputs);
+    let mut evaluator = ScriptedEvaluator::default();
+    let changed_lineage = authority::coordination::run_batch(
+        &changed_plan,
+        &changed_selection,
+        &baseline_inputs,
+        &mut evaluator,
+        authority::coordination::Limits::owner_max(),
+    )
+    .expect("changed lineage run");
+    let Outcome::Replaced(changed_direct) = changed_lineage
+        .outcome(&id("result:direct"))
+        .expect("changed lineage direct outcome")
+    else {
+        panic!("changed lineage direct outcome not replaced");
+    };
+    assert_ne!(plan.identity(), changed_plan.identity());
+    assert_ne!(baseline_direct.identity(), changed_direct.identity());
+}
+
+struct ForgedClosureEvaluator;
+
+impl authority::coordination::Evaluator for ForgedClosureEvaluator {
+    fn evaluate(
+        &mut self,
+        request: authority::coordination::Request<'_>,
+    ) -> authority::coordination::EvaluatorOutcome {
+        authority::coordination::EvaluatorOutcome::Decisive {
+            disposition: authority::coordination::Disposition::Violated,
+            support: authority::coordination::DecisionSupport::new(
+                authority::coordination::SupportKind::Closure,
+                id("closure:fake"),
+                vec![request.inputs()[0].identity().clone()],
+            ),
+            canonical_result: b"forged".to_vec(),
+        }
+    }
+}
+
+#[trace("TC-010", "FR-010-AC-4", "FR-010-AC-6")]
+#[test]
+fn tc010_foreign_input_open_closure_and_forged_support_refuse() {
+    let plan = coordinator_plan();
+    let batch = coordinator_batch_inputs();
+
+    let accepted_closure = coordinator_closure_for("window:O1", OpenClosed::Closed);
+    assert_eq!(accepted_closure.identity(), plan.closure_identity());
+
+    let qualified = qualified();
+    let exact_subject = subject(&qualified);
+    let foreign_owners = [
+        AuthoritySelection {
+            definition_identity: id("definition:foreign-closure-owner"),
+            ..owner()
+        },
+        AuthoritySelection {
+            definition_revision: id("2"),
+            ..owner()
+        },
+        AuthoritySelection {
+            definition_digest: digest(8),
+            ..owner()
+        },
+    ];
+    let mut foreign_closures = foreign_owners
+        .iter()
+        .map(|foreign_owner| {
+            coordinator_closure_with(
+                &qualified,
+                foreign_owner,
+                &exact_subject,
+                OpenClosed::Closed,
+            )
+        })
+        .collect::<Vec<_>>();
+    let foreign_population =
+        qualified_with_window_and_closure("window:O1", "closure-definition:foreign");
+    let foreign_population_subject = subject(&foreign_population);
+    assert_ne!(
+        foreign_population_subject.population_identity,
+        exact_subject.population_identity
+    );
+    foreign_closures.push(coordinator_closure_with(
+        &foreign_population,
+        &owner(),
+        &foreign_population_subject,
+        OpenClosed::Closed,
+    ));
+    for closure in foreign_closures {
+        assert_ne!(closure.identity(), plan.closure_identity());
+        let selection = coordinator_selection_with_profile(&batch, closure, coordinator_profile());
+        let error = match authority::coordination::IncrementalRun::start(
+            &plan,
+            &selection,
+            &mut PendingEvaluator,
+            authority::coordination::Limits::owner_max(),
+        ) {
+            Ok(_) => panic!("foreign exact closure identity cannot authorize settlement"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code(), authority::ErrorCode::InvalidSelection);
+    }
+
+    let open_selection = coordinator_selection_with_profile(
+        &batch,
+        coordinator_closure_for("window:O1", OpenClosed::Open),
+        coordinator_profile(),
+    );
+    let open_error = match authority::coordination::IncrementalRun::start(
+        &plan,
+        &open_selection,
+        &mut PendingEvaluator,
+        authority::coordination::Limits::owner_max(),
+    ) {
+        Ok(_) => panic!("open closure cannot authorize settlement"),
+        Err(error) => error,
+    };
+    assert_eq!(open_error.code(), authority::ErrorCode::InvalidSelection);
+
+    let foreign_closure_selection = coordinator_selection_with_profile(
+        &batch,
+        coordinator_closure_for("window:foreign", OpenClosed::Closed),
+        coordinator_profile(),
+    );
+    let foreign_closure_error = match authority::coordination::IncrementalRun::start(
+        &plan,
+        &foreign_closure_selection,
+        &mut PendingEvaluator,
+        authority::coordination::Limits::owner_max(),
+    ) {
+        Ok(_) => panic!("foreign closure scope cannot authorize settlement"),
+        Err(error) => error,
+    };
+    assert_eq!(
+        foreign_closure_error.code(),
+        authority::ErrorCode::InvalidSelection
+    );
+
+    let selection = coordinator_selection(&batch);
+    let witness_state_bytes = job_inputs(&batch, &id("result:direct"))[0]
+        .retained_state_bytes()
+        .expect("baseline witness state bytes");
+    let mut pending_evaluator = PendingEvaluator;
+    let mut stream = authority::coordination::IncrementalRun::start(
+        &plan,
+        &selection,
+        &mut pending_evaluator,
+        authority::coordination::Limits::owner_max(),
+    )
+    .expect("valid stream");
+    let foreign = authority::coordination::Input::new(
+        id("evidence:witness"),
+        id("window:X2"),
+        coordinator_interval(8, 12),
+        b"witness".to_vec(),
+    );
+    assert_eq!(
+        foreign.retained_state_bytes().expect("foreign-scope bytes"),
+        witness_state_bytes
+    );
+    assert_eq!(
+        stream
+            .push(&id("result:direct"), foreign)
+            .expect_err("foreign scope cannot reach evaluator")
+            .code(),
+        authority::ErrorCode::InvalidSelection
+    );
+    let foreign_clock = authority::coordination::Input::new(
+        id("evidence:witness"),
+        id("window:O1"),
+        authority::partial::EventTimeInterval::new(
+            id("clock:other-time"),
+            id("1"),
+            id("nanosecond"),
+            8,
+            12,
+            Limits::owner_max(),
+        )
+        .expect("valid foreign-clock interval"),
+        b"witness".to_vec(),
+    );
+    assert_eq!(
+        foreign_clock
+            .retained_state_bytes()
+            .expect("foreign-clock bytes"),
+        witness_state_bytes
+    );
+    assert_eq!(
+        stream
+            .push(&id("result:direct"), foreign_clock)
+            .expect_err("foreign clock cannot reach evaluator")
+            .code(),
+        authority::ErrorCode::InvalidSelection
+    );
+    for (revision, unit) in [("2", "nanosecond"), ("1", "time-unitx")] {
+        let cross_wired = authority::coordination::Input::new(
+            id("evidence:witness"),
+            id("window:O1"),
+            authority::partial::EventTimeInterval::new(
+                id("clock:event-time"),
+                id(revision),
+                id(unit),
+                8,
+                12,
+                Limits::owner_max(),
+            )
+            .expect("valid cross-wired interval"),
+            b"witness".to_vec(),
+        );
+        assert_eq!(
+            cross_wired
+                .retained_state_bytes()
+                .expect("cross-wired input bytes"),
+            witness_state_bytes
+        );
+        assert_eq!(
+            stream
+                .push(&id("result:direct"), cross_wired)
+                .expect_err("foreign clock revision or unit cannot reach evaluator")
+                .code(),
+            authority::ErrorCode::InvalidSelection
+        );
+    }
+
+    let mut forged_evaluator = ForgedClosureEvaluator;
+    let mut forged = authority::coordination::IncrementalRun::start(
+        &plan,
+        &selection,
+        &mut forged_evaluator,
+        authority::coordination::Limits::owner_max(),
+    )
+    .expect("valid selection with forged evaluator response");
+    assert_eq!(
+        forged
+            .push(
+                &id("result:direct"),
+                job_inputs(&batch, &id("result:direct"))[0].clone(),
+            )
+            .expect_err("unbound closure support cannot promote")
+            .code(),
+        authority::ErrorCode::SupportMismatch
+    );
+}
+
+struct DependencyUnavailableEvaluator {
+    composed_calls: usize,
+}
+
+impl authority::coordination::Evaluator for DependencyUnavailableEvaluator {
+    fn evaluate(
+        &mut self,
+        request: authority::coordination::Request<'_>,
+    ) -> authority::coordination::EvaluatorOutcome {
+        if request.result_identity().as_str() == "result:composed" {
+            self.composed_calls += 1;
+        }
+        authority::coordination::EvaluatorOutcome::Pending(id("reason:pending"))
+    }
+}
+
+#[trace("TC-010", "FR-010-AC-3", "FR-010-AC-6")]
+#[test]
+fn tc010_unreplaced_dependency_propagates_incomplete_without_stale_evaluation() {
+    let plan = coordinator_plan();
+    let batch = coordinator_batch_inputs();
+    let selection = coordinator_selection(&batch);
+    let mut evaluator = DependencyUnavailableEvaluator { composed_calls: 0 };
+    let run = drive_incremental(
+        &plan,
+        &selection,
+        &batch,
+        &mut evaluator,
+        authority::coordination::Limits::owner_max(),
+    )
+    .expect("dependency-unavailable run remains typed");
+    assert_eq!(evaluator.composed_calls, 0);
+    assert!(matches!(
+        run.outcome(&id("result:composed")),
+        Some(authority::coordination::Outcome::Incomplete(reason))
+            if reason.as_str() == "dependency-unavailable:result:direct"
+    ));
+}
+
+#[trace("TC-010", "FR-010-AC-6")]
+#[test]
+fn tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths() {
+    let plan = coordinator_plan();
+    let batch = coordinator_batch_inputs();
+    let selection = coordinator_selection(&batch);
+    let mut evaluator = ScriptedEvaluator::default();
+    let baseline = authority::coordination::run_batch(
+        &plan,
+        &selection,
+        &batch,
+        &mut evaluator,
+        authority::coordination::Limits::owner_max(),
+    )
+    .expect("batch usage baseline");
+    let usage = baseline.usage();
+    let declared_inputs = selection
+        .jobs()
+        .iter()
+        .map(|job| job.external_inputs().count() + job.result_inputs().len())
+        .sum::<usize>();
+    assert_eq!(usage.jobs, selection.jobs().len());
+    assert_eq!(usage.inputs, declared_inputs);
+    assert_eq!(usage.output_bytes, baseline.bytes().len());
+    assert_eq!(
+        usage,
+        authority::coordination::Usage {
+            jobs: 3,
+            inputs: 6,
+            possible_orders: 12,
+            evaluator_calls: 3,
+            work: 137,
+            state_bytes: 7_116,
+            output_bytes: 2_252,
+        }
+    );
+    let exact = authority::coordination::Limits {
+        max_jobs: usage.jobs,
+        max_inputs: usage.inputs,
+        max_possible_orders: usage.possible_orders,
+        max_work: usage.work,
+        max_state_bytes: usage.state_bytes,
+        max_output_bytes: usage.output_bytes,
+    };
+    assert!(authority::coordination::run_batch(
+        &plan,
+        &selection,
+        &batch,
+        &mut ScriptedEvaluator::default(),
+        exact,
+    )
+    .is_ok());
+    for lower in [
+        authority::coordination::Limits {
+            max_jobs: usage.jobs - 1,
+            ..exact
+        },
+        authority::coordination::Limits {
+            max_inputs: usage.inputs - 1,
+            ..exact
+        },
+        authority::coordination::Limits {
+            max_possible_orders: usage.possible_orders - 1,
+            ..exact
+        },
+        authority::coordination::Limits {
+            max_work: usage.work - 1,
+            ..exact
+        },
+        authority::coordination::Limits {
+            max_state_bytes: usage.state_bytes - 1,
+            ..exact
+        },
+        authority::coordination::Limits {
+            max_output_bytes: usage.output_bytes - 1,
+            ..exact
+        },
+    ] {
+        assert_eq!(
+            authority::coordination::run_batch(
+                &plan,
+                &selection,
+                &batch,
+                &mut ScriptedEvaluator::default(),
+                lower,
+            )
+            .expect_err("one-over batch limit")
+            .code(),
+            authority::ErrorCode::ResourceIncomplete
+        );
+    }
+
+    let mut evaluator = ScriptedEvaluator::default();
+    let incremental = drive_incremental(
+        &plan,
+        &selection,
+        &batch,
+        &mut evaluator,
+        authority::coordination::Limits::owner_max(),
+    )
+    .expect("incremental usage baseline");
+    let usage = incremental.usage();
+    assert_eq!(usage.jobs, selection.jobs().len());
+    assert_eq!(usage.inputs, declared_inputs);
+    assert_eq!(usage.output_bytes, incremental.bytes().len());
+    assert_eq!(
+        usage,
+        authority::coordination::Usage {
+            jobs: 3,
+            inputs: 6,
+            possible_orders: 21,
+            evaluator_calls: 5,
+            work: 144,
+            state_bytes: 7_964,
+            output_bytes: 2_252,
+        }
+    );
+    let exact = authority::coordination::Limits {
+        max_jobs: usage.jobs,
+        max_inputs: usage.inputs,
+        max_possible_orders: usage.possible_orders,
+        max_work: usage.work,
+        max_state_bytes: usage.state_bytes,
+        max_output_bytes: usage.output_bytes,
+    };
+    assert!(drive_incremental(
+        &plan,
+        &selection,
+        &batch,
+        &mut ScriptedEvaluator::default(),
+        exact,
+    )
+    .is_ok());
+    for lower in [
+        authority::coordination::Limits {
+            max_jobs: usage.jobs - 1,
+            ..exact
+        },
+        authority::coordination::Limits {
+            max_inputs: usage.inputs - 1,
+            ..exact
+        },
+        authority::coordination::Limits {
+            max_possible_orders: usage.possible_orders - 1,
+            ..exact
+        },
+        authority::coordination::Limits {
+            max_work: usage.work - 1,
+            ..exact
+        },
+        authority::coordination::Limits {
+            max_state_bytes: usage.state_bytes - 1,
+            ..exact
+        },
+        authority::coordination::Limits {
+            max_output_bytes: usage.output_bytes - 1,
+            ..exact
+        },
+    ] {
+        assert_eq!(
+            drive_incremental(
+                &plan,
+                &selection,
+                &batch,
+                &mut ScriptedEvaluator::default(),
+                lower,
+            )
+            .expect_err("one-over incremental limit")
+            .code(),
+            authority::ErrorCode::ResourceIncomplete
+        );
+    }
+}
+
+#[trace("TC-010", "FR-010-AC-4", "FR-010-AC-6")]
+#[test]
+fn tc010_late_incremental_refusal_exposes_only_nonpromoted_settlement() {
+    use authority::coordination::PrefixOutcome;
+
+    let plan = coordinator_plan();
+    let batch = coordinator_batch_inputs();
+    let selection = coordinator_selection(&batch);
+    let mut evaluator = ScriptedEvaluator::default();
+    let mut stream = authority::coordination::IncrementalRun::start(
+        &plan,
+        &selection,
+        &mut evaluator,
+        authority::coordination::Limits {
+            max_possible_orders: 0,
+            ..authority::coordination::Limits::owner_max()
+        },
+    )
+    .expect("zero-order stream starts from preflighted manifests");
+    let direct_inputs = job_inputs(&batch, &id("result:direct"));
+    let early = stream
+        .push(&id("result:direct"), direct_inputs[0].clone())
+        .expect("one-input witness has no pairwise-order work");
+    assert!(matches!(early.outcome(), PrefixOutcome::Settled(_)));
+    stream
+        .push(&id("result:direct"), direct_inputs[1].clone())
+        .expect("terminal direct certificate remains nonpromoted");
+    stream
+        .close(&id("result:direct"))
+        .expect("close direct certificate");
+    let error = stream
+        .push(
+            &id("result:composed"),
+            job_inputs(&batch, &id("result:composed"))[0].clone(),
+        )
+        .expect_err("later pairwise-order work exceeds zero bound");
+    assert_eq!(error.code(), authority::ErrorCode::ResourceIncomplete);
+    // No `Run` exists and PrefixOutcome has no promoted-replacement variant.
+}
+
 #[trace("TC-009", "FR-009-AC-1", "FR-009-AC-5")]
 #[test]
 fn tc009_bundle_and_lineage_strict_readers_reject_wire_mutations() {
@@ -3293,7 +4655,14 @@ fn tc010_each_planner_limit_admits_exact_and_refuses_one_over() {
                     + result.identity().as_str().len()
                     + region_identity_bytes(result.region())
             })
-            .sum::<usize>();
+            .sum::<usize>()
+        + baseline
+            .dependencies()
+            .map(|edge| {
+                edge.source_identity().as_str().len() + edge.dependent_identity().as_str().len()
+            })
+            .sum::<usize>()
+        + baseline.closure_identity().as_str().len();
     assert_eq!(
         usage.nodes,
         selection.fact_regions().len() + selection.prior_results().len()

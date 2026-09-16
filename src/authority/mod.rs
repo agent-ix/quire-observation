@@ -16,6 +16,7 @@ pub mod capture;
 pub mod clock;
 pub mod closure;
 pub mod completeness;
+pub mod coordination;
 pub mod observation;
 pub mod partial;
 pub mod population;

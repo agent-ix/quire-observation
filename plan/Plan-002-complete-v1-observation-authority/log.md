@@ -33,3 +33,10 @@ description: "Chronological log of changes to the Plan-002 bundle."
   and exact/one-over count, work, state and output limits. Independent semantic and Rust
   reviews are clean. Reconciled coverage is 74/88 backed rows with FR-010 at 3/6; evaluator
   coordination, decisive prefixes and path parity remain correctly assigned to Task-020.
+* **2026-09-15** — Completed Task-020 with typed opaque evaluator coordination, genuinely
+  observable non-promoted prefix settlement, exact event-time order uncertainty, canonical
+  batch/incremental parity, item-local typed failures, replacement-only dependency dataflow,
+  exact closure/package/profile/input/lineage binding, byte-identical unaffected retention,
+  and fail-closed exact/one-over coordinator limits. Independent semantic and Rust reviews are
+  clean. Reconciled coverage is 77/88 backed rows with FR-010 at 6/6 and zero status lies;
+  Plan-002 is 5/9 complete.

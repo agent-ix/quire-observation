@@ -2,7 +2,7 @@
 id: Task-020
 title: "FR-010 — evaluator coordination and replay parity"
 type: Task
-status: not_started
+status: done
 track: A
 priority: P0
 relationships:
@@ -22,11 +22,11 @@ failure states and batch/incremental outputs preserve exact external semantics.
 
 ## Subtasks
 
-- [ ] Add failing decisive-prefix, unresolved-prefix and path-parity TC-010 tests.
-- [ ] Define a typed evaluator trait carrying exact intervals and admissible orders.
-- [ ] Emit genuinely settled prefixes before end-of-input without quiet-time inference.
-- [ ] Retain item-local unsupported/refused/failed/exhausted outcomes without replacement.
-- [ ] Compare complete disposition, support, identity and supersession bytes across paths.
+- [x] Add failing decisive-prefix, unresolved-prefix and path-parity TC-010 tests.
+- [x] Define a typed evaluator trait carrying exact intervals and admissible orders.
+- [x] Emit genuinely settled prefixes before end-of-input without quiet-time inference.
+- [x] Retain item-local unsupported/refused/failed/exhausted outcomes without replacement.
+- [x] Compare complete disposition, support, identity and supersession bytes across paths.
 
 ## Deliverables
 
