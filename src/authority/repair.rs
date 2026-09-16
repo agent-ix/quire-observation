@@ -17,6 +17,9 @@ use super::clock::{ClockView, RangeRef};
 use super::common::{to_bounded_json, Error, ErrorCode, Result, Usage as AuthorityUsage};
 use crate::{ClockRange, Identity};
 
+/// Exact canonical wire contract emitted for repair plans.
+pub const CONTRACT: &str = "quire.observation.repair-plan/v1";
+
 /// Immutable owner maxima for repair planning.
 pub const OWNER_MAX: Limits = Limits {
     max_nodes: 20_000,
@@ -1342,7 +1345,7 @@ fn encode_plan(
     output_limit: usize,
 ) -> Result<Vec<u8>> {
     let wire = PlanWire {
-        contract: "quire.observation.repair-plan/v1",
+        contract: CONTRACT,
         prior_bundle_identity: prior.identity().as_str(),
         successor_bundle_identity: successor.identity().as_str(),
         closure_identity: successor

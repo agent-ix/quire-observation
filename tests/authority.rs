@@ -3875,6 +3875,9 @@ fn tc011_closed_population_obeys_duplicate_policy_and_exact_sum() {
     .expect("repeat identical deduplicating sum");
     assert_eq!(deduplicating.identity(), repeated.identity());
     assert_eq!(deduplicating.bytes(), repeated.bytes());
+    let deduplicating_wire: serde_json::Value =
+        serde_json::from_slice(deduplicating.bytes()).expect("query evaluation is canonical JSON");
+    assert_eq!(deduplicating_wire["contract"], authority::query::CONTRACT);
     let Outcome::Complete(result) = deduplicating.outcome() else {
         panic!("closed authority must produce a complete sum");
     };
@@ -6608,6 +6611,9 @@ fn tc010_plan_contains_only_explicit_observable_closure_and_retains_other_bytes(
 
     assert_eq!(first.bytes(), second.bytes());
     assert_eq!(first.identity(), second.identity());
+    let first_wire: serde_json::Value =
+        serde_json::from_slice(first.bytes()).expect("repair plan is canonical JSON");
+    assert_eq!(first_wire["contract"], authority::repair::CONTRACT);
     assert_eq!(
         first.affected().map(Identity::as_str).collect::<Vec<_>>(),
         ["result:composed", "result:direct", "result:successor-only"]

@@ -18,6 +18,9 @@ use super::observation::{RecordView, RelationshipRef, SubjectRef, ValueRef};
 use super::{BoundaryRef, OpenClosed};
 use crate::Identity;
 
+/// Exact canonical wire contract emitted for closed-population query evaluations.
+pub const CONTRACT: &str = "quire.observation.closed-population-query/v1";
+
 /// Immutable owner maxima for one population query.
 pub const OWNER_MAX: Limits = Limits {
     max_input_bytes: 8 * 1024 * 1024,
@@ -1740,7 +1743,7 @@ fn encode(
     limits: Limits,
 ) -> Result<Vec<u8>> {
     let wire = EvaluationWire {
-        contract: "quire.observation.closed-population-query/v1",
+        contract: CONTRACT,
         lineage_identity: lineage.document().identity().as_str(),
         bundle_identity: lineage.head().identity().as_str(),
         bundle_revision: lineage.head().revision(),
