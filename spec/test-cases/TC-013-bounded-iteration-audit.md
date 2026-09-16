@@ -18,7 +18,8 @@ caller-lowered limit.
 
 1. Enumerate the production entry points implementing FR-007 through FR-011.
 2. Trace each interval-order, revision-lineage, dependency-closure, population,
-   arithmetic, and serialization loop to its checked effective limit.
+   proof-identity reconstruction, arithmetic, and serialization loop to its
+   checked effective limit.
 3. Verify each retained allocation reserves only after the corresponding bound
    check and uses checked integer conversions and arithmetic.
 4. Reject recursive dependency traversal, factorial order materialization,

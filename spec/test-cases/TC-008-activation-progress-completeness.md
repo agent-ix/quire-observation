@@ -32,8 +32,10 @@ and settlement as independently selected authority facts.
    capture, support, and authority-revision selection.
 6. Claim trigger absence against history that contains that exact trigger, bind
    absent selection to a foreign trigger progress proof, substitute same-trigger
-   progress and activation bytes across distinct binding identities, and mutate
-   emitted schema instances across trigger/capture/proof/classification invariants.
+   progress and activation bytes across distinct binding identities, attempt to
+   compose binding-committing empty-history progress with admitted-trigger capture
+   authority, and mutate emitted schema instances across
+   trigger/capture/proof/classification invariants.
 
 ## Expected Results
 

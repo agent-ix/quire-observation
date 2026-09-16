@@ -284,6 +284,13 @@ impl AuthorityProofs {
         };
         let progress = progress
             .map(|view| {
+                if !super::progress::commits_captured_history(view, Limits::owner_max())? {
+                    return Err(Error::new(
+                        ErrorCode::AuthorityMismatch,
+                        "progress authority does not commit captured-history mode",
+                        Usage::default(),
+                    ));
+                }
                 Ok(ProgressProof {
                     common: proof_common(view),
                     binding_identity: None,

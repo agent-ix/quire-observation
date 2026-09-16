@@ -68,5 +68,8 @@ description: "Chronological log of changes to the Plan-002 bundle."
   authority across two active payloads. A final exact-head review closed required-empty and
   same-trigger binding-substitution gaps: required empty bindings refuse as a missing premise, while
   empty-history progress and absent-activation identities commit the exact binding without
-  changing the immutable V1 schema shape or active-history fixture bytes.
+  changing the immutable V1 schema shape or active-history fixture bytes. Capture-present proof
+  composition now verifies the captured-history V1 progress identity mode before erasing the
+  absent-binding field, and TC-013 inventories the bounded proof-identity reconstruction path as
+  its 44th row.
   Plan-002 remains honestly 7/9 pending Task-023 real-consumer integration and Task-024 promotion.

@@ -283,7 +283,30 @@ pub(crate) fn commits_empty_binding(
     binding_identity: &Identity,
     limits: Limits,
 ) -> Result<bool> {
-    if !binding_identity.valid() {
+    commits_binding_mode(
+        view,
+        "quire.observation.progress-authority-identity/v2-draft.1",
+        Some(binding_identity),
+        limits,
+    )
+}
+
+pub(crate) fn commits_captured_history(view: &View, limits: Limits) -> Result<bool> {
+    commits_binding_mode(
+        view,
+        "quire.observation.progress-authority-identity/v1-draft.1",
+        None,
+        limits,
+    )
+}
+
+fn commits_binding_mode(
+    view: &View,
+    identity_version: &'static str,
+    binding_identity: Option<&Identity>,
+    limits: Limits,
+) -> Result<bool> {
+    if binding_identity.is_some_and(|identity| !identity.valid()) {
         return Ok(false);
     }
     let authority = view.authority();
@@ -291,13 +314,13 @@ pub(crate) fn commits_empty_binding(
     let payload = view.payload();
     let (expected, _) = super::common::sha256_jcs(
         &AuthorityIdentityPreimage {
-            identity_version: "quire.observation.progress-authority-identity/v2-draft.1",
+            identity_version,
             definition_identity: authority.definition_identity.as_str(),
             definition_revision: authority.definition_revision.as_str(),
             definition_digest: super::common::digest_hex(&authority.definition_digest),
             scope_identity: subject.scope_identity.as_str(),
             population_identity: subject.population_identity.as_str(),
-            binding_identity: Some(binding_identity.as_str()),
+            binding_identity: binding_identity.map(Identity::as_str),
             clock_identity: &payload.clock_identity,
             clock_revision: &payload.clock_revision,
             required_sources: payload

@@ -52,25 +52,26 @@ staged owner merge completes issue #23 or the C00 plan.
 | FND-012 | medium | Multi-activation selection evidence now pairs two active payloads that differ in progress authority, so payload substitution changes a complete query into a foreign-authority refusal. | TC-011 exact multi-role oracle |
 | FND-013 | medium | TC-013 now revision-pins progress, inventories the bounded trigger-absence scan, and asserts byte-preflight-before-lineage plus capacity-guard-before-replacement ordering. The historical negative control pairs oversized bytes with a missing predecessor so the old order fails observably. | TC-009, TC-013 |
 | FND-014 | high | Empty required bindings no longer mint inactivity and refuse as a missing premise, preserving the V1 schema's closed/complete classification invariant. Empty-history progress and absent-activation identity preimages commit the exact binding without changing the immutable V1 schema shape or the established active-history V1 bundle fixture. Direct foreign-trigger and same-trigger/different-binding proof-substitution oracles exercise each check independently. | FR-008, TC-008 |
+| FND-015 | high | Capture-present proof composition now accepts only the established captured-history V1 progress identity mode. An empty-history V2 progress view cannot shed its binding commitment by entering `AuthorityProofs::new`; the exact same-trigger foreign-binding negative control refuses at composition. | FR-008, TC-008, `AuthorityProofs::new` |
 
 ## Revision-bound resource evidence
 
-TC-013 now inventories 43 scoped expansion/allocation paths instead of 28. The added rows bind
+TC-013 now inventories 44 scoped expansion/allocation paths instead of 28. The added rows bind
 escaped-key classification, preflighted strict deserialization, all three byte-first readers, activation record indexing, charged
 dependency preparation, support-index allocation, binary support lookup, prefix preallocation,
-and exact multi-role query selection. Current reviewed SHA-256 values are:
+progress proof-identity reconstruction, and exact multi-role query selection. Current reviewed SHA-256 values are:
 
 | Source | SHA-256 |
 | --- | --- |
 | `src/authority/common.rs` | `379bcf5cd4bf014cb0b4633bc76b188e4aed308f2532db3fd5028d99a2d870bd` |
 | `src/authority/partial.rs` | `33de9f39f3e422bf2d364ceba7e302101b230d4fe6a3ce8d4f6ce4cf8a0e8237` |
-| `src/authority/activation.rs` | `3c5d9daca1ad0c043d0a5d7be1c6edf85ea8748ef72a5afb101f00901ea2e668` |
-| `src/authority/progress.rs` | `1cf86731b946fa640342d8160398b0e2e17841771deb78ca504a8da6e7feaebc` |
+| `src/authority/activation.rs` | `776e82b5a4cd21480079452e4d62e814626f8047d217642bceb9390f8ce5f2a5` |
+| `src/authority/progress.rs` | `b0376f42974c5cdc2b21f5c92accf785f0feb6be65077139fc8891cbe4609594` |
 | `src/authority/bundle.rs` | `752c833a4103edca25f9e3ed029dce9fcaf1a98e5b701a12ab9c8e71067f0d2e` |
 | `src/authority/coordination.rs` | `5be19d0e20d935f75534fbaa19b17614b118e3952969768366d2a7be1207eec5` |
 | `src/authority/query.rs` | `26eaaf49db4113d5c011bf474a496e189351e9274de01be911ac8f1d82ec612f` |
 | `tests/partial_interval.rs` | `711adfb64cfb0827dd9d5a62ad65081fc1321eb5d6089d660b8bd6e33e1a1d59` |
-| `tests/activation_authority.rs` | `56911c259c6146e6fba20b5d11ed65a13cd4e70d43cc0f18bd13c425f348ee90` |
+| `tests/activation_authority.rs` | `f07bd4e2f90aea998af8a3d33a3d3e315795f6fe0dc0294a7083ae1d2fa17d76` |
 | `tests/authority.rs` | `5ceab5286f5e138d81d9bc617bb62ba779d833fc9fe033ab7cdd4f2223315edc` |
 
 The activation/scope-authority schema digest is

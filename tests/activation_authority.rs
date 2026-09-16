@@ -926,6 +926,47 @@ fn tc008_trigger_absence_is_proved_for_the_exact_selected_trigger() {
         Limits::owner_max(),
     )
     .expect("strict-read foreign same-trigger progress");
+    let admitted_context = Context::new(
+        History::batch(&admitted),
+        &owner,
+        &admitted_subject,
+        1,
+        None,
+    );
+    let admitted_record = admitted
+        .records()
+        .first()
+        .expect("admitted fixture has a trigger record");
+    let admitted_capture_selection = authority::capture::Selection::new(
+        id("trigger:refund-request"),
+        Anchor::TimestampNanos(10),
+        vec![authority::capture::Binding::new(
+            id("capture:amount"),
+            id("binding:amount"),
+            admitted_record.identity.clone(),
+        )],
+    );
+    let admitted_capture_document = authority::capture::derive(
+        admitted_context,
+        &admitted_capture_selection,
+        Limits::owner_max(),
+    )
+    .expect("derive admitted capture authority");
+    let admitted_capture_view = authority::capture::read(
+        admitted_capture_document.bytes(),
+        admitted_context,
+        &admitted_capture_selection,
+        Limits::owner_max(),
+    )
+    .expect("strict-read admitted capture authority");
+    let error = AuthorityProofs::new(
+        &admitted_capture_view,
+        Some(&foreign_progress_view),
+        None,
+        None,
+    )
+    .expect_err("empty-binding progress cannot compose with admitted capture authority");
+    assert_eq!(error.code(), ErrorCode::AuthorityMismatch);
     authority::progress::read(
         absent_progress.bytes(),
         foreign_context,

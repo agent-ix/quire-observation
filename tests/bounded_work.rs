@@ -46,13 +46,13 @@ const SOURCES: &[Source] = &[
         id: SourceId::Activation,
         path: "src/authority/activation.rs",
         text: include_str!("../src/authority/activation.rs"),
-        sha256: "3c5d9daca1ad0c043d0a5d7be1c6edf85ea8748ef72a5afb101f00901ea2e668",
+        sha256: "776e82b5a4cd21480079452e4d62e814626f8047d217642bceb9390f8ce5f2a5",
     },
     Source {
         id: SourceId::Progress,
         path: "src/authority/progress.rs",
         text: include_str!("../src/authority/progress.rs"),
-        sha256: "1cf86731b946fa640342d8160398b0e2e17841771deb78ca504a8da6e7feaebc",
+        sha256: "b0376f42974c5cdc2b21f5c92accf785f0feb6be65077139fc8891cbe4609594",
     },
     Source {
         id: SourceId::Bundle,
@@ -100,7 +100,7 @@ const SOURCES: &[Source] = &[
         id: SourceId::ActivationEvidence,
         path: "tests/activation_authority.rs",
         text: include_str!("activation_authority.rs"),
-        sha256: "56911c259c6146e6fba20b5d11ed65a13cd4e70d43cc0f18bd13c425f348ee90",
+        sha256: "f07bd4e2f90aea998af8a3d33a3d3e315795f6fe0dc0294a7083ae1d2fa17d76",
     },
 ];
 
@@ -336,6 +336,20 @@ const ROWS: &[AuditRow] = &[
             "read_exact_preflighted(CONTRACT, bytes, &expected, limits, observed)",
         evidence_source: SourceId::ActivationEvidence,
         evidence_test: "tc008_versioned_owner_round_trips_all_independent_authority",
+    },
+    AuditRow {
+        name: "progress.proof-identity-reconstruction",
+        production: SourceId::Progress,
+        entrypoint: "fn commits_binding_mode(",
+        expansion: ".collect(),",
+        retained: "required_sources: payload",
+        bound_source: SourceId::Progress,
+        limit: "max_required_sources",
+        precheck_or_charge:
+            "ensure_sorted_unique(&selection.required_sources, effective.max_required_sources)?",
+        checked_conversion_or_arithmetic: "super::common::sha256_jcs(",
+        evidence_source: SourceId::Progress,
+        evidence_test: "",
     },
     AuditRow {
         name: "bundle.component-replacement-conflict-projection",
@@ -752,6 +766,7 @@ fn assert_evidence(row: &AuditRow) {
             | "partial.qualified-history-lookup"
             | "activation.strict-proof-copy"
             | "activation.trigger-absence-scan"
+            | "progress.proof-identity-reconstruction"
     ) {
         EvidenceKind::StructurallyDominated
     } else {
@@ -823,7 +838,7 @@ fn tc013_each_c00_expansion_path_names_its_dominating_bound_and_evidence() {
     }
     assert_eq!(
         ROWS.len(),
-        43,
+        44,
         "every inventoried expansion path must remain explicit"
     );
     for row in ROWS {
