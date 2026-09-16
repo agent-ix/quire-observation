@@ -100,7 +100,7 @@ relationships:
 | Test Case | Error Path | Expected |
 |---|---|---|
 | TC-007 | Empty/incoherent possibility or cross-clock interval | Typed refusal; no partial fact |
-| TC-008 | Foreign binding/trigger, cross-wired scope authority, or missing required source | Typed incomplete/refusal; unaffected axes unchanged |
+| TC-008 | Required empty binding, foreign binding/trigger, cross-wired scope authority, or missing required source | Typed incomplete/refusal; unaffected axes unchanged |
 | TC-009 | Stale head, known sibling, invalid replacement, or unequal replay | Typed lineage/identity refusal; prior bytes unchanged |
 | TC-010 | Unknown graph identity, evaluator failure, cycle, or exhausted bound | Item-local typed outcome; no partial plan or promoted result |
 | TC-011 | Open population, receipt substitution, wrong unit, overflow, or invalid prefix | No definitive aggregate |

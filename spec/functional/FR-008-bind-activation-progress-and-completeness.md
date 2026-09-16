@@ -62,9 +62,9 @@ settlement contribution as independent typed facts.
   optional and has an empty admitted history, the trigger scope is closed,
   evidence is complete, and the bounded qualified history contains no admitted
   observation for that exact semantic trigger identity; every other no-trigger
-  combination is activation-unknown. A claimed absence that conflicts with a
-  matching admitted observation SHALL refuse. Classification is independent of
-  verdict and settlement.
+  combination for an optional binding is activation-unknown. A required empty
+  binding or claimed absence that conflicts with a matching admitted observation
+  SHALL refuse. Classification is independent of verdict and settlement.
 - The library SHALL preserve open, closed, and incomplete execution inputs
   independently from complete, incomplete, and contradicted evidence.
 - When silence advances a deadline, the library SHALL recognize coverage only
@@ -88,7 +88,7 @@ settlement contribution as independent typed facts.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-008-AC-1 | Equal captured values under distinct triggers create distinct activation identities and retain their original observation provenance. | unit-testing (TC-008) |
-| FR-008-AC-2 | An admitted trigger with complete strict capture authority is active; a closed complete optional binding whose bounded qualified history is empty for its exact selected trigger identity is inactive; every open or incomplete no-trigger scope is activation-unknown. A foreign binding/trigger or claimed absence conflicting with matching admitted history refuses. All three remain independent of verdict and settlement. | property-based-testing (TC-008) |
+| FR-008-AC-2 | An admitted trigger with complete strict capture authority is active; a closed complete optional binding whose bounded qualified history is empty for its exact selected trigger identity is inactive; every open or incomplete optional no-trigger scope is activation-unknown. A required empty binding, foreign binding/trigger, or claimed absence conflicting with matching admitted history refuses. All three valid classifications remain independent of verdict and settlement. | property-based-testing (TC-008) |
 | FR-008-AC-3 | Silence covers a deadline only when the matching progress interval is definitely beyond it and covers every required source. | unit-testing (TC-008) |
 | FR-008-AC-4 | Overlapping progress/deadline intervals, missing sources, open closure, and incomplete or contradicted evidence remain distinct non-conclusive facts. | property-based-testing (TC-008) |
 | FR-008-AC-5 | Definitely timely, definitely late, and uncertain-lateness outcomes follow interval endpoints and never ingestion order. | property-based-testing (TC-008) |
@@ -99,7 +99,7 @@ settlement contribution as independent typed facts.
 An admitted trigger without a nonempty distinct capture set and matching strict
 capture authority, a capture authority without an admitted trigger, an invalid
 interval, foreign population/window/clock, mismatched authority revision,
-claimed absence contradicted by a matching admitted trigger, cross-wired binding,
+required empty binding, claimed absence contradicted by a matching admitted trigger, cross-wired binding,
 semantic trigger or progress identity, cross-wired contribution support, or exceeded limit returns a typed refusal or
 resource-incomplete code. Activation-unknown and missing-source silence coverage
 are valid explicit incomplete facts, not reader errors. No error path emits a

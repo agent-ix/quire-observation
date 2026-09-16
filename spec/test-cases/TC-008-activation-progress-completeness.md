@@ -17,8 +17,9 @@ and settlement as independently selected authority facts.
 
 1. Generate active inputs with an admitted trigger plus strict complete capture
    authority, inactive inputs with an empty optional binding plus closed/complete
-   authority, and activation-unknown inputs with a required empty binding or no
-   trigger plus every open or incomplete scope-authority combination. Retain equal captured values
+   authority, activation-unknown inputs with an optional empty binding plus every
+   open or incomplete scope-authority combination, and a required-empty refusal.
+   Retain equal captured values
    under distinct admitted trigger identities and later value mutations.
 2. Cross trigger presence with open/closed/incomplete progress and
    complete/incomplete/contradicted evidence; derive activation from those
@@ -39,4 +40,4 @@ and settlement as independently selected authority facts.
 Capture identities and bytes preserve their activation-time values and sources.
 Only definitely covering progress from every required source proves silence
 coverage. Every state axis remains independent, and every foreign or cross-wired
-selection refuses without a fallback result.
+selection or required empty binding refuses without a fallback result.

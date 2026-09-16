@@ -38,7 +38,7 @@ staged owner merge completes issue #23 or the C00 plan.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | high | Removed caller-selected activation state and caller-asserted absence. Every selection carries the exact qualified binding and semantic trigger; activation and progress reject foreign binding triggers. Absence is exercised by an empty optional binding and rejects matching admitted history. Required empty bindings remain `unknown`. Empty-history progress and no-trigger activation identities commit the exact binding, so same-trigger/different-binding bytes cannot replay. | FR-008, TC-008 Cartesian and negative-control oracles, `activation::derive`, `progress::derive` |
+| FND-001 | high | Removed caller-selected activation state and caller-asserted absence. Every selection carries the exact qualified binding and semantic trigger; activation and progress reject foreign binding triggers. Absence is exercised by an empty optional binding and rejects matching admitted history. Required empty bindings return `MissingPremise`. Empty-history progress and no-trigger activation identities commit the exact binding, so same-trigger/different-binding bytes cannot replay. | FR-008, TC-008 Cartesian and negative-control oracles, `activation::derive`, `progress::derive` |
 | FND-002 | medium | Reconciled FR-008 success/error semantics: semantic unknown and missing-source coverage are valid explicit incomplete facts, not refusal paths. | FR-008 Error Conditions, TC-008 |
 | FND-003 | medium | Reconciled NFR-003 matrix status to complete. | TM-001, TC-010, TC-012, TC-013 |
 | FND-004 | high | Exact role-plus-component resolution now carries the selected embedded payload into query evaluation; either of two activation facts is independently queryable and a foreign selected component refuses. | `query::selected_fact`, `tc011_exact_multi_activation_selection_never_uses_an_unselected_payload` |
@@ -51,7 +51,7 @@ staged owner merge completes issue #23 or the C00 plan.
 | FND-011 | high | Terminal outcome clones are dominated by full outcome-state capacity checks; decisive replacement retained size is counted before canonical wire/result allocation. | TC-010 rollback evidence, TC-013 ordering assertions |
 | FND-012 | medium | Multi-activation selection evidence now pairs two active payloads that differ in progress authority, so payload substitution changes a complete query into a foreign-authority refusal. | TC-011 exact multi-role oracle |
 | FND-013 | medium | TC-013 now revision-pins progress, inventories the bounded trigger-absence scan, and asserts byte-preflight-before-lineage plus capacity-guard-before-replacement ordering. The historical negative control pairs oversized bytes with a missing predecessor so the old order fails observably. | TC-009, TC-013 |
-| FND-014 | high | Empty required bindings no longer mint inactivity. Empty-history progress and absent-activation identity preimages commit the exact binding without changing the immutable V1 schema shape or the established active-history V1 bundle fixture. Direct foreign-trigger progress and proof-substitution oracles exercise each check independently. | FR-008, TC-008 |
+| FND-014 | high | Empty required bindings no longer mint inactivity and refuse as a missing premise, preserving the V1 schema's closed/complete classification invariant. Empty-history progress and absent-activation identity preimages commit the exact binding without changing the immutable V1 schema shape or the established active-history V1 bundle fixture. Direct foreign-trigger and same-trigger/different-binding proof-substitution oracles exercise each check independently. | FR-008, TC-008 |
 
 ## Revision-bound resource evidence
 
@@ -64,13 +64,13 @@ and exact multi-role query selection. Current reviewed SHA-256 values are:
 | --- | --- |
 | `src/authority/common.rs` | `379bcf5cd4bf014cb0b4633bc76b188e4aed308f2532db3fd5028d99a2d870bd` |
 | `src/authority/partial.rs` | `33de9f39f3e422bf2d364ceba7e302101b230d4fe6a3ce8d4f6ce4cf8a0e8237` |
-| `src/authority/activation.rs` | `ada51d5b9e7c5f16a8f1d15cdb691afed7cd615724db142d07834c882a854651` |
-| `src/authority/progress.rs` | `6e1b8892adc8a4b6371b1b316bdc2ed346173b48a3df475ddf524f988eeed0e6` |
+| `src/authority/activation.rs` | `3c5d9daca1ad0c043d0a5d7be1c6edf85ea8748ef72a5afb101f00901ea2e668` |
+| `src/authority/progress.rs` | `1cf86731b946fa640342d8160398b0e2e17841771deb78ca504a8da6e7feaebc` |
 | `src/authority/bundle.rs` | `752c833a4103edca25f9e3ed029dce9fcaf1a98e5b701a12ab9c8e71067f0d2e` |
 | `src/authority/coordination.rs` | `5be19d0e20d935f75534fbaa19b17614b118e3952969768366d2a7be1207eec5` |
 | `src/authority/query.rs` | `26eaaf49db4113d5c011bf474a496e189351e9274de01be911ac8f1d82ec612f` |
 | `tests/partial_interval.rs` | `711adfb64cfb0827dd9d5a62ad65081fc1321eb5d6089d660b8bd6e33e1a1d59` |
-| `tests/activation_authority.rs` | `0a8e79c5dd29e20920d1d95753fd2bcbe5e2c17b11b9964b90c157ff0aeff5ca` |
+| `tests/activation_authority.rs` | `56911c259c6146e6fba20b5d11ed65a13cd4e70d43cc0f18bd13c425f348ee90` |
 | `tests/authority.rs` | `5ceab5286f5e138d81d9bc617bb62ba779d833fc9fe033ab7cdd4f2223315edc` |
 
 The activation/scope-authority schema digest is

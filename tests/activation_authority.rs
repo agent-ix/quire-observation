@@ -437,6 +437,7 @@ fn authority_proofs_for_trigger_from(
         .expect("compose strict-read authority proofs")
     } else {
         AuthorityProofs::without_capture(
+            &qualified.binding().identity,
             progress_view.as_ref(),
             closure_view.as_ref(),
             completeness_view.as_ref(),
@@ -833,7 +834,7 @@ fn tc008_trigger_absence_is_proved_for_the_exact_selected_trigger() {
         &admitted_subject,
         AxesCase {
             trigger: TriggerCase::Absent,
-            progress: ExecutionState::Closed,
+            progress: ExecutionState::Incomplete,
             closure: ExecutionState::Closed,
             evidence: EvidenceState::Complete,
             include_contributions: false,
@@ -854,7 +855,7 @@ fn tc008_trigger_absence_is_proved_for_the_exact_selected_trigger() {
     assert_eq!(error.code(), ErrorCode::MissingPremise);
 
     let absent = qualified_without_refund_trigger();
-    let absent_subject = subject(&absent);
+    let absent_subject = crate::subject(&absent);
     let required_absent = qualified_without_refund_trigger_for("binding:amount", true);
     let required_subject = subject(&required_absent);
     let required_selection = selection_axes(
@@ -869,7 +870,7 @@ fn tc008_trigger_absence_is_proved_for_the_exact_selected_trigger() {
             include_contributions: false,
         },
     );
-    let required_document = authority::activation::derive(
+    let error = authority::activation::derive(
         Context::new(
             History::batch(&required_absent),
             &owner,
@@ -880,24 +881,8 @@ fn tc008_trigger_absence_is_proved_for_the_exact_selected_trigger() {
         &required_selection,
         Limits::owner_max(),
     )
-    .expect("required empty binding remains an explicit non-conclusive fact");
-    let required_view = authority::activation::read(
-        required_document.bytes(),
-        Context::new(
-            History::batch(&required_absent),
-            &owner,
-            &required_subject,
-            1,
-            None,
-        ),
-        &required_selection,
-        Limits::owner_max(),
-    )
-    .expect("strict-read required empty binding");
-    assert_eq!(
-        required_view.payload().activation(),
-        ActivationState::Unknown
-    );
+    .expect_err("required empty binding is a missing activation premise");
+    assert_eq!(error.code(), ErrorCode::MissingPremise);
 
     let foreign_same_trigger = qualified_without_refund_trigger_for("binding:foreign", false);
     let foreign_same_trigger_subject = subject(&foreign_same_trigger);
@@ -934,6 +919,13 @@ fn tc008_trigger_absence_is_proved_for_the_exact_selected_trigger() {
         foreign_progress_document.bytes(),
         "empty progress authority commits the exact binding identity"
     );
+    let foreign_progress_view = authority::progress::read(
+        foreign_progress_document.bytes(),
+        foreign_context,
+        &exact_progress,
+        Limits::owner_max(),
+    )
+    .expect("strict-read foreign same-trigger progress");
     authority::progress::read(
         absent_progress.bytes(),
         foreign_context,
@@ -941,6 +933,40 @@ fn tc008_trigger_absence_is_proved_for_the_exact_selected_trigger() {
         Limits::owner_max(),
     )
     .expect_err("same-trigger progress bytes cannot replay under another binding");
+    let error = AuthorityProofs::without_capture(
+        &absent.binding().identity,
+        Some(&foreign_progress_view),
+        None,
+        None,
+    )
+    .expect_err("progress proof cannot be relabeled as another same-trigger binding");
+    assert_eq!(error.code(), ErrorCode::AuthorityMismatch);
+    let retained_foreign_binding = AuthorityProofs::without_capture(
+        &foreign_same_trigger.binding().identity,
+        Some(&foreign_progress_view),
+        None,
+        None,
+    )
+    .expect("progress proof retains its exact binding commitment");
+    let same_trigger_proof_cross_wired = Selection::new(
+        ActivationSelection::without_trigger(
+            id("obligation:refund"),
+            absent.binding().identity.clone(),
+            absent.binding().trigger_identity.clone(),
+            interval(8, 12),
+        ),
+        progress_selection(ExecutionState::Closed),
+        interval(8, 12),
+        interval(10, 20),
+        retained_foreign_binding,
+    );
+    let error = authority::activation::derive(
+        absent_context,
+        &same_trigger_proof_cross_wired,
+        Limits::owner_max(),
+    )
+    .expect_err("activation cannot consume progress proof from another same-trigger binding");
+    assert_eq!(error.code(), ErrorCode::AuthorityMismatch);
 
     let absent_selection = selection_axes(
         &absent,
@@ -1491,7 +1517,20 @@ fn tc008_versioned_owner_round_trips_all_independent_authority() {
     assert_eq!(first_error, repeated_error);
     assert_eq!(first_error.code(), ErrorCode::ResourceIncomplete);
 
-    let mismatched = selection(&qualified, &owner, &subject, TriggerCase::Absent);
+    let absent = qualified_without_refund_trigger();
+    let absent_subject = crate::subject(&absent);
+    let mismatched = selection_axes(
+        &absent,
+        &owner,
+        &absent_subject,
+        AxesCase {
+            trigger: TriggerCase::Absent,
+            progress: ExecutionState::Closed,
+            closure: ExecutionState::Open,
+            evidence: EvidenceState::Complete,
+            include_contributions: false,
+        },
+    );
     let byte_first = authority::activation::read(
         first.bytes(),
         context,

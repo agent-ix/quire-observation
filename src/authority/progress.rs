@@ -278,6 +278,41 @@ pub fn read(
     read_exact(CONTRACT, bytes, &expected, limits)
 }
 
+pub(crate) fn commits_empty_binding(
+    view: &View,
+    binding_identity: &Identity,
+    limits: Limits,
+) -> Result<bool> {
+    if !binding_identity.valid() {
+        return Ok(false);
+    }
+    let authority = view.authority();
+    let subject = view.subject();
+    let payload = view.payload();
+    let (expected, _) = super::common::sha256_jcs(
+        &AuthorityIdentityPreimage {
+            identity_version: "quire.observation.progress-authority-identity/v2-draft.1",
+            definition_identity: authority.definition_identity.as_str(),
+            definition_revision: authority.definition_revision.as_str(),
+            definition_digest: super::common::digest_hex(&authority.definition_digest),
+            scope_identity: subject.scope_identity.as_str(),
+            population_identity: subject.population_identity.as_str(),
+            binding_identity: Some(binding_identity.as_str()),
+            clock_identity: &payload.clock_identity,
+            clock_revision: &payload.clock_revision,
+            required_sources: payload
+                .required_sources
+                .iter()
+                .map(String::as_str)
+                .collect(),
+            boundary: payload.boundary.clone(),
+            restoration_basis_identity: &payload.restoration_basis_identity,
+        },
+        limits,
+    )?;
+    Ok(expected.as_str() == payload.authority_identity)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

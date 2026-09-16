@@ -212,6 +212,7 @@ struct CaptureProofBinding {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ProgressProof {
     common: ProofCommon,
+    binding_identity: Option<String>,
     scope_identity: String,
     clock_identity: String,
     clock_revision: String,
@@ -285,6 +286,7 @@ impl AuthorityProofs {
             .map(|view| {
                 Ok(ProgressProof {
                     common: proof_common(view),
+                    binding_identity: None,
                     scope_identity: view.payload().scope_identity().to_owned(),
                     clock_identity: view.payload().clock_identity().to_owned(),
                     clock_revision: view.payload().clock_revision().to_owned(),
@@ -325,14 +327,27 @@ impl AuthorityProofs {
 
     /// Copies scope authority for a trigger scope with no admitted trigger.
     pub fn without_capture(
+        binding_identity: &Identity,
         progress: Option<&super::progress::View>,
         closure: Option<&super::closure::View>,
         completeness: Option<&super::completeness::View>,
     ) -> Result<Self> {
         let progress = progress
             .map(|view| {
+                if !super::progress::commits_empty_binding(
+                    view,
+                    binding_identity,
+                    Limits::owner_max(),
+                )? {
+                    return Err(Error::new(
+                        ErrorCode::AuthorityMismatch,
+                        "progress authority does not commit the selected empty binding",
+                        Usage::default(),
+                    ));
+                }
                 Ok(ProgressProof {
                     common: proof_common(view),
+                    binding_identity: Some(binding_identity.as_str().to_owned()),
                     scope_identity: view.payload().scope_identity().to_owned(),
                     clock_identity: view.payload().clock_identity().to_owned(),
                     clock_revision: view.payload().clock_revision().to_owned(),
@@ -989,6 +1004,13 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
             (Some(trigger), Some(proof_wire(&capture_proof.common)))
         }
         (None, None) if selection.activation.captures.is_empty() => {
+            if qualified.binding().required {
+                return Err(Error::new(
+                    ErrorCode::MissingPremise,
+                    "required activation trigger is absent from qualified history",
+                    Usage::default(),
+                ));
+            }
             if qualified
                 .records()
                 .iter()
@@ -1014,7 +1036,11 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
     let (progress, progress_authority) = match &selection.proofs.progress {
         Some(proof) => {
             validate_proof_common(&proof.common, context)?;
+            let expected_binding = trigger
+                .is_none()
+                .then(|| selection.activation.binding_identity.as_str());
             if proof.scope_identity != context.subject().scope_identity.as_str()
+                || proof.binding_identity.as_deref() != expected_binding
                 || proof.clock_identity != selection.progress.progress.clock_identity().as_str()
                 || proof.clock_revision != selection.progress.progress.clock_revision().as_str()
                 || proof.required_sources != required
@@ -1101,10 +1127,7 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
     };
     let activation = if trigger.is_some() {
         ActivationState::Active
-    } else if !qualified.binding().required
-        && closure == ExecutionState::Closed
-        && evidence == EvidenceState::Complete
-    {
+    } else if closure == ExecutionState::Closed && evidence == EvidenceState::Complete {
         ActivationState::Inactive
     } else {
         ActivationState::Unknown
