@@ -57,7 +57,7 @@ const SOURCES: &[Source] = &[
         id: SourceId::Repair,
         path: "src/authority/repair.rs",
         text: include_str!("../src/authority/repair.rs"),
-        sha256: "cd6ee655b4e2503325e8787bd6f1b87b615b0c335f917473e4c749fd302cae53",
+        sha256: "98e8781b95d32b7fd756c4465670ebc3ceba456bef30e48379424d378f19baa8",
     },
     Source {
         id: SourceId::Coordination,
@@ -69,7 +69,7 @@ const SOURCES: &[Source] = &[
         id: SourceId::Query,
         path: "src/authority/query.rs",
         text: include_str!("../src/authority/query.rs"),
-        sha256: "62f421f6fc0b1910d73f574872973a6023a97670f1b970ad5a28e6f40e30d61a",
+        sha256: "d53a1988d19a9cd3ad18d6698e9a894105dc7bc1092805833ab5918a62642e6e",
     },
     Source {
         id: SourceId::Admission,
@@ -81,7 +81,7 @@ const SOURCES: &[Source] = &[
         id: SourceId::AuthorityEvidence,
         path: "tests/authority.rs",
         text: include_str!("authority.rs"),
-        sha256: "f08b65fcbaa029494b1c5ac4706d904ec66d73ed07268c6afac99e09c3486acd",
+        sha256: "37ad7f155b132619679999eaeb6735602c7924f3e14f766ec320fe7e85c90c41",
     },
     Source {
         id: SourceId::PartialEvidence,
