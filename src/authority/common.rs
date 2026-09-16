@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Agent-IX
 
 //! Shared bounded envelope, identity, history, and strict-reader machinery.
@@ -22,6 +22,10 @@ pub const OWNER_MAX: Limits = Limits {
     max_positions: 10_000,
     max_capture_bindings: 10_000,
     max_required_sources: 10_000,
+    max_bundle_components: 10_000,
+    max_replacements: 10_000,
+    max_conflicts: 10_000,
+    max_lineage_children: 10_000,
     max_visited_fields: 1_000_000,
 };
 
@@ -44,6 +48,14 @@ pub struct Limits {
     pub max_capture_bindings: usize,
     /// Maximum required observation sources.
     pub max_required_sources: usize,
+    /// Maximum components retained in one authority bundle.
+    pub max_bundle_components: usize,
+    /// Maximum explicit replacement edges in one bundle revision.
+    pub max_replacements: usize,
+    /// Maximum explicit conflict facts in one bundle revision.
+    pub max_conflicts: usize,
+    /// Maximum direct children retained in one supplied lineage view.
+    pub max_lineage_children: usize,
     /// Maximum object members and array elements visited while scanning.
     pub max_visited_fields: usize,
 }
@@ -70,6 +82,10 @@ impl Limits {
             max_positions: min(self.max_positions, OWNER_MAX.max_positions),
             max_capture_bindings: min(self.max_capture_bindings, OWNER_MAX.max_capture_bindings),
             max_required_sources: min(self.max_required_sources, OWNER_MAX.max_required_sources),
+            max_bundle_components: min(self.max_bundle_components, OWNER_MAX.max_bundle_components),
+            max_replacements: min(self.max_replacements, OWNER_MAX.max_replacements),
+            max_conflicts: min(self.max_conflicts, OWNER_MAX.max_conflicts),
+            max_lineage_children: min(self.max_lineage_children, OWNER_MAX.max_lineage_children),
             max_visited_fields: min(self.max_visited_fields, OWNER_MAX.max_visited_fields),
         }
     }
@@ -107,7 +123,15 @@ pub struct Usage {
     pub capture_bindings: usize,
     /// Required-source entries visited.
     pub required_sources: usize,
-    /// Object members and array elements visited.
+    /// Bundle components visited or retained.
+    pub bundle_components: usize,
+    /// Replacement edges visited or retained.
+    pub replacements: usize,
+    /// Explicit conflict facts visited or retained.
+    pub conflicts: usize,
+    /// Direct lineage children visited or retained.
+    pub lineage_children: usize,
+    /// Object members, array elements, or explicit planner units visited.
     pub visited_fields: usize,
 }
 
@@ -134,12 +158,40 @@ pub enum ErrorCode {
     ContractMismatch,
     /// A document or selection differs from independently supplied authority.
     ExpectedMismatch,
+    /// A required observation-authority premise is absent.
+    MissingPremise,
+    /// Activation capture authority is incomplete or cross-wired.
+    CaptureMismatch,
+    /// Evaluator contribution support is absent or cross-wired.
+    SupportMismatch,
+    /// A strict-read owner identity, subject, clock, or revision is cross-wired.
+    AuthorityMismatch,
     /// Multiple observations claim one declared order position.
     AmbiguousOrder,
+    /// A Boolean possibility set is empty or inconsistent with its reason.
+    InvalidPossibilitySet,
+    /// An event-time interval has an invalid identity or reversed endpoints.
+    InvalidInterval,
+    /// Two intervals name different clock, revision, or unit domains.
+    IntervalDomainMismatch,
+    /// A supplied bundle predecessor is not the selected current head.
+    StaleHead,
+    /// A supplied lineage already contains a competing successor.
+    KnownSibling,
+    /// A declared bundle replacement is incomplete or cross-wired.
+    InvalidReplacement,
+    /// One authority/scope/revision key names unequal canonical bytes.
+    IdentityContradiction,
+    /// A dependency edge names an absent or contradictory graph node.
+    InvalidDependency,
+    /// A dependency graph is qualified by a different authority revision.
+    ForeignRevision,
+    /// An explicit dependency graph contains a directed cycle.
+    DependencyCycle,
 }
 
 impl ErrorCode {
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 25] = [
         Self::InvalidSelection,
         Self::IdentityMismatch,
         Self::RevisionMismatch,
@@ -150,7 +202,21 @@ impl ErrorCode {
         Self::NonCanonical,
         Self::ContractMismatch,
         Self::ExpectedMismatch,
+        Self::MissingPremise,
+        Self::CaptureMismatch,
+        Self::SupportMismatch,
+        Self::AuthorityMismatch,
         Self::AmbiguousOrder,
+        Self::InvalidPossibilitySet,
+        Self::InvalidInterval,
+        Self::IntervalDomainMismatch,
+        Self::StaleHead,
+        Self::KnownSibling,
+        Self::InvalidReplacement,
+        Self::IdentityContradiction,
+        Self::InvalidDependency,
+        Self::ForeignRevision,
+        Self::DependencyCycle,
     ];
 
     /// Returns every stable code exactly once.
@@ -182,7 +248,21 @@ impl ErrorCode {
             Self::NonCanonical => "QOBS-AUTH-NONCANONICAL",
             Self::ContractMismatch => "QOBS-AUTH-CONTRACT-MISMATCH",
             Self::ExpectedMismatch => "QOBS-AUTH-EXPECTED-MISMATCH",
+            Self::MissingPremise => "QOBS-AUTH-MISSING-PREMISE",
+            Self::CaptureMismatch => "QOBS-AUTH-CAPTURE-MISMATCH",
+            Self::SupportMismatch => "QOBS-AUTH-SUPPORT-MISMATCH",
+            Self::AuthorityMismatch => "QOBS-AUTH-AUTHORITY-MISMATCH",
             Self::AmbiguousOrder => "QOBS-AUTH-AMBIGUOUS-ORDER",
+            Self::InvalidPossibilitySet => "QOBS-AUTH-INVALID-POSSIBILITY-SET",
+            Self::InvalidInterval => "QOBS-AUTH-INVALID-INTERVAL",
+            Self::IntervalDomainMismatch => "QOBS-AUTH-INTERVAL-DOMAIN-MISMATCH",
+            Self::StaleHead => "QOBS-AUTH-STALE-HEAD",
+            Self::KnownSibling => "QOBS-AUTH-KNOWN-SIBLING",
+            Self::InvalidReplacement => "QOBS-AUTH-INVALID-REPLACEMENT",
+            Self::IdentityContradiction => "QOBS-AUTH-IDENTITY-CONTRADICTION",
+            Self::InvalidDependency => "QOBS-AUTH-INVALID-DEPENDENCY",
+            Self::ForeignRevision => "QOBS-AUTH-FOREIGN-REVISION",
+            Self::DependencyCycle => "QOBS-AUTH-DEPENDENCY-CYCLE",
         }
     }
 }
@@ -636,6 +716,16 @@ impl<'a> Context<'a> {
     pub const fn subject(self) -> &'a SubjectSelection {
         self.subject
     }
+
+    /// Returns the exact owner-document revision being derived.
+    #[must_use]
+    pub const fn revision(self) -> u64 {
+        self.revision
+    }
+
+    pub(crate) const fn predecessor(self) -> Option<&'a Document> {
+        self.predecessor
+    }
 }
 
 /// Canonical immutable owner bytes.
@@ -704,6 +794,7 @@ impl Document {
 /// Strict-reader output. Construction is private to the owner modules.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Validated<P> {
+    contract: &'static str,
     identity: Identity,
     revision: u64,
     predecessor: Option<Identity>,
@@ -714,6 +805,12 @@ pub struct Validated<P> {
 }
 
 impl<P> Validated<P> {
+    /// Returns the validated immutable owner-contract label.
+    #[must_use]
+    pub const fn contract(&self) -> &'static str {
+        self.contract
+    }
+
     /// Returns the validated document identity.
     #[must_use]
     pub const fn identity(&self) -> &Identity {
@@ -847,6 +944,10 @@ where
         positions: declared_usage.positions,
         capture_bindings: declared_usage.capture_bindings,
         required_sources: declared_usage.required_sources,
+        bundle_components: declared_usage.bundle_components,
+        replacements: declared_usage.replacements,
+        conflicts: declared_usage.conflicts,
+        lineage_children: declared_usage.lineage_children,
         ..Usage::default()
     };
     let mut usage = semantic_floor;
@@ -887,7 +988,7 @@ where
             max_input_bytes: effective.max_output_bytes,
             ..effective
         };
-        let observed = preflight(&bytes, scan_limits)?;
+        let observed = preflight_for_contract(&bytes, scan_limits, contract)?;
         let next_usage = Usage {
             wire_bytes: observed.wire_bytes,
             depth: observed.depth,
@@ -902,6 +1003,10 @@ where
             required_sources: observed
                 .required_sources
                 .max(semantic_floor.required_sources),
+            bundle_components: semantic_floor.bundle_components,
+            replacements: semantic_floor.replacements,
+            conflicts: semantic_floor.conflicts,
+            lineage_children: semantic_floor.lineage_children,
             visited_fields: observed.visited_fields,
         };
         if next_usage == usage {
@@ -936,7 +1041,21 @@ where
     P: Clone + Eq + Serialize + DeserializeOwned,
 {
     let effective = limits.effective();
-    let observed = preflight(bytes, effective)?;
+    let observed = preflight_for_contract(bytes, effective, contract)?;
+    read_exact_preflighted(contract, bytes, expected, limits, observed)
+}
+
+pub(crate) fn read_exact_preflighted<P>(
+    contract: &'static str,
+    bytes: &[u8],
+    expected: &Document,
+    limits: Limits,
+    observed: Usage,
+) -> Result<Validated<P>>
+where
+    P: Clone + Eq + Serialize + DeserializeOwned,
+{
+    let effective = limits.effective();
     let contract_probe: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| {
         Error::new(
             ErrorCode::InvalidJson,
@@ -997,6 +1116,7 @@ where
         ));
     }
     Ok(Validated {
+        contract,
         identity: Identity::new(envelope.identity),
         revision: envelope.revision,
         predecessor: envelope.predecessor.map(Identity::new),
@@ -1063,6 +1183,10 @@ fn validate_usage(usage: Usage, limits: Limits) -> Result<()> {
         || usage.positions > limits.max_positions
         || usage.capture_bindings > limits.max_capture_bindings
         || usage.required_sources > limits.max_required_sources
+        || usage.bundle_components > limits.max_bundle_components
+        || usage.replacements > limits.max_replacements
+        || usage.conflicts > limits.max_conflicts
+        || usage.lineage_children > limits.max_lineage_children
         || usage.visited_fields > limits.max_visited_fields;
     if exceeded {
         return Err(Error::new(
@@ -1281,6 +1405,23 @@ struct ScanState {
 }
 
 pub(crate) fn preflight(bytes: &[u8], limits: Limits) -> Result<Usage> {
+    preflight_with_profile(bytes, limits, ScanProfile::Generic)
+}
+
+pub(crate) fn preflight_for_contract(
+    bytes: &[u8],
+    limits: Limits,
+    contract: &str,
+) -> Result<Usage> {
+    let profile = match contract {
+        "quire.observation-authority/v1" | "quire.observation-authority/v2" => ScanProfile::Bundle,
+        "quire.observation-authority-lineage/v1" => ScanProfile::Lineage,
+        _ => ScanProfile::Generic,
+    };
+    preflight_with_profile(bytes, limits, profile)
+}
+
+fn preflight_with_profile(bytes: &[u8], limits: Limits, profile: ScanProfile) -> Result<Usage> {
     if bytes.len() > limits.max_input_bytes {
         return Err(Error::new(
             ErrorCode::ResourceIncomplete,
@@ -1302,6 +1443,7 @@ pub(crate) fn preflight(bytes: &[u8], limits: Limits) -> Result<Usage> {
         bytes,
         position: 0,
         limits,
+        profile,
         state: ScanState::default(),
     };
     scanner.value(1, ArrayKind::Other)?;
@@ -1323,13 +1465,25 @@ enum ArrayKind {
     Positions,
     Captures,
     Sources,
+    BundleComponents,
+    Replacements,
+    Conflicts,
+    LineageChildren,
     Other,
+}
+
+#[derive(Clone, Copy)]
+enum ScanProfile {
+    Generic,
+    Bundle,
+    Lineage,
 }
 
 struct Scanner<'a> {
     bytes: &'a [u8],
     position: usize,
     limits: Limits,
+    profile: ScanProfile,
     state: ScanState,
 }
 
@@ -1357,8 +1511,9 @@ impl Scanner<'_> {
         }
         loop {
             let kind = {
+                let profile = self.profile;
                 let key = self.string()?;
-                array_kind(key)
+                array_kind(key, depth, profile)
             };
             self.charge_visit()?;
             self.whitespace();
@@ -1537,6 +1692,26 @@ impl Scanner<'_> {
                 self.limits.max_required_sources,
                 "required sources exceed effective limit",
             ),
+            ArrayKind::BundleComponents => (
+                &mut self.state.usage.bundle_components,
+                self.limits.max_bundle_components,
+                "bundle components exceed effective limit",
+            ),
+            ArrayKind::Replacements => (
+                &mut self.state.usage.replacements,
+                self.limits.max_replacements,
+                "bundle replacements exceed effective limit",
+            ),
+            ArrayKind::Conflicts => (
+                &mut self.state.usage.conflicts,
+                self.limits.max_conflicts,
+                "bundle conflicts exceed effective limit",
+            ),
+            ArrayKind::LineageChildren => (
+                &mut self.state.usage.lineage_children,
+                self.limits.max_lineage_children,
+                "lineage children exceed effective limit",
+            ),
             ArrayKind::Other => return Ok(()),
         };
         *slot = (*slot).max(count);
@@ -1574,13 +1749,216 @@ impl Scanner<'_> {
     }
 }
 
-fn array_kind(key: &[u8]) -> ArrayKind {
-    match key {
-        b"members" | b"required_members" | b"required_results" | b"available_results"
-        | b"facts" => ArrayKind::Population,
-        b"positions" => ArrayKind::Positions,
-        b"bindings" => ArrayKind::Captures,
-        b"required_sources" | b"observation_sources" | b"sources" => ArrayKind::Sources,
-        _ => ArrayKind::Other,
+fn array_kind(key: &[u8], object_depth: usize, profile: ScanProfile) -> ArrayKind {
+    if [
+        b"members".as_slice(),
+        b"required_members",
+        b"required_results",
+        b"available_results",
+        b"facts",
+    ]
+    .iter()
+    .any(|candidate| json_key_matches(key, candidate))
+    {
+        ArrayKind::Population
+    } else if json_key_matches(key, b"positions")
+        && matches!(profile, ScanProfile::Bundle)
+        && object_depth == 2
+    {
+        ArrayKind::BundleComponents
+    } else if json_key_matches(key, b"positions") {
+        ArrayKind::Positions
+    } else if json_key_matches(key, b"bindings") {
+        ArrayKind::Captures
+    } else if [
+        b"required_sources".as_slice(),
+        b"observation_sources",
+        b"sources",
+    ]
+    .iter()
+    .any(|candidate| json_key_matches(key, candidate))
+    {
+        ArrayKind::Sources
+    } else if [
+        b"components".as_slice(),
+        b"records",
+        b"populations",
+        b"progress",
+    ]
+    .iter()
+    .any(|candidate| json_key_matches(key, candidate))
+        && matches!(profile, ScanProfile::Bundle)
+        && object_depth == 2
+    {
+        ArrayKind::BundleComponents
+    } else if json_key_matches(key, b"replacements")
+        && matches!(profile, ScanProfile::Bundle)
+        && object_depth == 2
+    {
+        ArrayKind::Replacements
+    } else if json_key_matches(key, b"conflicts")
+        && matches!(profile, ScanProfile::Bundle)
+        && object_depth == 2
+    {
+        ArrayKind::Conflicts
+    } else if json_key_matches(key, b"direct_children")
+        && matches!(profile, ScanProfile::Lineage)
+        && object_depth == 1
+    {
+        ArrayKind::LineageChildren
+    } else {
+        ArrayKind::Other
+    }
+}
+
+// Object keys are compared as decoded JSON strings so an escaped spelling
+// cannot evade the collection limit that applies before serde allocates it.
+// Every owner key is ASCII, which lets this matcher stay allocation-free and
+// fail closed for non-ASCII Unicode escapes.
+fn json_key_matches(encoded: &[u8], expected: &[u8]) -> bool {
+    let mut encoded_index = 0usize;
+    let mut expected_index = 0usize;
+    while encoded_index < encoded.len() && expected_index < expected.len() {
+        let decoded = if encoded[encoded_index] == b'\\' {
+            encoded_index += 1;
+            let Some(escape) = encoded.get(encoded_index).copied() else {
+                return false;
+            };
+            encoded_index += 1;
+            match escape {
+                b'"' => b'"',
+                b'\\' => b'\\',
+                b'/' => b'/',
+                b'b' => 0x08,
+                b'f' => 0x0c,
+                b'n' => b'\n',
+                b'r' => b'\r',
+                b't' => b'\t',
+                b'u' => {
+                    let Some(digits) = encoded.get(encoded_index..encoded_index + 4) else {
+                        return false;
+                    };
+                    let Some(value) = digits.iter().try_fold(0u16, |value, digit| {
+                        let nibble = match digit {
+                            b'0'..=b'9' => u16::from(*digit - b'0'),
+                            b'a'..=b'f' => u16::from(*digit - b'a') + 10,
+                            b'A'..=b'F' => u16::from(*digit - b'A') + 10,
+                            _ => return None,
+                        };
+                        value.checked_mul(16)?.checked_add(nibble)
+                    }) else {
+                        return false;
+                    };
+                    encoded_index += 4;
+                    let Ok(value) = u8::try_from(value) else {
+                        return false;
+                    };
+                    value
+                }
+                _ => return false,
+            }
+        } else {
+            let value = encoded[encoded_index];
+            encoded_index += 1;
+            value
+        };
+        if decoded != expected[expected_index] {
+            return false;
+        }
+        expected_index += 1;
+    }
+    encoded_index == encoded.len() && expected_index == expected.len()
+}
+
+#[cfg(test)]
+mod scan_tests {
+    use super::*;
+
+    fn assert_escaped_key_is_bounded(
+        contract: &str,
+        bytes: &[u8],
+        limits: Limits,
+        usage: impl Fn(Usage) -> usize,
+    ) {
+        let error = preflight_for_contract(bytes, limits.effective(), contract)
+            .expect_err("escaped owner key must retain its collection bound");
+        assert_eq!(error.code(), ErrorCode::ResourceIncomplete);
+        assert_eq!(usage(error.usage()), 2);
+    }
+
+    #[test]
+    fn escaped_owner_keys_cannot_bypass_collection_preflight() {
+        assert_escaped_key_is_bounded(
+            "generic",
+            br#"{"memb\u0065rs":[{},{}]}"#,
+            Limits {
+                max_population_entries: 1,
+                ..Limits::owner_max()
+            },
+            |usage| usage.population_entries,
+        );
+        assert_escaped_key_is_bounded(
+            "generic",
+            br#"{"positi\u006fns":[{},{}]}"#,
+            Limits {
+                max_positions: 1,
+                ..Limits::owner_max()
+            },
+            |usage| usage.positions,
+        );
+        assert_escaped_key_is_bounded(
+            "generic",
+            br#"{"bindi\u006egs":[{},{}]}"#,
+            Limits {
+                max_capture_bindings: 1,
+                ..Limits::owner_max()
+            },
+            |usage| usage.capture_bindings,
+        );
+        assert_escaped_key_is_bounded(
+            "generic",
+            br#"{"required_sourc\u0065s":[{},{}]}"#,
+            Limits {
+                max_required_sources: 1,
+                ..Limits::owner_max()
+            },
+            |usage| usage.required_sources,
+        );
+        assert_escaped_key_is_bounded(
+            "quire.observation-authority/v1",
+            br#"{"payload":{"compon\u0065nts":[{},{}]}}"#,
+            Limits {
+                max_bundle_components: 1,
+                ..Limits::owner_max()
+            },
+            |usage| usage.bundle_components,
+        );
+        assert_escaped_key_is_bounded(
+            "quire.observation-authority/v1",
+            br#"{"payload":{"replacem\u0065nts":[{},{}]}}"#,
+            Limits {
+                max_replacements: 1,
+                ..Limits::owner_max()
+            },
+            |usage| usage.replacements,
+        );
+        assert_escaped_key_is_bounded(
+            "quire.observation-authority/v1",
+            br#"{"payload":{"confli\u0063ts":[{},{}]}}"#,
+            Limits {
+                max_conflicts: 1,
+                ..Limits::owner_max()
+            },
+            |usage| usage.conflicts,
+        );
+        assert_escaped_key_is_bounded(
+            "quire.observation-authority-lineage/v1",
+            br#"{"direct_chil\u0064ren":[{},{}]}"#,
+            Limits {
+                max_lineage_children: 1,
+                ..Limits::owner_max()
+            },
+            |usage| usage.lineage_children,
+        );
     }
 }

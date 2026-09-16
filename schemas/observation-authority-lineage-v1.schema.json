@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "urn:agent-ix:quire-observation:authority-lineage:1",
+  "title": "Bounded observation authority lineage view v1", "type": "object", "additionalProperties": false,
+  "required": ["contract", "identity", "authority", "subject", "head", "direct_children", "max_direct_children"],
+  "properties": {
+    "contract": {"const": "quire.observation-authority-lineage/v1"},
+    "identity": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "authority": {"$ref": "observation-record-v1.schema.json#/$defs/authority"},
+    "subject": {"$ref": "observation-record-v1.schema.json#/$defs/subject"},
+    "head": {"$ref": "#/$defs/bundleStamp"},
+    "direct_children": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/bundleStamp"}},
+    "max_direct_children": {"type": "integer", "minimum": 0, "maximum": 10000}
+  },
+  "$defs": {
+    "bundleStamp": {"type": "object", "additionalProperties": false, "required": ["revision", "identity", "digest"], "properties": {"revision": {"type": "integer", "minimum": 1}, "identity": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
+  }
+}

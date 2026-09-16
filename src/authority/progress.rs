@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Agent-IX
 
 //! `quire.observation.progress-assertion/v1` owner artifact.
@@ -153,6 +153,8 @@ struct AuthorityIdentityPreimage<'a> {
     definition_digest: String,
     scope_identity: &'a str,
     population_identity: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    binding_identity: Option<&'a str>,
     clock_identity: &'a str,
     clock_revision: &'a str,
     required_sources: Vec<&'a str>,
@@ -183,15 +185,15 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
         || selection.cutoff.clock_revision() != selection.clock.clock_revision()
         || !selection.boundary.matches_range(qualified.scope().range)
         || selection.required_sources != qualified.scope().observation_sources
+        || selection.captured_trigger_identity != qualified.binding().trigger_identity
         || qualified.records().iter().any(|record| {
             &record.clock_identity != selection.clock.clock_identity()
                 || &record.clock_revision != selection.clock.clock_revision()
-                || record.trigger_identity != selection.captured_trigger_identity
         })
     {
         return Err(Error::new(
             ErrorCode::ExpectedMismatch,
-            "progress boundary, source, clock or trigger is cross-wired",
+            "progress boundary, source, clock, or binding trigger is cross-wired",
             Usage::default(),
         ));
     }
@@ -200,12 +202,20 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
     let subject = context.subject();
     let authority_identity = super::common::sha256_jcs(
         &AuthorityIdentityPreimage {
-            identity_version: "quire.observation.progress-authority-identity/v1-draft.1",
+            identity_version: if qualified.records().is_empty() {
+                "quire.observation.progress-authority-identity/v2-draft.1"
+            } else {
+                "quire.observation.progress-authority-identity/v1-draft.1"
+            },
             definition_identity: authority_selection.definition_identity.as_str(),
             definition_revision: authority_selection.definition_revision.as_str(),
             definition_digest: super::common::digest_hex(&authority_selection.definition_digest),
             scope_identity: subject.scope_identity.as_str(),
             population_identity: subject.population_identity.as_str(),
+            binding_identity: qualified
+                .records()
+                .is_empty()
+                .then(|| qualified.binding().identity.as_str()),
             clock_identity: selection.clock.clock_identity().as_str(),
             clock_revision: selection.clock.clock_revision().as_str(),
             required_sources: selection
@@ -266,6 +276,64 @@ pub fn read(
 ) -> Result<View> {
     let expected = derive(context, selection, limits)?;
     read_exact(CONTRACT, bytes, &expected, limits)
+}
+
+pub(crate) fn commits_empty_binding(
+    view: &View,
+    binding_identity: &Identity,
+    limits: Limits,
+) -> Result<bool> {
+    commits_binding_mode(
+        view,
+        "quire.observation.progress-authority-identity/v2-draft.1",
+        Some(binding_identity),
+        limits,
+    )
+}
+
+pub(crate) fn commits_captured_history(view: &View, limits: Limits) -> Result<bool> {
+    commits_binding_mode(
+        view,
+        "quire.observation.progress-authority-identity/v1-draft.1",
+        None,
+        limits,
+    )
+}
+
+fn commits_binding_mode(
+    view: &View,
+    identity_version: &'static str,
+    binding_identity: Option<&Identity>,
+    limits: Limits,
+) -> Result<bool> {
+    if binding_identity.is_some_and(|identity| !identity.valid()) {
+        return Ok(false);
+    }
+    let authority = view.authority();
+    let subject = view.subject();
+    let payload = view.payload();
+    let (expected, _) = super::common::sha256_jcs(
+        &AuthorityIdentityPreimage {
+            identity_version,
+            definition_identity: authority.definition_identity.as_str(),
+            definition_revision: authority.definition_revision.as_str(),
+            definition_digest: super::common::digest_hex(&authority.definition_digest),
+            scope_identity: subject.scope_identity.as_str(),
+            population_identity: subject.population_identity.as_str(),
+            binding_identity: binding_identity.map(Identity::as_str),
+            clock_identity: &payload.clock_identity,
+            clock_revision: &payload.clock_revision,
+            required_sources: payload
+                .required_sources
+                .iter()
+                .map(String::as_str)
+                .collect(),
+            boundary: payload.boundary.clone(),
+            restoration_basis_identity: &payload.restoration_basis_identity,
+        },
+        limits,
+    )?;
+    Ok(expected.as_str() == payload.authority_identity)
 }
 
 #[cfg(test)]
