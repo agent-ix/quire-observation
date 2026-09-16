@@ -130,7 +130,7 @@ integration test and uses pinned strict readers rather than copied producer sema
 - **C2 = Task-023** pinned consumer integration — Hard; exit: real consumers preserve
   uncertainty, repaired lineage and aggregate accounting byte-for-byte.
 - **Gate = Task-024** completion and promotion readiness — Medium; measures trace coverage
-  and all local gates; pass: 92/92 matrix rows backed with zero status lies and no open
+  and all local gates; pass: 91/91 matrix rows backed with zero status lies and no open
   high/medium review finding.
 
 ## Parallel Execution Summary

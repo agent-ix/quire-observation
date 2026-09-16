@@ -55,7 +55,7 @@ independent evidence needed to hand C00 to the next integration phase.
 ## Deliverables
 
 - Validated complete Plan-002, final review artifacts and promotion handoff.
-- Matrix totals of 92/92 backed rows with exact C00 trace bindings.
+- Matrix totals of 91/91 backed rows with exact C00 trace bindings.
 
 ## Notes
 
