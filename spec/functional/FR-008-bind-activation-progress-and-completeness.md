@@ -50,10 +50,10 @@ settlement contribution as independent typed facts.
 
 - The library SHALL accept activation authority only for the exact qualified
   observation binding and its semantic trigger. The library SHALL derive an
-  activation identity from the obligation, semantic
-  trigger identity, activation interval, optional admitted trigger observation,
-  and complete ordered capture set; trigger observation and captures are jointly
-  present or absent.
+  activation identity from the obligation, semantic trigger identity, activation
+  interval, optional admitted trigger observation, and complete ordered capture
+  set. A no-trigger activation identity additionally commits the exact qualified
+  binding identity; trigger observation and captures are jointly present or absent.
 - The library SHALL preserve captured values and provenance from the activation
   revision even when a later observation carries another value.
 - The library SHALL classify an obligation with an admitted trigger and strict
@@ -70,7 +70,8 @@ settlement contribution as independent typed facts.
 - When silence advances a deadline, the library SHALL recognize coverage only
   from a matching progress authority whose earliest possible frontier is strictly
   beyond the deadline's latest possible endpoint and whose source set covers
-  every required source.
+  every required source. Progress authority over an empty history SHALL commit
+  the exact qualified binding identity so same-trigger bindings cannot replay it.
 - When a progress interval overlaps the deadline or omits a required source, the
   library SHALL retain an incomplete progress fact rather than claim coverage.
 - The library SHALL classify lateness against the exact declared cutoff interval

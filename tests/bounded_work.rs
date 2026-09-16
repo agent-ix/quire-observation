@@ -46,13 +46,13 @@ const SOURCES: &[Source] = &[
         id: SourceId::Activation,
         path: "src/authority/activation.rs",
         text: include_str!("../src/authority/activation.rs"),
-        sha256: "21b351568b63feb48ec178cae803c365e760383b4cefa3a00e1653077f0355a2",
+        sha256: "ada51d5b9e7c5f16a8f1d15cdb691afed7cd615724db142d07834c882a854651",
     },
     Source {
         id: SourceId::Progress,
         path: "src/authority/progress.rs",
         text: include_str!("../src/authority/progress.rs"),
-        sha256: "d8729681558c5fe067d3968af8057bbcfbf8335a979ecc087f444d85da87b23b",
+        sha256: "6e1b8892adc8a4b6371b1b316bdc2ed346173b48a3df475ddf524f988eeed0e6",
     },
     Source {
         id: SourceId::Bundle,
@@ -100,7 +100,7 @@ const SOURCES: &[Source] = &[
         id: SourceId::ActivationEvidence,
         path: "tests/activation_authority.rs",
         text: include_str!("activation_authority.rs"),
-        sha256: "0dc4bedb202654e23bbe20830cdc3d5b6ed92501007f48ec251124173efdcc11",
+        sha256: "0a8e79c5dd29e20920d1d95753fd2bcbe5e2c17b11b9964b90c157ff0aeff5ca",
     },
 ];
 

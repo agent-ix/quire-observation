@@ -59,18 +59,49 @@ fn qualified() -> Box<QualifiedObservation> {
 }
 
 fn qualified_with_value(value: &str) -> Box<QualifiedObservation> {
-    qualified_with_value_trigger_and_time(value, "trigger:refund-request", 10, true)
+    qualified_with_value_trigger_and_time(
+        value,
+        "binding:amount",
+        "trigger:refund-request",
+        10,
+        true,
+        true,
+    )
 }
 
 fn qualified_without_refund_trigger() -> Box<QualifiedObservation> {
-    qualified_with_value_trigger_and_time("12.00", "trigger:refund-request", 10, false)
+    qualified_without_refund_trigger_for("binding:amount", false)
+}
+
+fn qualified_without_refund_trigger_for(
+    binding_identity: &str,
+    required: bool,
+) -> Box<QualifiedObservation> {
+    qualified_without_trigger_for(binding_identity, "trigger:refund-request", required)
+}
+
+fn qualified_without_trigger_for(
+    binding_identity: &str,
+    trigger_identity: &str,
+    required: bool,
+) -> Box<QualifiedObservation> {
+    qualified_with_value_trigger_and_time(
+        "12.00",
+        binding_identity,
+        trigger_identity,
+        10,
+        false,
+        required,
+    )
 }
 
 fn qualified_with_value_trigger_and_time(
     value: &str,
+    binding_identity: &str,
     trigger_identity: &str,
     event_time_nanos: i128,
     include_record: bool,
+    required: bool,
 ) -> Box<QualifiedObservation> {
     let producer = producer();
     let subject = order(&producer, "order:O1");
@@ -82,14 +113,14 @@ fn qualified_with_value_trigger_and_time(
             digest: digest(1),
         },
         binding: ObservationBinding {
-            identity: id("binding:amount"),
+            identity: id(binding_identity),
             source_identity: id("source:payments"),
             schema_identity: id("schema:amount/v1"),
             signal_identity: id("signal:amount"),
             trigger_identity: id(trigger_identity),
             unit: id("USD"),
             subject_kind: subject.kind().clone(),
-            required: include_record,
+            required,
         },
         expected_subject: subject.clone(),
         relationships: vec![],
@@ -130,7 +161,7 @@ fn qualified_with_value_trigger_and_time(
         records: include_record
             .then(|| AdmittedRecord {
                 identity: id("unsealed-record"),
-                binding_identity: id("binding:amount"),
+                binding_identity: id(binding_identity),
                 source_identity: id("source:payments"),
                 schema_identity: id("schema:amount/v1"),
                 subject,
@@ -241,7 +272,35 @@ fn authority_proofs_for_trigger(
     include_capture: bool,
     trigger_identity: &str,
 ) -> AuthorityProofs {
+    authority_proofs_for_trigger_from(
+        qualified,
+        qualified,
+        owner,
+        subject,
+        progress,
+        closure,
+        evidence,
+        include_capture,
+        trigger_identity,
+    )
+}
+
+// A separate qualified progress source makes cross-binding proof substitution observable.
+#[allow(clippy::too_many_arguments)]
+fn authority_proofs_for_trigger_from(
+    qualified: &QualifiedObservation,
+    progress_qualified: &QualifiedObservation,
+    owner: &AuthoritySelection,
+    subject: &SubjectSelection,
+    progress: ExecutionState,
+    closure: ExecutionState,
+    evidence: EvidenceState,
+    include_capture: bool,
+    trigger_identity: &str,
+) -> AuthorityProofs {
     let context = Context::new(History::batch(qualified), owner, subject, 1, None);
+    let progress_context =
+        Context::new(History::batch(progress_qualified), owner, subject, 1, None);
     let record = qualified.records().first();
     let capture_view = include_capture.then(|| {
         let record = record.expect("capture authority requires an admitted trigger record");
@@ -283,12 +342,13 @@ fn authority_proofs_for_trigger(
                 cutoff(40),
                 id("restoration:O1"),
             );
-            let document = authority::progress::derive(context, &selected, Limits::owner_max())
-                .expect("derive progress authority");
+            let document =
+                authority::progress::derive(progress_context, &selected, Limits::owner_max())
+                    .expect("derive progress authority");
             Some(
                 authority::progress::read(
                     document.bytes(),
-                    context,
+                    progress_context,
                     &selected,
                     Limits::owner_max(),
                 )
@@ -795,6 +855,183 @@ fn tc008_trigger_absence_is_proved_for_the_exact_selected_trigger() {
 
     let absent = qualified_without_refund_trigger();
     let absent_subject = subject(&absent);
+    let required_absent = qualified_without_refund_trigger_for("binding:amount", true);
+    let required_subject = subject(&required_absent);
+    let required_selection = selection_axes(
+        &required_absent,
+        &owner,
+        &required_subject,
+        AxesCase {
+            trigger: TriggerCase::Absent,
+            progress: ExecutionState::Closed,
+            closure: ExecutionState::Closed,
+            evidence: EvidenceState::Complete,
+            include_contributions: false,
+        },
+    );
+    let required_document = authority::activation::derive(
+        Context::new(
+            History::batch(&required_absent),
+            &owner,
+            &required_subject,
+            1,
+            None,
+        ),
+        &required_selection,
+        Limits::owner_max(),
+    )
+    .expect("required empty binding remains an explicit non-conclusive fact");
+    let required_view = authority::activation::read(
+        required_document.bytes(),
+        Context::new(
+            History::batch(&required_absent),
+            &owner,
+            &required_subject,
+            1,
+            None,
+        ),
+        &required_selection,
+        Limits::owner_max(),
+    )
+    .expect("strict-read required empty binding");
+    assert_eq!(
+        required_view.payload().activation(),
+        ActivationState::Unknown
+    );
+
+    let foreign_same_trigger = qualified_without_refund_trigger_for("binding:foreign", false);
+    let foreign_same_trigger_subject = subject(&foreign_same_trigger);
+    assert_eq!(
+        absent.scope().population_identity,
+        foreign_same_trigger.scope().population_identity,
+        "negative control keeps population identity equal"
+    );
+    let exact_progress = authority::progress::Selection::new(
+        authority::clock::Selection::new(id("clock:event-time"), id("1")),
+        vec![id("source:payments")],
+        boundary(OpenClosed::Closed),
+        OpenClosed::Closed,
+        id("trigger:refund-request"),
+        cutoff(40),
+        id("restoration:O1"),
+    );
+    let absent_context = Context::new(History::batch(&absent), &owner, &absent_subject, 1, None);
+    let foreign_context = Context::new(
+        History::batch(&foreign_same_trigger),
+        &owner,
+        &foreign_same_trigger_subject,
+        1,
+        None,
+    );
+    let absent_progress =
+        authority::progress::derive(absent_context, &exact_progress, Limits::owner_max())
+            .expect("derive binding-specific absent progress");
+    let foreign_progress_document =
+        authority::progress::derive(foreign_context, &exact_progress, Limits::owner_max())
+            .expect("derive foreign same-trigger absent progress");
+    assert_ne!(
+        absent_progress.bytes(),
+        foreign_progress_document.bytes(),
+        "empty progress authority commits the exact binding identity"
+    );
+    authority::progress::read(
+        absent_progress.bytes(),
+        foreign_context,
+        &exact_progress,
+        Limits::owner_max(),
+    )
+    .expect_err("same-trigger progress bytes cannot replay under another binding");
+
+    let absent_selection = selection_axes(
+        &absent,
+        &owner,
+        &absent_subject,
+        AxesCase {
+            trigger: TriggerCase::Absent,
+            progress: ExecutionState::Closed,
+            closure: ExecutionState::Closed,
+            evidence: EvidenceState::Complete,
+            include_contributions: false,
+        },
+    );
+    let foreign_selection = selection_axes(
+        &foreign_same_trigger,
+        &owner,
+        &foreign_same_trigger_subject,
+        AxesCase {
+            trigger: TriggerCase::Absent,
+            progress: ExecutionState::Closed,
+            closure: ExecutionState::Closed,
+            evidence: EvidenceState::Complete,
+            include_contributions: false,
+        },
+    );
+    let absent_activation =
+        authority::activation::derive(absent_context, &absent_selection, Limits::owner_max())
+            .expect("derive binding-specific absence activation");
+    let foreign_activation =
+        authority::activation::derive(foreign_context, &foreign_selection, Limits::owner_max())
+            .expect("derive foreign same-trigger absence activation");
+    assert_ne!(
+        absent_activation.bytes(),
+        foreign_activation.bytes(),
+        "absent activation commits the exact binding identity"
+    );
+    authority::activation::read(
+        absent_activation.bytes(),
+        foreign_context,
+        &foreign_selection,
+        Limits::owner_max(),
+    )
+    .expect_err("same-trigger activation bytes cannot replay under another binding");
+
+    let foreign_trigger_history =
+        qualified_without_trigger_for("binding:amount", "trigger:chargeback-request", false);
+    let foreign_trigger_progress = authority::progress::Selection::new(
+        authority::clock::Selection::new(id("clock:event-time"), id("1")),
+        vec![id("source:payments")],
+        boundary(OpenClosed::Closed),
+        OpenClosed::Closed,
+        id("trigger:chargeback-request"),
+        cutoff(40),
+        id("restoration:O1"),
+    );
+    let error = authority::progress::derive(
+        absent_context,
+        &foreign_trigger_progress,
+        Limits::owner_max(),
+    )
+    .expect_err("progress selection cannot substitute a foreign binding trigger");
+    assert_eq!(error.code(), ErrorCode::ExpectedMismatch);
+
+    let foreign_trigger_proofs = authority_proofs_for_trigger_from(
+        &absent,
+        &foreign_trigger_history,
+        &owner,
+        &absent_subject,
+        ExecutionState::Closed,
+        ExecutionState::Closed,
+        EvidenceState::Complete,
+        false,
+        "trigger:chargeback-request",
+    );
+    let proof_cross_wired = Selection::new(
+        ActivationSelection::without_trigger(
+            id("obligation:refund"),
+            absent.binding().identity.clone(),
+            absent.binding().trigger_identity.clone(),
+            interval(8, 12),
+        ),
+        progress_selection(ExecutionState::Closed),
+        interval(8, 12),
+        interval(10, 20),
+        foreign_trigger_proofs,
+    );
+    let error =
+        authority::activation::derive(absent_context, &proof_cross_wired, Limits::owner_max())
+            .expect_err("binding-correct activation cannot borrow foreign-trigger progress proof");
+    assert_eq!(error.code(), ErrorCode::AuthorityMismatch);
+
     let foreign_progress = authority_proofs_for_trigger(
         &absent,
         &owner,

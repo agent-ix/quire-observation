@@ -153,6 +153,8 @@ struct AuthorityIdentityPreimage<'a> {
     definition_digest: String,
     scope_identity: &'a str,
     population_identity: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    binding_identity: Option<&'a str>,
     clock_identity: &'a str,
     clock_revision: &'a str,
     required_sources: Vec<&'a str>,
@@ -200,12 +202,20 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
     let subject = context.subject();
     let authority_identity = super::common::sha256_jcs(
         &AuthorityIdentityPreimage {
-            identity_version: "quire.observation.progress-authority-identity/v1-draft.1",
+            identity_version: if qualified.records().is_empty() {
+                "quire.observation.progress-authority-identity/v2-draft.1"
+            } else {
+                "quire.observation.progress-authority-identity/v1-draft.1"
+            },
             definition_identity: authority_selection.definition_identity.as_str(),
             definition_revision: authority_selection.definition_revision.as_str(),
             definition_digest: super::common::digest_hex(&authority_selection.definition_digest),
             scope_identity: subject.scope_identity.as_str(),
             population_identity: subject.population_identity.as_str(),
+            binding_identity: qualified
+                .records()
+                .is_empty()
+                .then(|| qualified.binding().identity.as_str()),
             clock_identity: selection.clock.clock_identity().as_str(),
             clock_revision: selection.clock.clock_revision().as_str(),
             required_sources: selection

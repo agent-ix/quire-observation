@@ -902,6 +902,7 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
     }
     let activation_id = activation_scope_identity(
         &selection.activation.obligation_identity,
+        Some(&selection.activation.binding_identity),
         &selection.activation.trigger_identity,
         selection.activation.trigger_observation_identity.as_ref(),
         &selection.activation.interval,
@@ -1100,7 +1101,10 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
     };
     let activation = if trigger.is_some() {
         ActivationState::Active
-    } else if closure == ExecutionState::Closed && evidence == EvidenceState::Complete {
+    } else if !qualified.binding().required
+        && closure == ExecutionState::Closed
+        && evidence == EvidenceState::Complete
+    {
         ActivationState::Inactive
     } else {
         ActivationState::Unknown
@@ -1327,6 +1331,8 @@ fn contribution_wire(
 struct ActivationPreimage<'a> {
     identity_version: &'static str,
     obligation_identity: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    binding_identity: Option<&'a str>,
     trigger_identity: &'a str,
     trigger_observation_identity: Option<&'a str>,
     interval: IntervalPreimage<'a>,
@@ -1365,6 +1371,7 @@ pub fn activation_identity(
 ) -> Result<Identity> {
     activation_scope_identity(
         obligation_identity,
+        None,
         trigger_identity,
         Some(trigger_observation_identity),
         interval,
@@ -1375,6 +1382,7 @@ pub fn activation_identity(
 
 fn activation_scope_identity(
     obligation_identity: &Identity,
+    binding_identity: Option<&Identity>,
     trigger_identity: &Identity,
     trigger_observation_identity: Option<&Identity>,
     interval: &EventTimeInterval,
@@ -1384,9 +1392,11 @@ fn activation_scope_identity(
     interval.validate_limits(limits)?;
     let effective = limits.effective();
     if !obligation_identity.valid()
+        || binding_identity.is_some_and(|identity| !identity.valid())
         || !trigger_identity.valid()
         || trigger_observation_identity.is_some_and(|identity| !identity.valid())
         || trigger_observation_identity.is_some() != !captures.is_empty()
+        || (trigger_observation_identity.is_none() && binding_identity.is_none())
     {
         return Err(Error::new(
             ErrorCode::InvalidSelection,
@@ -1405,6 +1415,9 @@ fn activation_scope_identity(
         ));
     }
     validate_string(obligation_identity.as_str(), effective)?;
+    if let Some(binding_identity) = binding_identity {
+        validate_string(binding_identity.as_str(), effective)?;
+    }
     validate_string(trigger_identity.as_str(), effective)?;
     if let Some(trigger_observation_identity) = trigger_observation_identity {
         validate_string(trigger_observation_identity.as_str(), effective)?;
@@ -1451,9 +1464,29 @@ fn activation_scope_identity(
         )
     })?;
     sorted.extend(captures);
+    let retained_binding_identity = if trigger_observation_identity.is_none() {
+        Some(
+            binding_identity
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorCode::InvalidSelection,
+                        "absent-trigger activation requires an exact binding identity",
+                        Usage::default(),
+                    )
+                })?
+                .as_str(),
+        )
+    } else {
+        None
+    };
     let preimage = ActivationPreimage {
-        identity_version: "quire.observation.activation/v2",
+        identity_version: if trigger_observation_identity.is_none() {
+            "quire.observation.activation/v3"
+        } else {
+            "quire.observation.activation/v2"
+        },
         obligation_identity: obligation_identity.as_str(),
+        binding_identity: retained_binding_identity,
         trigger_identity: trigger_identity.as_str(),
         trigger_observation_identity: trigger_observation_identity.map(Identity::as_str),
         interval: IntervalPreimage {

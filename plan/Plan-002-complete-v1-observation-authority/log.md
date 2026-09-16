@@ -65,5 +65,8 @@ description: "Chronological log of changes to the Plan-002 bundle."
   a genuinely empty optional binding rather than foreign-trigger history. Historical bundle reads
   preflight bytes before lineage work, terminal outcome clones and replacement construction have
   dominating exact state checks, and the multi-activation oracle distinguishes exact progress
-  authority across two active payloads.
+  authority across two active payloads. A final exact-head review closed required-empty and
+  same-trigger binding-substitution gaps: required empty bindings remain unknown, while
+  empty-history progress and absent-activation identities commit the exact binding without
+  changing the immutable V1 schema shape or active-history fixture bytes.
   Plan-002 remains honestly 7/9 pending Task-023 real-consumer integration and Task-024 promotion.
