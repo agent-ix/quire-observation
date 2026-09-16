@@ -54,3 +54,10 @@ description: "Chronological log of changes to the Plan-002 bundle."
   retry, and measured error-usage findings. Independent Rust and inventory reviews are clean;
   all 111 tests pass, fallback trace coverage is 89/89 with zero status lies, and Plan-002 is
   7/9 complete.
+* **2026-09-16** — Remediated the full draft-PR review at the owner boundary: activation is now
+  derived from admitted-trigger and strict scope authority rather than caller-selected; exact
+  multi-activation query selection cannot substitute another payload; escaped JSON keys retain
+  collection preflight; strict readers reject oversized bytes before semantic work; and
+  dependency, support, record-index and prefix-allocation work is bounded and charged. TC-013 now
+  pins 39 paths, all 115 tests pass, strict coverage is 91/91 with zero status lies, and Plan-002
+  remains honestly 7/9 pending Task-023 real-consumer integration and Task-024 promotion.

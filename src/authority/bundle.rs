@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
 use super::common::{
-    build_document, digest_hex, preflight_for_contract, read_exact, to_bounded_json, Validated,
+    build_document, digest_hex, preflight_for_contract, read_exact, read_exact_preflighted,
+    to_bounded_json, Validated,
 };
 use super::{
     AuthoritySelection, Context, Document, Error, ErrorCode, Limits, Result, SubjectSelection,
@@ -1098,8 +1099,9 @@ fn read_for(
     lineage: Option<&LineageView>,
     limits: Limits,
 ) -> Result<View> {
+    let observed = preflight_for_contract(bytes, limits.effective(), contract)?;
     let expected = publish_for(contract, profile, context, selection, lineage, limits)?;
-    read_exact(contract, bytes, expected.document(), limits)
+    read_exact_preflighted(contract, bytes, expected.document(), limits, observed)
 }
 
 /// Strict-reads one initial or historical revision without consulting current publication state.
@@ -1648,16 +1650,16 @@ fn component_subject(
         )
     })?;
     let observation_path = match role {
-        ComponentRole::Observation => Some("/payload/observation_id"),
-        ComponentRole::Partial => Some("/payload/observation_identity"),
-        ComponentRole::Activation => Some("/payload/trigger_observation_identity"),
+        ComponentRole::Observation => Some(("/payload/observation_id", true)),
+        ComponentRole::Partial => Some(("/payload/observation_identity", true)),
+        ComponentRole::Activation => Some(("/payload/trigger_observation_identity", false)),
         _ => None,
     };
     let observation_identity = observation_path
-        .and_then(|path| document.pointer(path))
+        .and_then(|(path, _)| document.pointer(path))
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned);
-    if observation_path.is_some() && observation_identity.is_none() {
+    if observation_path.is_some_and(|(_, required)| required) && observation_identity.is_none() {
         return Err(Error::new(
             ErrorCode::InvalidSelection,
             "record-like component omits its observation identity",

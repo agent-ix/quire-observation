@@ -1188,17 +1188,19 @@ impl<'a, E: Evaluator> IncrementalRun<'a, E> {
             .try_reserve(1)
             .map_err(|_| self.work.exhausted())?;
         let prior_state_bytes = self.work.usage.state_bytes;
-        let prior_terminal = self.terminal.clone();
         let prior_input_state = self.current_input_state;
         self.current_inputs.push(input);
         self.current_input_state = next_state;
 
         let result = (|| {
+            if let Some(terminal) = self.terminal.as_ref() {
+                self.ensure_prefix_capacity(false, terminal)?;
+            }
             let outcome = if let Some(terminal) = &self.terminal {
                 terminal.clone()
             } else {
                 let prepared = &self.prepared[current];
-                let outcome = evaluate_job(
+                evaluate_job(
                     self.plan,
                     prepared,
                     &self.current_inputs,
@@ -1206,20 +1208,22 @@ impl<'a, E: Evaluator> IncrementalRun<'a, E> {
                     false,
                     self.evaluator,
                     &mut self.work,
-                )?;
-                if terminal_outcome(&outcome) {
-                    self.terminal = Some(outcome.clone());
-                }
-                outcome
+                )?
             };
-            self.record_prefix(false, outcome)
+            let retain_terminal = self.terminal.is_none() && terminal_outcome(&outcome);
+            let event = self.record_prefix(false, &outcome)?;
+            Ok((event, retain_terminal.then_some(outcome)))
         })();
         match result {
-            Ok(event) => Ok(event),
+            Ok((event, terminal)) => {
+                if let Some(terminal) = terminal {
+                    self.terminal = Some(terminal);
+                }
+                Ok(event)
+            }
             Err(error) => {
                 self.current_inputs.pop();
                 self.current_input_state = prior_input_state;
-                self.terminal = prior_terminal;
                 self.work.usage.state_bytes = prior_state_bytes;
                 Err(error)
             }
@@ -1240,6 +1244,9 @@ impl<'a, E: Evaluator> IncrementalRun<'a, E> {
         }
         let prior_state_bytes = self.work.usage.state_bytes;
         let staged = (|| {
+            if let Some(terminal) = self.terminal.as_ref() {
+                self.ensure_prefix_capacity(true, terminal)?;
+            }
             let outcome = if let Some(terminal) = &self.terminal {
                 terminal.clone()
             } else {
@@ -1269,7 +1276,7 @@ impl<'a, E: Evaluator> IncrementalRun<'a, E> {
                     prepared.job.selected.clone(),
                 )
             };
-            let event = self.record_prefix(true, outcome.clone())?;
+            let event = self.record_prefix(true, &outcome)?;
             Ok((outcome, selection_digest, record_identity, selected, event))
         })();
         let (outcome, selection_digest, record_identity, selected, event) = match staged {
@@ -1319,7 +1326,7 @@ impl<'a, E: Evaluator> IncrementalRun<'a, E> {
         Ok(self.current)
     }
 
-    fn record_prefix(&mut self, end_of_input: bool, outcome: Outcome) -> Result<PrefixEvent> {
+    fn ensure_prefix_capacity(&self, end_of_input: bool, outcome: &Outcome) -> Result<usize> {
         let prepared = self.prepared.get(self.current).ok_or_else(|| {
             selection_error(&self.work, "incremental prefix follows the final job")
         })?;
@@ -1328,17 +1335,37 @@ impl<'a, E: Evaluator> IncrementalRun<'a, E> {
             .len()
             .checked_add(prepared.result_inputs.len())
             .ok_or_else(|| self.work.exhausted())?;
+        let bytes = prefix_state_bytes_for_outcome(
+            &prepared.job.result_identity,
+            observed_inputs,
+            end_of_input,
+            outcome,
+            &self.work,
+        )?;
+        self.work.ensure_state_capacity(bytes)?;
+        Ok(bytes)
+    }
+
+    fn record_prefix(&mut self, end_of_input: bool, outcome: &Outcome) -> Result<PrefixEvent> {
+        let bytes = self.ensure_prefix_capacity(end_of_input, outcome)?;
+        let prepared = self.prepared.get(self.current).ok_or_else(|| {
+            selection_error(&self.work, "incremental prefix follows the final job")
+        })?;
+        let observed_inputs = self
+            .current_inputs
+            .len()
+            .checked_add(prepared.result_inputs.len())
+            .ok_or_else(|| self.work.exhausted())?;
+        self.prefixes
+            .try_reserve(1)
+            .map_err(|_| self.work.exhausted())?;
         let event = PrefixEvent {
             result_identity: prepared.job.result_identity.clone(),
             observed_inputs,
             end_of_input,
-            outcome: prefix_outcome(&outcome),
+            outcome: prefix_outcome(outcome),
         };
-        self.work
-            .charge_state(prefix_state_bytes(&event, &self.work)?)?;
-        self.prefixes
-            .try_reserve(1)
-            .map_err(|_| self.work.exhausted())?;
+        self.work.charge_state(bytes)?;
         self.prefixes.push(event.clone());
         Ok(event)
     }
@@ -1411,14 +1438,16 @@ fn prepare<'a>(
             "coordination requires exactly one job per affected result",
         ));
     }
-    let affected: BTreeMap<_, _> = plan
-        .affected_prior()
-        .map(|prior| (prior.identity().as_str(), prior))
-        .collect();
-    let unaffected: BTreeMap<_, _> = plan
-        .unaffected()
-        .map(|prior| (prior.identity().as_str(), prior))
-        .collect();
+    let mut affected = BTreeMap::new();
+    for prior in plan.affected_prior() {
+        work.tick()?;
+        affected.insert(prior.identity().as_str(), prior);
+    }
+    let mut unaffected = BTreeMap::new();
+    for prior in plan.unaffected() {
+        work.tick()?;
+        unaffected.insert(prior.identity().as_str(), prior);
+    }
     let mut jobs = BTreeMap::new();
     for job in &selection.jobs {
         work.tick()?;
@@ -1451,23 +1480,19 @@ fn prepare<'a>(
         work.reserve_inputs(job.external_inputs.count)?;
         work.charge_state(job.external_inputs.state_bytes)?;
 
-        let expected_sources = plan
-            .dependencies()
-            .filter(|edge| edge.dependent_identity() == identity)
-            .filter_map(|edge| {
-                affected
-                    .get(edge.source_identity().as_str())
-                    .copied()
-                    .map(|source| (edge.source_identity().as_str(), (source, true)))
-                    .or_else(|| {
-                        unaffected
-                            .get(edge.source_identity().as_str())
-                            .copied()
-                            .map(|source| (edge.source_identity().as_str(), (source, false)))
-                    })
-            })
-            .collect::<BTreeMap<_, _>>();
-        if expected_sources.len() != job.result_inputs.len() {
+        let mut expected_source_count = 0usize;
+        for edge in plan.dependencies() {
+            work.tick()?;
+            if edge.dependent_identity() == identity
+                && (affected.contains_key(edge.source_identity().as_str())
+                    || unaffected.contains_key(edge.source_identity().as_str()))
+            {
+                expected_source_count = expected_source_count
+                    .checked_add(1)
+                    .ok_or_else(|| work.exhausted())?;
+            }
+        }
+        if expected_source_count != job.result_inputs.len() {
             return Err(selection_error(
                 work,
                 "job must declare every and only direct result-source dependency",
@@ -1486,11 +1511,34 @@ fn prepare<'a>(
                     "result-source input identities must be distinct",
                 ));
             }
-            let (source, is_affected) = expected_sources
+            let mut direct_dependency = false;
+            for edge in plan.dependencies() {
+                work.tick()?;
+                if edge.dependent_identity() == identity
+                    && edge.source_identity() == &template.source_identity
+                {
+                    direct_dependency = true;
+                    break;
+                }
+            }
+            if !direct_dependency {
+                return Err(selection_error(
+                    work,
+                    "result-source input is not a direct dependency",
+                ));
+            }
+            let (source, is_affected) = affected
                 .get(template.source_identity.as_str())
                 .copied()
+                .map(|source| (source, true))
+                .or_else(|| {
+                    unaffected
+                        .get(template.source_identity.as_str())
+                        .copied()
+                        .map(|source| (source, false))
+                })
                 .ok_or_else(|| {
-                    selection_error(work, "result-source input is not a direct dependency")
+                    selection_error(work, "result-source input has no retained source")
                 })?;
             validate_input_authority(
                 &template.source_identity,
@@ -1927,6 +1975,12 @@ fn validate_support_and_digest(
             "decisive support and certified evidence must be explicit",
         ));
     }
+    let evidence_index_bytes = support
+        .evidence_identities
+        .len()
+        .checked_mul(std::mem::size_of::<(&str, EvaluatorInput<'_>)>())
+        .ok_or_else(|| work.exhausted())?;
+    work.ensure_state_capacity(evidence_index_bytes)?;
     let mut evidence = BTreeMap::new();
     for identity in &support.evidence_identities {
         work.tick()?;
@@ -1936,10 +1990,7 @@ fn validate_support_and_digest(
                 "certified evidence identities must be explicit and distinct",
             ));
         }
-        let input = inputs
-            .iter()
-            .find(|input| input.identity == identity)
-            .copied()
+        let input = find_input(inputs, identity, work)?
             .ok_or_else(|| support_error(work, "decision certificate names an unobserved input"))?;
         evidence.insert(identity.as_str(), input);
     }
@@ -1978,6 +2029,25 @@ fn validate_support_and_digest(
         hash_field(&mut hasher, closure.bytes(), work)?;
     }
     Ok(Digest::new(hasher.finalize().into()))
+}
+
+fn find_input<'a>(
+    inputs: &[EvaluatorInput<'a>],
+    identity: &Identity,
+    work: &mut Work,
+) -> Result<Option<EvaluatorInput<'a>>> {
+    let mut left = 0usize;
+    let mut right = inputs.len();
+    while left < right {
+        work.tick()?;
+        let middle = left + (right - left) / 2;
+        match inputs[middle].identity.cmp(identity) {
+            std::cmp::Ordering::Less => left = middle + 1,
+            std::cmp::Ordering::Greater => right = middle,
+            std::cmp::Ordering::Equal => return Ok(Some(inputs[middle])),
+        }
+    }
+    Ok(None)
 }
 
 fn derive_selection_digest(
@@ -2450,47 +2520,51 @@ fn interval_state_bytes(interval: &EventTimeInterval, work: &Work) -> Result<usi
     )
 }
 
-fn prefix_state_bytes(event: &PrefixEvent, work: &Work) -> Result<usize> {
+fn prefix_state_bytes_for_outcome(
+    result_identity: &Identity,
+    _observed_inputs: usize,
+    _end_of_input: bool,
+    outcome: &Outcome,
+    work: &Work,
+) -> Result<usize> {
     checked_state_sum(
         [
-            event.result_identity.as_str().len(),
+            result_identity.as_str().len(),
             std::mem::size_of::<usize>(),
             std::mem::size_of::<bool>(),
-            prefix_outcome_state_bytes(&event.outcome, work)?,
+            outcome_prefix_state_bytes(outcome, work)?,
         ],
         work,
     )
 }
 
-fn prefix_outcome_state_bytes(outcome: &PrefixOutcome, work: &Work) -> Result<usize> {
+fn outcome_prefix_state_bytes(outcome: &Outcome, work: &Work) -> Result<usize> {
     match outcome {
-        PrefixOutcome::Settled(settled) => {
-            let evidence_identity_bytes =
-                settled
-                    .support
-                    .evidence_identities
-                    .iter()
-                    .try_fold(0usize, |sum, identity| {
-                        sum.checked_add(identity.as_str().len())
-                            .ok_or_else(|| work.exhausted())
-                    })?;
+        Outcome::Replaced(replacement) => {
+            let evidence_identity_bytes = replacement.support.evidence_identities.iter().try_fold(
+                0usize,
+                |sum, identity| {
+                    sum.checked_add(identity.as_str().len())
+                        .ok_or_else(|| work.exhausted())
+                },
+            )?;
             checked_state_sum(
                 [
-                    settled.support.identity.as_str().len(),
+                    replacement.support.identity.as_str().len(),
                     evidence_identity_bytes,
                     std::mem::size_of::<Digest>() * 2,
-                    settled.evaluator_bytes.len(),
+                    replacement.evaluator_bytes.len(),
                 ],
                 work,
             )
         }
-        PrefixOutcome::Pending(reason)
-        | PrefixOutcome::Incomplete(reason)
-        | PrefixOutcome::Indeterminate(reason)
-        | PrefixOutcome::Unsupported(reason)
-        | PrefixOutcome::Refused(reason)
-        | PrefixOutcome::Failed(reason)
-        | PrefixOutcome::Exhausted(reason) => Ok(reason.as_str().len()),
+        Outcome::Pending(reason)
+        | Outcome::Incomplete(reason)
+        | Outcome::Indeterminate(reason)
+        | Outcome::Unsupported(reason)
+        | Outcome::Refused(reason)
+        | Outcome::Failed(reason)
+        | Outcome::Exhausted(reason) => Ok(reason.as_str().len()),
     }
 }
 

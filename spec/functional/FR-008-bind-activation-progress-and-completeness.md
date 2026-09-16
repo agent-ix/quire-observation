@@ -21,14 +21,17 @@ relationships:
 ## Description
 
 When constructing assessment authority for an obligation, the library SHALL
-produce a record that binds one immutable activation capture and represents
+produce a record that binds an admitted trigger's immutable activation capture,
+or explicitly records that no trigger was admitted, and represents
 activation, progress, closure, completeness, lateness, verdict contribution, and
 settlement contribution as independent typed facts.
 
 ## Inputs
 
-- An exact obligation, trigger observation, activation interval, and complete
-  sorted set of typed capture bindings with source observation identities.
+- An exact obligation and activation interval; optionally, one admitted trigger
+  observation with its complete sorted set of typed capture bindings and strict
+  capture authority. Trigger, captures, and capture authority are co-present or
+  all absent.
 - An exact population/snapshot-or-window selection, required sources, clock,
   progress assertion, closure assertion, completeness assertion, and late cutoff.
 - Optional evaluator-owned verdict and settlement contributions, each carrying
@@ -43,12 +46,16 @@ settlement contribution as independent typed facts.
 
 ## Behavior
 
-- The library SHALL derive an activation identity from the obligation, trigger,
-  activation interval, and complete ordered capture set.
+- The library SHALL derive an activation identity from the obligation,
+  activation interval, optional admitted trigger, and complete ordered capture
+  set; trigger and captures are jointly present or absent.
 - The library SHALL preserve captured values and provenance from the activation
   revision even when a later observation carries another value.
-- The library SHALL classify an obligation as inactive, active, or activation-
-  unknown independently of any verdict or settlement contribution.
+- The library SHALL classify an obligation with an admitted trigger and strict
+  complete capture authority as active. With no admitted trigger, it SHALL
+  classify the obligation as inactive only when the trigger scope is closed and
+  evidence is complete; every other no-trigger combination is activation-
+  unknown. Classification is independent of verdict and settlement.
 - The library SHALL preserve open, closed, and incomplete execution inputs
   independently from complete, incomplete, and contradicted evidence.
 - When silence advances a deadline, the library SHALL recognize coverage only
@@ -71,7 +78,7 @@ settlement contribution as independent typed facts.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-008-AC-1 | Equal captured values under distinct triggers create distinct activation identities and retain their original observation provenance. | unit-testing (TC-008) |
-| FR-008-AC-2 | Inactive, active, and activation-unknown remain independent of verdict and settlement; no omitted axis is inferred from another. | property-based-testing (TC-008) |
+| FR-008-AC-2 | An admitted trigger with complete strict capture authority is active; a closed complete scope with no admitted trigger is inactive; every open, incomplete, or contradicted no-trigger scope is activation-unknown. All three remain independent of verdict and settlement. | property-based-testing (TC-008) |
 | FR-008-AC-3 | Silence covers a deadline only when the matching progress interval is definitely beyond it and covers every required source. | unit-testing (TC-008) |
 | FR-008-AC-4 | Overlapping progress/deadline intervals, missing sources, open closure, and incomplete or contradicted evidence remain distinct non-conclusive facts. | property-based-testing (TC-008) |
 | FR-008-AC-5 | Definitely timely, definitely late, and uncertain-lateness outcomes follow interval endpoints and never ingestion order. | property-based-testing (TC-008) |
@@ -79,11 +86,13 @@ settlement contribution as independent typed facts.
 
 ## Error Conditions
 
-An empty or duplicate capture, unknown activation state, invalid interval,
-missing required source, foreign population/window/clock, mismatched authority
-revision, cross-wired contribution support, or exceeded limit returns a typed
-incomplete or refusal code. No error path emits a partially validated assessment
-record.
+An admitted trigger without a nonempty distinct capture set and matching strict
+capture authority, a capture authority without an admitted trigger, an invalid
+interval, foreign population/window/clock, mismatched authority revision,
+cross-wired contribution support, or exceeded limit returns a typed refusal or
+resource-incomplete code. Activation-unknown and missing-source silence coverage
+are valid explicit incomplete facts, not reader errors. No error path emits a
+partially validated assessment record.
 
 ## Dependencies
 

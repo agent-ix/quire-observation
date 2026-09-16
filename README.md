@@ -23,7 +23,7 @@ protocol conformance interpretation, or evidence-store ownership.
 
 | Module | Contract | Schema SHA-256 | Public reader |
 | --- | --- | --- | --- |
-| `authority::activation` | `quire.observation.activation-scope-authority/v1` | `6d8b3b41a7fdc9b7d4dba085809b396bc41e41c89f9c512ff1580108d43663e8` | `activation::read` |
+| `authority::activation` | `quire.observation.activation-scope-authority/v1` | `0a6c26385d9f64166b72e939315bfe4accfdd125f9354e22ddf127023eaf1823` | `activation::read` |
 | `authority::observation` | `quire.observation.record/v2` | `8737683a5971aabcb39bbc5f0842fa1d7c1db5c8f283b8b2544c6364c682f882` | `observation::read` |
 | `authority::population` | `quire.observation.population/v2` | `bceba1a2a69d150af05a7f7bea52769560849fd24a8582cb35b0937eee263c01` | `population::read` |
 | `authority::position` | `quire.observation.position-ledger/v1` | `aac2fd7fc1b129e24afec397900647f3fe8977341b9907662a3852ac5430211a` | `position::read` |

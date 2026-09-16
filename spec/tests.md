@@ -52,7 +52,7 @@ relationships:
 |---|---|---|---|
 | NFR-001 | Boundary tests | TC-001, TC-002, TC-004 | ✅ complete |
 | NFR-002 | Determinism properties | TC-002, TC-003 | ✅ complete |
-| NFR-003 | Property and static analysis | TC-010, TC-012, TC-013 | 🚧 planned |
+| NFR-003 | Property and static analysis | TC-010, TC-012, TC-013 | ✅ complete |
 
 ## Test Case Summary
 

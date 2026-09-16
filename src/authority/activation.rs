@@ -3,13 +3,13 @@
 
 //! Immutable activation identity and independent assessment-authority primitives.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 use super::common;
-use super::common::{build_document, read_exact, sha256_jcs, Validated};
+use super::common::{build_document, read_exact_preflighted, sha256_jcs, Validated};
 use super::partial::EventTimeInterval;
 use super::{
     AuthoritySelection, BoundaryRef, Context, Document, Error, ErrorCode, Limits, OpenClosed,
@@ -177,7 +177,7 @@ pub const CONTRACT: &str = "quire.observation.activation-scope-authority/v1";
 pub const SCHEMA_BYTES: &[u8] =
     include_bytes!("../../schemas/observation-activation-scope-authority-v1.schema.json");
 /// Lowercase SHA-256 digest of [`SCHEMA_BYTES`].
-pub const SCHEMA_SHA256: &str = "6d8b3b41a7fdc9b7d4dba085809b396bc41e41c89f9c512ff1580108d43663e8";
+pub const SCHEMA_SHA256: &str = "0a6c26385d9f64166b72e939315bfe4accfdd125f9354e22ddf127023eaf1823";
 
 /// Optional evaluator-owned contribution with an exact nonempty support set.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -241,7 +241,7 @@ struct CompletenessProof {
 /// Constructor-private proof that every selected authority came from a strict reader.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthorityProofs {
-    capture: CaptureProof,
+    capture: Option<CaptureProof>,
     progress: Option<ProgressProof>,
     closure: Option<ClosureProof>,
     completeness: Option<CompletenessProof>,
@@ -316,7 +316,55 @@ impl AuthorityProofs {
             state: view.payload().state(),
         });
         Ok(Self {
-            capture: capture_proof,
+            capture: Some(capture_proof),
+            progress,
+            closure,
+            completeness,
+        })
+    }
+
+    /// Copies scope authority for a trigger scope with no admitted trigger.
+    pub fn without_capture(
+        progress: Option<&super::progress::View>,
+        closure: Option<&super::closure::View>,
+        completeness: Option<&super::completeness::View>,
+    ) -> Result<Self> {
+        let progress = progress
+            .map(|view| {
+                Ok(ProgressProof {
+                    common: proof_common(view),
+                    scope_identity: view.payload().scope_identity().to_owned(),
+                    clock_identity: view.payload().clock_identity().to_owned(),
+                    clock_revision: view.payload().clock_revision().to_owned(),
+                    required_sources: copy_strings(view.payload().required_sources())?,
+                    frontier: boundary_frontier(view.payload().boundary())?,
+                    state: view.payload().state(),
+                    captured_trigger_identity: view
+                        .payload()
+                        .captured_trigger_identity()
+                        .to_owned(),
+                })
+            })
+            .transpose()?;
+        let closure = closure
+            .map(|view| {
+                Ok(ClosureProof {
+                    common: proof_common(view),
+                    scope_identity: view.payload().scope_identity().to_owned(),
+                    clock_identity: view.payload().clock_identity().to_owned(),
+                    clock_revision: view.payload().clock_revision().to_owned(),
+                    required_sources: copy_strings(view.payload().required_sources())?,
+                    state: view.payload().state(),
+                })
+            })
+            .transpose()?;
+        let completeness = completeness.map(|view| CompletenessProof {
+            common: proof_common(view),
+            population_identity: view.payload().population_identity().to_owned(),
+            state: view.payload().state(),
+        });
+        Ok(Self {
+            capture: None,
             progress,
             closure,
             completeness,
@@ -336,10 +384,9 @@ impl Contribution {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ActivationSelection {
     obligation_identity: Identity,
-    trigger_observation_identity: Identity,
+    trigger_observation_identity: Option<Identity>,
     interval: EventTimeInterval,
     captures: Vec<Capture>,
-    state: ActivationState,
 }
 
 impl ActivationSelection {
@@ -350,14 +397,23 @@ impl ActivationSelection {
         trigger_observation_identity: Identity,
         interval: EventTimeInterval,
         captures: Vec<Capture>,
-        state: ActivationState,
     ) -> Self {
         Self {
             obligation_identity,
-            trigger_observation_identity,
+            trigger_observation_identity: Some(trigger_observation_identity),
             interval,
             captures,
-            state,
+        }
+    }
+
+    /// Selects a trigger scope for which no trigger was admitted.
+    #[must_use]
+    pub fn without_trigger(obligation_identity: Identity, interval: EventTimeInterval) -> Self {
+        Self {
+            obligation_identity,
+            trigger_observation_identity: None,
+            interval,
+            captures: Vec::new(),
         }
     }
 }
@@ -429,10 +485,10 @@ impl Selection {
 pub struct ActivationView {
     activation_identity: String,
     obligation_identity: String,
-    trigger_observation_identity: String,
+    trigger_observation_identity: Option<String>,
     activation_interval: IntervalWire,
     captures: Vec<CaptureWire>,
-    capture_authority: ProofWire,
+    capture_authority: Option<ProofWire>,
     activation: ActivationState,
     deadline_interval: IntervalWire,
     progress_interval: IntervalWire,
@@ -503,8 +559,8 @@ impl ActivationView {
 
     /// Returns the selected trigger observation identity.
     #[must_use]
-    pub fn trigger_observation_identity(&self) -> &str {
-        &self.trigger_observation_identity
+    pub fn trigger_observation_identity(&self) -> Option<&str> {
+        self.trigger_observation_identity.as_deref()
     }
 
     /// Returns the exact activation interval.
@@ -569,8 +625,8 @@ impl ActivationView {
 
     /// Returns the strict-read complete capture-environment authority.
     #[must_use]
-    pub fn capture_authority(&self) -> AuthorityRef<'_> {
-        self.capture_authority.as_ref()
+    pub fn capture_authority(&self) -> Option<AuthorityRef<'_>> {
+        self.capture_authority.as_ref().map(ProofWire::as_ref)
     }
 
     /// Returns the exact deadline interval.
@@ -790,6 +846,22 @@ fn copy_strings(values: &[String]) -> Result<Vec<String>> {
 /// Derives canonical bounded activation/scope-authority bytes.
 pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Result<Document> {
     let qualified = context.history().qualified();
+    let effective = limits.effective();
+    if qualified.records().len() > effective.max_population_entries {
+        return Err(Error::new(
+            ErrorCode::ResourceIncomplete,
+            "qualified record index exceeds the effective population bound",
+            Usage {
+                population_entries: qualified.records().len(),
+                ..Usage::default()
+            },
+        ));
+    }
+    let record_index = qualified
+        .records()
+        .iter()
+        .map(|record| (&record.identity, record))
+        .collect::<BTreeMap<_, _>>();
     for interval in [
         &selection.activation.interval,
         &selection.progress.deadline,
@@ -799,88 +871,100 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
     ] {
         validate_scope_interval(interval, qualified, &selection.activation.interval, limits)?;
     }
-    let activation_id = activation_identity(
+    let activation_id = activation_scope_identity(
         &selection.activation.obligation_identity,
-        &selection.activation.trigger_observation_identity,
+        selection.activation.trigger_observation_identity.as_ref(),
         &selection.activation.interval,
         &selection.activation.captures,
         limits,
     )?;
-    let trigger = qualified
-        .records()
-        .iter()
-        .find(|record| record.identity == selection.activation.trigger_observation_identity)
-        .ok_or_else(|| {
-            Error::new(
-                ErrorCode::MissingPremise,
-                "activation trigger is absent from qualified history",
-                Usage::default(),
-            )
-        })?;
-    if trigger.clock_identity != *selection.activation.interval.clock_identity()
-        || trigger.clock_revision != *selection.activation.interval.clock_revision()
-    {
-        return Err(Error::new(
-            ErrorCode::AuthorityMismatch,
-            "activation interval is cross-wired from its trigger observation clock",
-            Usage::default(),
-        ));
-    }
-    validate_proof_common(&selection.proofs.capture.common, context)?;
-    if selection.proofs.capture.trigger_identity != trigger.trigger_identity.as_str()
-        || selection.proofs.capture.bindings.len() != selection.activation.captures.len()
-        || selection
-            .activation
-            .captures
-            .iter()
-            .zip(&selection.proofs.capture.bindings)
-            .any(|(capture, proof)| {
-                capture.identity.as_str() != proof.capture_identity
-                    || capture.source_observation_identity.as_str() != proof.observation_identity
-                    || capture.value_type.as_str() != proof.value_type
-                    || capture.canonical_value != proof.canonical_value
-            })
-    {
-        return Err(Error::new(
-            ErrorCode::CaptureMismatch,
-            "activation captures do not exactly match complete capture authority",
-            Usage::default(),
-        ));
-    }
-    for capture in &selection.activation.captures {
-        let record = qualified
-            .records()
-            .iter()
-            .find(|record| record.identity == capture.source_observation_identity)
-            .ok_or_else(|| {
+    let (trigger, capture_authority) = match (
+        selection.activation.trigger_observation_identity.as_ref(),
+        selection.proofs.capture.as_ref(),
+    ) {
+        (Some(trigger_identity), Some(capture_proof)) => {
+            let trigger = record_index.get(trigger_identity).copied().ok_or_else(|| {
                 Error::new(
                     ErrorCode::MissingPremise,
-                    "capture source is absent from qualified history",
+                    "activation trigger is absent from qualified history",
                     Usage::default(),
                 )
             })?;
-        let crate::ValueState::Present {
-            value_type,
-            canonical_value,
-        } = &record.value
-        else {
-            return Err(Error::new(
-                ErrorCode::MissingPremise,
-                "capture source has no qualified value",
-                Usage::default(),
-            ));
-        };
-        if value_type != &capture.value_type
-            || canonical_value != &capture.canonical_value
-            || record.source_identity != capture.provenance_identity
-        {
+            if trigger.clock_identity != *selection.activation.interval.clock_identity()
+                || trigger.clock_revision != *selection.activation.interval.clock_revision()
+            {
+                return Err(Error::new(
+                    ErrorCode::AuthorityMismatch,
+                    "activation interval is cross-wired from its trigger observation clock",
+                    Usage::default(),
+                ));
+            }
+            validate_proof_common(&capture_proof.common, context)?;
+            if capture_proof.trigger_identity != trigger.trigger_identity.as_str()
+                || capture_proof.bindings.len() != selection.activation.captures.len()
+                || selection
+                    .activation
+                    .captures
+                    .iter()
+                    .zip(&capture_proof.bindings)
+                    .any(|(capture, proof)| {
+                        capture.identity.as_str() != proof.capture_identity
+                            || capture.source_observation_identity.as_str()
+                                != proof.observation_identity
+                            || capture.value_type.as_str() != proof.value_type
+                            || capture.canonical_value != proof.canonical_value
+                    })
+            {
+                return Err(Error::new(
+                    ErrorCode::CaptureMismatch,
+                    "activation captures do not exactly match complete capture authority",
+                    Usage::default(),
+                ));
+            }
+            for capture in &selection.activation.captures {
+                let record = record_index
+                    .get(&capture.source_observation_identity)
+                    .copied()
+                    .ok_or_else(|| {
+                        Error::new(
+                            ErrorCode::MissingPremise,
+                            "capture source is absent from qualified history",
+                            Usage::default(),
+                        )
+                    })?;
+                let crate::ValueState::Present {
+                    value_type,
+                    canonical_value,
+                } = &record.value
+                else {
+                    return Err(Error::new(
+                        ErrorCode::MissingPremise,
+                        "capture source has no qualified value",
+                        Usage::default(),
+                    ));
+                };
+                if value_type != &capture.value_type
+                    || canonical_value != &capture.canonical_value
+                    || record.source_identity != capture.provenance_identity
+                {
+                    return Err(Error::new(
+                        ErrorCode::CaptureMismatch,
+                        "capture value or provenance is cross-wired from qualified history",
+                        Usage::default(),
+                    ));
+                }
+            }
+            (Some(trigger), Some(proof_wire(&capture_proof.common)))
+        }
+        (None, None) if selection.activation.captures.is_empty() => (None, None),
+        _ => {
             return Err(Error::new(
                 ErrorCode::CaptureMismatch,
-                "capture value or provenance is cross-wired from qualified history",
+                "trigger, captures, and strict capture authority must be present together",
                 Usage::default(),
-            ));
+            ))
         }
-    }
+    };
     let required = sorted_sources(&qualified.scope().observation_sources, limits)?;
     let (progress, progress_authority) = match &selection.proofs.progress {
         Some(proof) => {
@@ -889,7 +973,10 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
                 || proof.clock_identity != selection.progress.progress.clock_identity().as_str()
                 || proof.clock_revision != selection.progress.progress.clock_revision().as_str()
                 || proof.required_sources != required
-                || proof.captured_trigger_identity != trigger.trigger_identity.as_str()
+                || trigger.is_some_and(|trigger| {
+                    proof.captured_trigger_identity != trigger.trigger_identity.as_str()
+                })
+                || (trigger.is_none() && proof.captured_trigger_identity.is_empty())
                 || selection.progress.progress.earliest() != proof.frontier
                 || selection.progress.progress.latest() != proof.frontier
             {
@@ -970,13 +1057,20 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
         }
         None => (EvidenceState::Incomplete, None),
     };
+    let activation = if trigger.is_some() {
+        ActivationState::Active
+    } else if closure == ExecutionState::Closed && evidence == EvidenceState::Complete {
+        ActivationState::Inactive
+    } else {
+        ActivationState::Unknown
+    };
     let lateness = classify_lateness(
         &selection.event_interval,
         &selection.cutoff_interval,
         limits,
     )?;
-    let verdict = contribution_wire(selection.verdict.as_ref(), qualified, limits)?;
-    let settlement = contribution_wire(selection.settlement.as_ref(), qualified, limits)?;
+    let verdict = contribution_wire(selection.verdict.as_ref(), &record_index, limits)?;
+    let settlement = contribution_wire(selection.settlement.as_ref(), &record_index, limits)?;
     let mut captures = Vec::new();
     captures
         .try_reserve(selection.activation.captures.len())
@@ -995,12 +1089,12 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
         trigger_observation_identity: selection
             .activation
             .trigger_observation_identity
-            .as_str()
-            .to_owned(),
+            .as_ref()
+            .map(|identity| identity.as_str().to_owned()),
         activation_interval: interval_wire(&selection.activation.interval),
         captures,
-        capture_authority: proof_wire(&selection.proofs.capture.common),
-        activation: selection.activation.state,
+        capture_authority,
+        activation,
         deadline_interval: interval_wire(&selection.progress.deadline),
         progress_interval: interval_wire(&selection.progress.progress),
         required_sources: required,
@@ -1041,8 +1135,9 @@ pub fn read(
     selection: &Selection,
     limits: Limits,
 ) -> Result<View> {
+    let observed = super::common::preflight_for_contract(bytes, limits.effective(), CONTRACT)?;
     let expected = derive(context, selection, limits)?;
-    read_exact(CONTRACT, bytes, &expected, limits)
+    read_exact_preflighted(CONTRACT, bytes, &expected, limits, observed)
 }
 
 fn validate_proof_common(common: &ProofCommon, context: Context<'_>) -> Result<()> {
@@ -1153,7 +1248,7 @@ fn sorted_sources(sources: &[Identity], limits: Limits) -> Result<Vec<String>> {
 
 fn contribution_wire(
     contribution: Option<&Contribution>,
-    qualified: &crate::QualifiedObservation,
+    record_index: &BTreeMap<&Identity, &crate::AdmittedRecord>,
     limits: Limits,
 ) -> Result<Option<ContributionWire>> {
     let Some(contribution) = contribution else {
@@ -1168,12 +1263,11 @@ fn contribution_wire(
     }
     validate_string(contribution.identity.as_str(), limits.effective())?;
     let support = sorted_sources(&contribution.support, limits)?;
-    if contribution.support.iter().any(|identity| {
-        !qualified
-            .records()
-            .iter()
-            .any(|record| record.identity == *identity)
-    }) {
+    if contribution
+        .support
+        .iter()
+        .any(|identity| !record_index.contains_key(identity))
+    {
         return Err(Error::new(
             ErrorCode::SupportMismatch,
             "contribution support is absent from qualified history",
@@ -1191,7 +1285,7 @@ fn contribution_wire(
 struct ActivationPreimage<'a> {
     identity_version: &'static str,
     obligation_identity: &'a str,
-    trigger_identity: &'a str,
+    trigger_identity: Option<&'a str>,
     interval: IntervalPreimage<'a>,
     captures: Vec<CapturePreimage<'a>>,
 }
@@ -1224,12 +1318,31 @@ pub fn activation_identity(
     captures: &[Capture],
     limits: Limits,
 ) -> Result<Identity> {
+    activation_scope_identity(
+        obligation_identity,
+        Some(trigger_identity),
+        interval,
+        captures,
+        limits,
+    )
+}
+
+fn activation_scope_identity(
+    obligation_identity: &Identity,
+    trigger_identity: Option<&Identity>,
+    interval: &EventTimeInterval,
+    captures: &[Capture],
+    limits: Limits,
+) -> Result<Identity> {
     interval.validate_limits(limits)?;
     let effective = limits.effective();
-    if !obligation_identity.valid() || !trigger_identity.valid() || captures.is_empty() {
+    if !obligation_identity.valid()
+        || trigger_identity.is_some_and(|identity| !identity.valid())
+        || trigger_identity.is_some() != !captures.is_empty()
+    {
         return Err(Error::new(
             ErrorCode::InvalidSelection,
-            "activation requires obligation, trigger, and a nonempty complete capture set",
+            "activation requires either a trigger with captures or an absent-trigger scope",
             Usage::default(),
         ));
     }
@@ -1244,7 +1357,9 @@ pub fn activation_identity(
         ));
     }
     validate_string(obligation_identity.as_str(), effective)?;
-    validate_string(trigger_identity.as_str(), effective)?;
+    if let Some(trigger_identity) = trigger_identity {
+        validate_string(trigger_identity.as_str(), effective)?;
+    }
     for capture in captures {
         if !capture.identity.valid()
             || !capture.source_observation_identity.valid()
@@ -1290,7 +1405,7 @@ pub fn activation_identity(
     let preimage = ActivationPreimage {
         identity_version: "quire.observation.activation/v1",
         obligation_identity: obligation_identity.as_str(),
-        trigger_identity: trigger_identity.as_str(),
+        trigger_identity: trigger_identity.map(Identity::as_str),
         interval: IntervalPreimage {
             clock_identity: interval.clock_identity().as_str(),
             clock_revision: interval.clock_revision().as_str(),

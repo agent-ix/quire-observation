@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 use super::common;
-use super::common::{build_document, read_exact, Validated};
+use super::common::{build_document, read_exact_preflighted, Validated};
 use super::{Context, Document, Error, ErrorCode, Result, Usage};
 use crate::Identity;
 
@@ -426,8 +426,9 @@ pub fn read(
     selection: &Selection,
     limits: Limits,
 ) -> Result<View> {
+    let observed = super::common::preflight_for_contract(bytes, limits.effective(), CONTRACT)?;
     let expected = derive(context, selection, limits)?;
-    read_exact(CONTRACT, bytes, &expected, limits)
+    read_exact_preflighted(CONTRACT, bytes, &expected, limits, observed)
 }
 
 #[cfg(test)]

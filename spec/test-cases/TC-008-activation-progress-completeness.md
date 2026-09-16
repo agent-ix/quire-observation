@@ -15,10 +15,14 @@ and settlement as independently selected authority facts.
 
 ## Test Procedure
 
-1. Generate inactive, active, and activation-unknown inputs with equal capture
-   values under distinct trigger identities and with later value mutations.
-2. Cross every activation state with open/closed/incomplete progress and
-   complete/incomplete/contradicted evidence.
+1. Generate active inputs with an admitted trigger plus strict complete capture
+   authority, inactive inputs with no trigger plus closed/complete authority,
+   and activation-unknown inputs with no trigger plus every open, incomplete,
+   or contradicted scope-authority combination. Retain equal captured values
+   under distinct admitted trigger identities and later value mutations.
+2. Cross trigger presence with open/closed/incomplete progress and
+   complete/incomplete/contradicted evidence; derive activation from those
+   authority facts rather than accepting a caller-selected state.
 3. Compare deadline and progress intervals that are disjoint, touching, equal,
    and overlapping, with complete and missing required-source sets.
 4. Compare event and late-cutoff intervals for definitely timely, definitely

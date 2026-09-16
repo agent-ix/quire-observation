@@ -12,7 +12,7 @@ use std::fmt;
 use serde::{ser::SerializeSeq as _, Serialize, Serializer};
 use sha2::{Digest as _, Sha256};
 
-use super::bundle::{self, ComponentRole, ConflictKind, EmbeddedPayloadRef};
+use super::bundle::{self, ComponentRole, ConflictKind, EmbeddedFactRef, EmbeddedPayloadRef};
 use super::common::{to_bounded_json, Error, ErrorCode, Result, Usage as AuthorityUsage};
 use super::observation::{RecordView, RelationshipRef, SubjectRef, ValueRef};
 use super::{BoundaryRef, OpenClosed};
@@ -744,9 +744,6 @@ fn decide(
         return incomplete([IncompleteReason::StaleRevision], work);
     }
     let head = lineage.head();
-    if !components_match(head, selection, work)? {
-        return Ok(refused(RefusalReason::ForeignAuthority));
-    }
     let mut conflict_reasons = [false; IncompleteReason::COUNT];
     for conflict in head.payload().conflicts() {
         work.tick()?;
@@ -760,8 +757,8 @@ fn decide(
     if conflict_reasons.iter().any(|present| *present) {
         return incomplete(reason_set(conflict_reasons), work);
     }
-    let Some(authority) = authority(head, work)? else {
-        return incomplete([IncompleteReason::MissingAuthority], work);
+    let Some(authority) = authority(head, selection, work)? else {
+        return Ok(refused(RefusalReason::ForeignAuthority));
     };
     if !authority_axes_match(&authority, selection, work)? {
         return Ok(refused(RefusalReason::ForeignAuthority));
@@ -829,8 +826,8 @@ fn valid_selection(selection: &Selection) -> bool {
         .into_iter()
         .flatten()
         .any(|identity| !identity.valid())
-        || selection.capture_component_identity.is_some()
-            != selection.activation_component_identity.is_some()
+        || (selection.capture_component_identity.is_some()
+            && selection.activation_component_identity.is_none())
         || selection.root_subject_kind.is_empty()
         || selection.grouping_key.is_empty()
         || selection.effect_subject_kind.is_empty()
@@ -867,112 +864,150 @@ fn valid_selection(selection: &Selection) -> bool {
     }
 }
 
-fn components_match(head: &bundle::View, selection: &Selection, work: &mut Work) -> Result<bool> {
-    let expected = [
-        (
-            ComponentRole::Population,
-            &selection.population_component_identity,
-        ),
-        (
-            ComponentRole::Position,
-            &selection.position_component_identity,
-        ),
-        (
-            ComponentRole::Progress,
-            &selection.progress_component_identity,
-        ),
-        (
-            ComponentRole::Closure,
-            &selection.closure_component_identity,
-        ),
-        (
-            ComponentRole::Completeness,
-            &selection.completeness_component_identity,
-        ),
-    ];
-    for (role, identity) in expected {
-        if !component_identity_matches(head, role, identity, work)? {
-            return Ok(false);
+const RECORD_ROLES: &[ComponentRole] = &[
+    ComponentRole::Observation,
+    ComponentRole::Partial,
+    ComponentRole::Capture,
+    ComponentRole::Activation,
+    ComponentRole::Availability,
+];
+const POPULATION_ROLES: &[ComponentRole] =
+    &[ComponentRole::Population, ComponentRole::Completeness];
+const POSITION_ROLES: &[ComponentRole] = &[ComponentRole::Position, ComponentRole::Clock];
+const PROGRESS_ROLES: &[ComponentRole] = &[ComponentRole::Progress, ComponentRole::Closure];
+
+fn selected_fact<'a>(
+    head: &'a bundle::View,
+    facts: impl Iterator<Item = EmbeddedFactRef<'a>>,
+    embedded_roles: &[ComponentRole],
+    selected_role: ComponentRole,
+    selected_identity: &Identity,
+    work: &mut Work,
+) -> Result<Option<EmbeddedPayloadRef<'a>>> {
+    let mut facts = facts;
+    for component in head
+        .payload()
+        .components()
+        .filter(|component| embedded_roles.contains(&component.role()))
+    {
+        work.tick()?;
+        let Some(fact) = facts.next() else {
+            return Ok(None);
+        };
+        if fact.role() != component.role() {
+            return Ok(None);
+        }
+        if component.role() == selected_role && component.identity() == selected_identity.as_str() {
+            return Ok(Some(fact.payload()));
         }
     }
-    let business_authority = match (
+    Ok(None)
+}
+
+fn authority<'a>(
+    head: &'a bundle::View,
+    selection: &Selection,
+    work: &mut Work,
+) -> Result<Option<Authority<'a>>> {
+    let population = selected_fact(
+        head,
+        head.payload().populations(),
+        POPULATION_ROLES,
+        ComponentRole::Population,
+        &selection.population_component_identity,
+        work,
+    )?;
+    let completeness = selected_fact(
+        head,
+        head.payload().populations(),
+        POPULATION_ROLES,
+        ComponentRole::Completeness,
+        &selection.completeness_component_identity,
+        work,
+    )?;
+    let position = selected_fact(
+        head,
+        head.payload().positions(),
+        POSITION_ROLES,
+        ComponentRole::Position,
+        &selection.position_component_identity,
+        work,
+    )?;
+    let progress = selected_fact(
+        head,
+        head.payload().progress(),
+        PROGRESS_ROLES,
+        ComponentRole::Progress,
+        &selection.progress_component_identity,
+        work,
+    )?;
+    let closure = selected_fact(
+        head,
+        head.payload().progress(),
+        PROGRESS_ROLES,
+        ComponentRole::Closure,
+        &selection.closure_component_identity,
+        work,
+    )?;
+    let (capture, activation) = match (
         selection.capture_component_identity.as_ref(),
         selection.activation_component_identity.as_ref(),
     ) {
-        (None, None) => head.contract() == bundle::V2_CONTRACT,
-        (Some(capture), Some(activation)) if head.contract() == bundle::CONTRACT => {
-            for (role, identity) in [
-                (ComponentRole::Capture, capture),
-                (ComponentRole::Activation, activation),
-            ] {
-                if !component_identity_matches(head, role, identity, work)? {
-                    return Ok(false);
-                }
-            }
-            true
+        (None, None) if head.contract() == bundle::V2_CONTRACT => (None, None),
+        (Some(capture_identity), Some(activation_identity))
+            if head.contract() == bundle::CONTRACT =>
+        {
+            (
+                selected_fact(
+                    head,
+                    head.payload().records(),
+                    RECORD_ROLES,
+                    ComponentRole::Capture,
+                    capture_identity,
+                    work,
+                )?,
+                selected_fact(
+                    head,
+                    head.payload().records(),
+                    RECORD_ROLES,
+                    ComponentRole::Activation,
+                    activation_identity,
+                    work,
+                )?,
+            )
         }
-        (None, Some(_)) | (Some(_), None) | (Some(_), Some(_)) => false,
+        (None, Some(activation_identity)) if head.contract() == bundle::CONTRACT => (
+            None,
+            selected_fact(
+                head,
+                head.payload().records(),
+                RECORD_ROLES,
+                ComponentRole::Activation,
+                activation_identity,
+                work,
+            )?,
+        ),
+        _ => return Ok(None),
     };
-    Ok(business_authority)
-}
-
-fn component_identity_matches(
-    head: &bundle::View,
-    role: ComponentRole,
-    identity: &Identity,
-    work: &mut Work,
-) -> Result<bool> {
-    for component in head.payload().components() {
-        work.tick()?;
-        if component.role() == role {
-            return Ok(component.identity() == identity.as_str());
-        }
-    }
-    Ok(false)
-}
-
-fn authority<'a>(head: &'a bundle::View, work: &mut Work) -> Result<Option<Authority<'a>>> {
-    let mut population = None;
-    let mut completeness = None;
-    for fact in head.payload().populations() {
-        work.tick()?;
-        match fact.payload() {
-            EmbeddedPayloadRef::Population(value) => population = Some(value),
-            EmbeddedPayloadRef::Completeness(value) => completeness = Some(value),
-            _ => {}
-        }
-    }
-    let mut position = None;
-    for fact in head.payload().positions() {
-        work.tick()?;
-        if let EmbeddedPayloadRef::Position(value) = fact.payload() {
-            position = Some(value);
-        }
-    }
-    let mut progress = None;
-    let mut closure = None;
-    for fact in head.payload().progress() {
-        work.tick()?;
-        match fact.payload() {
-            EmbeddedPayloadRef::Progress(value) => progress = Some(value),
-            EmbeddedPayloadRef::Closure(value) => closure = Some(value),
-            _ => {}
-        }
-    }
-    let mut capture = None;
-    let mut activation = None;
-    for fact in head.payload().records() {
-        work.tick()?;
-        match fact.payload() {
-            EmbeddedPayloadRef::Capture(value) => capture = Some(value),
-            EmbeddedPayloadRef::Activation(value) => activation = Some(value),
-            _ => {}
-        }
-    }
-    let (Some(population), Some(position), Some(progress), Some(closure), Some(completeness)) =
-        (population, position, progress, closure, completeness)
+    let (
+        Some(EmbeddedPayloadRef::Population(population)),
+        Some(EmbeddedPayloadRef::Position(position)),
+        Some(EmbeddedPayloadRef::Progress(progress)),
+        Some(EmbeddedPayloadRef::Closure(closure)),
+        Some(EmbeddedPayloadRef::Completeness(completeness)),
+    ) = (population, position, progress, closure, completeness)
     else {
         return Ok(None);
+    };
+    let capture = match capture {
+        Some(EmbeddedPayloadRef::Capture(value)) => Some(value),
+        None => None,
+        _ => return Ok(None),
+    };
+    let activation = match activation {
+        Some(EmbeddedPayloadRef::Activation(value)) => Some(value),
+        None => None,
+        _ => return Ok(None),
     };
     Ok(Some(Authority {
         population,
@@ -997,8 +1032,23 @@ fn authority_axes_match(
         selection.activation_component_identity.as_ref(),
     ) {
         (None, None, None, None) => true,
+        (None, Some(activation), None, Some(_)) => {
+            activation.capture_authority().is_none()
+                && activation.activation() != super::activation::ActivationState::Active
+                && activation.progress_authority().is_some_and(|proof| {
+                    proof.document_identity == selection.progress_component_identity.as_str()
+                })
+                && activation.closure_authority().is_some_and(|proof| {
+                    proof.document_identity == selection.closure_component_identity.as_str()
+                })
+                && activation.completeness_authority().is_some_and(|proof| {
+                    proof.document_identity == selection.completeness_component_identity.as_str()
+                })
+        }
         (Some(_), Some(activation), Some(capture_identity), Some(_)) => {
-            activation.capture_authority().document_identity == capture_identity.as_str()
+            activation
+                .capture_authority()
+                .is_some_and(|proof| proof.document_identity == capture_identity.as_str())
                 && activation.progress_authority().is_some_and(|proof| {
                     proof.document_identity == selection.progress_component_identity.as_str()
                 })

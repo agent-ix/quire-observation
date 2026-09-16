@@ -1042,6 +1042,20 @@ where
 {
     let effective = limits.effective();
     let observed = preflight_for_contract(bytes, effective, contract)?;
+    read_exact_preflighted(contract, bytes, expected, limits, observed)
+}
+
+pub(crate) fn read_exact_preflighted<P>(
+    contract: &'static str,
+    bytes: &[u8],
+    expected: &Document,
+    limits: Limits,
+    observed: Usage,
+) -> Result<Validated<P>>
+where
+    P: Clone + Eq + Serialize + DeserializeOwned,
+{
+    let effective = limits.effective();
     let contract_probe: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| {
         Error::new(
             ErrorCode::InvalidJson,
@@ -1736,29 +1750,215 @@ impl Scanner<'_> {
 }
 
 fn array_kind(key: &[u8], object_depth: usize, profile: ScanProfile) -> ArrayKind {
-    match key {
-        b"members" | b"required_members" | b"required_results" | b"available_results"
-        | b"facts" => ArrayKind::Population,
-        b"positions" if matches!(profile, ScanProfile::Bundle) && object_depth == 2 => {
-            ArrayKind::BundleComponents
+    if [
+        b"members".as_slice(),
+        b"required_members",
+        b"required_results",
+        b"available_results",
+        b"facts",
+    ]
+    .iter()
+    .any(|candidate| json_key_matches(key, candidate))
+    {
+        ArrayKind::Population
+    } else if json_key_matches(key, b"positions")
+        && matches!(profile, ScanProfile::Bundle)
+        && object_depth == 2
+    {
+        ArrayKind::BundleComponents
+    } else if json_key_matches(key, b"positions") {
+        ArrayKind::Positions
+    } else if json_key_matches(key, b"bindings") {
+        ArrayKind::Captures
+    } else if [
+        b"required_sources".as_slice(),
+        b"observation_sources",
+        b"sources",
+    ]
+    .iter()
+    .any(|candidate| json_key_matches(key, candidate))
+    {
+        ArrayKind::Sources
+    } else if [
+        b"components".as_slice(),
+        b"records",
+        b"populations",
+        b"progress",
+    ]
+    .iter()
+    .any(|candidate| json_key_matches(key, candidate))
+        && matches!(profile, ScanProfile::Bundle)
+        && object_depth == 2
+    {
+        ArrayKind::BundleComponents
+    } else if json_key_matches(key, b"replacements")
+        && matches!(profile, ScanProfile::Bundle)
+        && object_depth == 2
+    {
+        ArrayKind::Replacements
+    } else if json_key_matches(key, b"conflicts")
+        && matches!(profile, ScanProfile::Bundle)
+        && object_depth == 2
+    {
+        ArrayKind::Conflicts
+    } else if json_key_matches(key, b"direct_children")
+        && matches!(profile, ScanProfile::Lineage)
+        && object_depth == 1
+    {
+        ArrayKind::LineageChildren
+    } else {
+        ArrayKind::Other
+    }
+}
+
+// Object keys are compared as decoded JSON strings so an escaped spelling
+// cannot evade the collection limit that applies before serde allocates it.
+// Every owner key is ASCII, which lets this matcher stay allocation-free and
+// fail closed for non-ASCII Unicode escapes.
+fn json_key_matches(encoded: &[u8], expected: &[u8]) -> bool {
+    let mut encoded_index = 0usize;
+    let mut expected_index = 0usize;
+    while encoded_index < encoded.len() && expected_index < expected.len() {
+        let decoded = if encoded[encoded_index] == b'\\' {
+            encoded_index += 1;
+            let Some(escape) = encoded.get(encoded_index).copied() else {
+                return false;
+            };
+            encoded_index += 1;
+            match escape {
+                b'"' => b'"',
+                b'\\' => b'\\',
+                b'/' => b'/',
+                b'b' => 0x08,
+                b'f' => 0x0c,
+                b'n' => b'\n',
+                b'r' => b'\r',
+                b't' => b'\t',
+                b'u' => {
+                    let Some(digits) = encoded.get(encoded_index..encoded_index + 4) else {
+                        return false;
+                    };
+                    let Some(value) = digits.iter().try_fold(0u16, |value, digit| {
+                        let nibble = match digit {
+                            b'0'..=b'9' => u16::from(*digit - b'0'),
+                            b'a'..=b'f' => u16::from(*digit - b'a') + 10,
+                            b'A'..=b'F' => u16::from(*digit - b'A') + 10,
+                            _ => return None,
+                        };
+                        value.checked_mul(16)?.checked_add(nibble)
+                    }) else {
+                        return false;
+                    };
+                    encoded_index += 4;
+                    let Ok(value) = u8::try_from(value) else {
+                        return false;
+                    };
+                    value
+                }
+                _ => return false,
+            }
+        } else {
+            let value = encoded[encoded_index];
+            encoded_index += 1;
+            value
+        };
+        if decoded != expected[expected_index] {
+            return false;
         }
-        b"positions" => ArrayKind::Positions,
-        b"bindings" => ArrayKind::Captures,
-        b"required_sources" | b"observation_sources" | b"sources" => ArrayKind::Sources,
-        b"components" | b"records" | b"populations" | b"progress"
-            if matches!(profile, ScanProfile::Bundle) && object_depth == 2 =>
-        {
-            ArrayKind::BundleComponents
-        }
-        b"replacements" if matches!(profile, ScanProfile::Bundle) && object_depth == 2 => {
-            ArrayKind::Replacements
-        }
-        b"conflicts" if matches!(profile, ScanProfile::Bundle) && object_depth == 2 => {
-            ArrayKind::Conflicts
-        }
-        b"direct_children" if matches!(profile, ScanProfile::Lineage) && object_depth == 1 => {
-            ArrayKind::LineageChildren
-        }
-        _ => ArrayKind::Other,
+        expected_index += 1;
+    }
+    encoded_index == encoded.len() && expected_index == expected.len()
+}
+
+#[cfg(test)]
+mod scan_tests {
+    use super::*;
+
+    fn assert_escaped_key_is_bounded(
+        contract: &str,
+        bytes: &[u8],
+        limits: Limits,
+        usage: impl Fn(Usage) -> usize,
+    ) {
+        let error = preflight_for_contract(bytes, limits.effective(), contract)
+            .expect_err("escaped owner key must retain its collection bound");
+        assert_eq!(error.code(), ErrorCode::ResourceIncomplete);
+        assert_eq!(usage(error.usage()), 2);
+    }
+
+    #[test]
+    fn escaped_owner_keys_cannot_bypass_collection_preflight() {
+        assert_escaped_key_is_bounded(
+            "generic",
+            br#"{"memb\u0065rs":[{},{}]}"#,
+            Limits {
+                max_population_entries: 1,
+                ..Limits::owner_max()
+            },
+            |usage| usage.population_entries,
+        );
+        assert_escaped_key_is_bounded(
+            "generic",
+            br#"{"positi\u006fns":[{},{}]}"#,
+            Limits {
+                max_positions: 1,
+                ..Limits::owner_max()
+            },
+            |usage| usage.positions,
+        );
+        assert_escaped_key_is_bounded(
+            "generic",
+            br#"{"bindi\u006egs":[{},{}]}"#,
+            Limits {
+                max_capture_bindings: 1,
+                ..Limits::owner_max()
+            },
+            |usage| usage.capture_bindings,
+        );
+        assert_escaped_key_is_bounded(
+            "generic",
+            br#"{"required_sourc\u0065s":[{},{}]}"#,
+            Limits {
+                max_required_sources: 1,
+                ..Limits::owner_max()
+            },
+            |usage| usage.required_sources,
+        );
+        assert_escaped_key_is_bounded(
+            "quire.observation-authority/v1",
+            br#"{"payload":{"compon\u0065nts":[{},{}]}}"#,
+            Limits {
+                max_bundle_components: 1,
+                ..Limits::owner_max()
+            },
+            |usage| usage.bundle_components,
+        );
+        assert_escaped_key_is_bounded(
+            "quire.observation-authority/v1",
+            br#"{"payload":{"replacem\u0065nts":[{},{}]}}"#,
+            Limits {
+                max_replacements: 1,
+                ..Limits::owner_max()
+            },
+            |usage| usage.replacements,
+        );
+        assert_escaped_key_is_bounded(
+            "quire.observation-authority/v1",
+            br#"{"payload":{"confli\u0063ts":[{},{}]}}"#,
+            Limits {
+                max_conflicts: 1,
+                ..Limits::owner_max()
+            },
+            |usage| usage.conflicts,
+        );
+        assert_escaped_key_is_bounded(
+            "quire.observation-authority-lineage/v1",
+            br#"{"direct_chil\u0064ren":[{},{}]}"#,
+            Limits {
+                max_lineage_children: 1,
+                ..Limits::owner_max()
+            },
+            |usage| usage.lineage_children,
+        );
     }
 }

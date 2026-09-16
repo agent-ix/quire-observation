@@ -33,25 +33,25 @@ const SOURCES: &[Source] = &[
         id: SourceId::Common,
         path: "src/authority/common.rs",
         text: include_str!("../src/authority/common.rs"),
-        sha256: "333c09bb75e0e5d09b4d9ca07883a156a58950df2241e555884b3891829e3cd3",
+        sha256: "379bcf5cd4bf014cb0b4633bc76b188e4aed308f2532db3fd5028d99a2d870bd",
     },
     Source {
         id: SourceId::Partial,
         path: "src/authority/partial.rs",
         text: include_str!("../src/authority/partial.rs"),
-        sha256: "3c6ca38ac6e8d9760f460750d8e58cf9240c713556c10b6798f8ff8c08ac02bc",
+        sha256: "33de9f39f3e422bf2d364ceba7e302101b230d4fe6a3ce8d4f6ce4cf8a0e8237",
     },
     Source {
         id: SourceId::Activation,
         path: "src/authority/activation.rs",
         text: include_str!("../src/authority/activation.rs"),
-        sha256: "d647da2616d54361d882cef5f22901e7de105f699575827ad0f3aa36c19b9873",
+        sha256: "2d9be2340233051555eeb8f7cb63a3ceb0de47687c1290b1adf2f8a4a3345034",
     },
     Source {
         id: SourceId::Bundle,
         path: "src/authority/bundle.rs",
         text: include_str!("../src/authority/bundle.rs"),
-        sha256: "7dc218a87bceded46e65f90b4b272316cd2acb80aa1eab46ca77a5622bc553a2",
+        sha256: "25081ee72b4ac4aefc2d26972afb095d1b84f6dcb9c6900a2a331d727f44404a",
     },
     Source {
         id: SourceId::Repair,
@@ -63,13 +63,13 @@ const SOURCES: &[Source] = &[
         id: SourceId::Coordination,
         path: "src/authority/coordination.rs",
         text: include_str!("../src/authority/coordination.rs"),
-        sha256: "0992c4385204fac024012b4a68fdba94c10096dbce5c4b0568e830f4ee936e24",
+        sha256: "309268d9b80a148d6bceff78f7c2a81a63934d4797d05f54224aff70a4594d54",
     },
     Source {
         id: SourceId::Query,
         path: "src/authority/query.rs",
         text: include_str!("../src/authority/query.rs"),
-        sha256: "d53a1988d19a9cd3ad18d6698e9a894105dc7bc1092805833ab5918a62642e6e",
+        sha256: "26eaaf49db4113d5c011bf474a496e189351e9274de01be911ac8f1d82ec612f",
     },
     Source {
         id: SourceId::Admission,
@@ -81,19 +81,19 @@ const SOURCES: &[Source] = &[
         id: SourceId::AuthorityEvidence,
         path: "tests/authority.rs",
         text: include_str!("authority.rs"),
-        sha256: "b6047cf5e17dff91f8c8f296a1165696518025bb4982efc95113545be8cb0d01",
+        sha256: "ddd7109d13cbbb996cfc2bedd90977ef095329af8473c1b4e98ad5a1161296b5",
     },
     Source {
         id: SourceId::PartialEvidence,
         path: "tests/partial_interval.rs",
         text: include_str!("partial_interval.rs"),
-        sha256: "7c2b8fe627b42c6631bb4c1ca12b0e5a4e702d5f59d78e097b4e54a9c347b230",
+        sha256: "711adfb64cfb0827dd9d5a62ad65081fc1321eb5d6089d660b8bd6e33e1a1d59",
     },
     Source {
         id: SourceId::ActivationEvidence,
         path: "tests/activation_authority.rs",
         text: include_str!("activation_authority.rs"),
-        sha256: "967a3774066b12ffd70812306aacfd14e820c97423849fb9ddc16b4a7bbf1032",
+        sha256: "a2aa964d30448d069cf3333dfcbce022eab2cf6753f9d70a9a8e7d6e9d4bdd4c",
     },
 ];
 
@@ -123,6 +123,20 @@ const ROWS: &[AuditRow] = &[
         production: SourceId::Common,
         entrypoint: "pub(crate) fn read_exact<P>",
         expansion: "preflight_for_contract(bytes, effective, contract)?",
+        retained: "read_exact_preflighted(contract, bytes, expected, limits, observed)",
+        bound_source: SourceId::Common,
+        limit: "max_input_bytes",
+        precheck_or_charge: "let observed = preflight_for_contract(bytes, effective, contract)?",
+        checked_conversion_or_arithmetic:
+            "read_exact_preflighted(contract, bytes, expected, limits, observed)",
+        evidence_source: SourceId::PartialEvidence,
+        evidence_test: "tc007_partial_fact_is_canonical_strictly_read_and_fail_closed",
+    },
+    AuditRow {
+        name: "common.preflighted-strict-reader-deserialization",
+        production: SourceId::Common,
+        entrypoint: "pub(crate) fn read_exact_preflighted<P>",
+        expansion: "serde_json::from_slice(bytes)",
         retained: "let envelope: Envelope<P> = serde_json::from_slice(bytes)",
         bound_source: SourceId::Common,
         limit: "max_input_bytes",
@@ -184,6 +198,19 @@ const ROWS: &[AuditRow] = &[
         evidence_test: "tc007_partial_fact_is_canonical_strictly_read_and_fail_closed",
     },
     AuditRow {
+        name: "common.escaped-collection-key-classification",
+        production: SourceId::Common,
+        entrypoint: "fn json_key_matches(",
+        expansion: "while encoded_index < encoded.len()",
+        retained: "let mut expected_index = 0usize",
+        bound_source: SourceId::Common,
+        limit: "max_bundle_components",
+        precheck_or_charge: "ArrayKind::BundleComponents",
+        checked_conversion_or_arithmetic: "encoded.get(encoded_index)",
+        evidence_source: SourceId::Common,
+        evidence_test: "",
+    },
+    AuditRow {
         name: "partial.qualified-history-lookup",
         production: SourceId::Partial,
         entrypoint: "pub fn derive(context: Context<'_>",
@@ -206,6 +233,20 @@ const ROWS: &[AuditRow] = &[
         limit: "max_output_bytes",
         precheck_or_charge: "pub(crate) fn build_document<P>",
         checked_conversion_or_arithmetic: ".max(payload.ingestion_position.len())",
+        evidence_source: SourceId::PartialEvidence,
+        evidence_test: "tc007_partial_fact_is_canonical_strictly_read_and_fail_closed",
+    },
+    AuditRow {
+        name: "partial.byte-first-strict-read",
+        production: SourceId::Partial,
+        entrypoint: "pub fn read(\n",
+        expansion: "preflight_for_contract(bytes, limits.effective(), CONTRACT)?",
+        retained: "let expected = derive(context, selection, limits)?",
+        bound_source: SourceId::Common,
+        limit: "max_input_bytes",
+        precheck_or_charge: "if bytes.len() > limits.max_input_bytes",
+        checked_conversion_or_arithmetic:
+            "read_exact_preflighted(CONTRACT, bytes, &expected, limits, observed)",
         evidence_source: SourceId::PartialEvidence,
         evidence_test: "tc007_partial_fact_is_canonical_strictly_read_and_fail_closed",
     },
@@ -236,6 +277,19 @@ const ROWS: &[AuditRow] = &[
         evidence_test: "tc008_versioned_owner_round_trips_all_independent_authority",
     },
     AuditRow {
+        name: "activation.qualified-record-index",
+        production: SourceId::Activation,
+        entrypoint: "pub fn derive(context: Context<'_>",
+        expansion: "let record_index = qualified",
+        retained: "collect::<BTreeMap<_, _>>()",
+        bound_source: SourceId::Activation,
+        limit: "max_population_entries",
+        precheck_or_charge: "qualified.records().len() > effective.max_population_entries",
+        checked_conversion_or_arithmetic: "qualified.records().len()",
+        evidence_source: SourceId::ActivationEvidence,
+        evidence_test: "tc008_versioned_owner_round_trips_all_independent_authority",
+    },
+    AuditRow {
         name: "activation.source-support-sets",
         production: SourceId::Activation,
         entrypoint: "fn exact_source_set(",
@@ -245,6 +299,20 @@ const ROWS: &[AuditRow] = &[
         limit: "effective.max_required_sources",
         precheck_or_charge: "sources.len() > effective.max_required_sources",
         checked_conversion_or_arithmetic: "validate_string(source.as_str(), limits)?",
+        evidence_source: SourceId::ActivationEvidence,
+        evidence_test: "tc008_versioned_owner_round_trips_all_independent_authority",
+    },
+    AuditRow {
+        name: "activation.byte-first-strict-read",
+        production: SourceId::Activation,
+        entrypoint: "pub fn read(\n",
+        expansion: "preflight_for_contract(bytes, limits.effective(), CONTRACT)?",
+        retained: "let expected = derive(context, selection, limits)?",
+        bound_source: SourceId::Common,
+        limit: "max_input_bytes",
+        precheck_or_charge: "if bytes.len() > limits.max_input_bytes",
+        checked_conversion_or_arithmetic:
+            "read_exact_preflighted(CONTRACT, bytes, &expected, limits, observed)",
         evidence_source: SourceId::ActivationEvidence,
         evidence_test: "tc008_versioned_owner_round_trips_all_independent_authority",
     },
@@ -300,6 +368,21 @@ const ROWS: &[AuditRow] = &[
         checked_conversion_or_arithmetic: ".try_reserve_exact(predecessor.components.len())",
         evidence_source: SourceId::AuthorityEvidence,
         evidence_test: "tc009_component_replacement_and_lineage_bounds_fail_closed",
+    },
+    AuditRow {
+        name: "bundle.byte-first-strict-read",
+        production: SourceId::Bundle,
+        entrypoint: "fn read_for(\n",
+        expansion: "preflight_for_contract(bytes, limits.effective(), contract)?",
+        retained:
+            "let expected = publish_for(contract, profile, context, selection, lineage, limits)?",
+        bound_source: SourceId::Common,
+        limit: "max_input_bytes",
+        precheck_or_charge: "if bytes.len() > limits.max_input_bytes",
+        checked_conversion_or_arithmetic:
+            "read_exact_preflighted(contract, bytes, expected.document(), limits, observed)",
+        evidence_source: SourceId::AuthorityEvidence,
+        evidence_test: "tc009_initial_bundle_is_canonical_complete_and_strictly_read",
     },
     AuditRow {
         name: "repair.graph-indexes",
@@ -368,6 +451,20 @@ const ROWS: &[AuditRow] = &[
             "tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths",
     },
     AuditRow {
+        name: "coordination.dependency-preparation-scan",
+        production: SourceId::Coordination,
+        entrypoint: "fn prepare<'a>(",
+        expansion: "for edge in plan.dependencies()",
+        retained: "let mut expected_source_count = 0usize",
+        bound_source: SourceId::Coordination,
+        limit: "max_work",
+        precheck_or_charge: "work.tick()?",
+        checked_conversion_or_arithmetic: ".checked_add(1)",
+        evidence_source: SourceId::AuthorityEvidence,
+        evidence_test:
+            "tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths",
+    },
+    AuditRow {
         name: "coordination.duplicated-result-input-state",
         production: SourceId::Coordination,
         entrypoint: "fn job_state_bytes(job: &Job",
@@ -391,6 +488,20 @@ const ROWS: &[AuditRow] = &[
         limit: "external_inputs.state_bytes",
         precheck_or_charge: "next_state > self.prepared[current].job.external_inputs.state_bytes",
         checked_conversion_or_arithmetic: ".checked_add(input_bytes)",
+        evidence_source: SourceId::AuthorityEvidence,
+        evidence_test:
+            "tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths",
+    },
+    AuditRow {
+        name: "coordination.prefix-preallocation",
+        production: SourceId::Coordination,
+        entrypoint: "fn ensure_prefix_capacity(",
+        expansion: "prefix_state_bytes_for_outcome(",
+        retained: "let bytes = prefix_state_bytes_for_outcome(",
+        bound_source: SourceId::Coordination,
+        limit: "max_state_bytes",
+        precheck_or_charge: "self.work.ensure_state_capacity(bytes)?",
+        checked_conversion_or_arithmetic: ".checked_add(prepared.result_inputs.len())",
         evidence_source: SourceId::AuthorityEvidence,
         evidence_test:
             "tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths",
@@ -424,6 +535,35 @@ const ROWS: &[AuditRow] = &[
             "tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths",
     },
     AuditRow {
+        name: "coordination.support-evidence-index",
+        production: SourceId::Coordination,
+        entrypoint: "fn validate_support_and_digest(",
+        expansion: "for identity in &support.evidence_identities",
+        retained: "let mut evidence = BTreeMap::new()",
+        bound_source: SourceId::Coordination,
+        limit: "max_state_bytes",
+        precheck_or_charge: "work.ensure_state_capacity(evidence_index_bytes)?",
+        checked_conversion_or_arithmetic:
+            ".checked_mul(std::mem::size_of::<(&str, EvaluatorInput<'_>)>())",
+        evidence_source: SourceId::AuthorityEvidence,
+        evidence_test:
+            "tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths",
+    },
+    AuditRow {
+        name: "coordination.support-input-search",
+        production: SourceId::Coordination,
+        entrypoint: "fn find_input<'a>(",
+        expansion: "while left < right",
+        retained: "let mut right = inputs.len()",
+        bound_source: SourceId::Coordination,
+        limit: "max_work",
+        precheck_or_charge: "work.tick()?",
+        checked_conversion_or_arithmetic: "left + (right - left) / 2",
+        evidence_source: SourceId::AuthorityEvidence,
+        evidence_test:
+            "tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths",
+    },
+    AuditRow {
         name: "coordination.unaffected-retention",
         production: SourceId::Coordination,
         entrypoint: "fn finish_run(",
@@ -447,6 +587,19 @@ const ROWS: &[AuditRow] = &[
         limit: "max_input_bytes",
         precheck_or_charge: "if input_bytes > effective.max_input_bytes",
         checked_conversion_or_arithmetic: ".checked_add(lineage.head().bytes().len())",
+        evidence_source: SourceId::AuthorityEvidence,
+        evidence_test: "tc011_each_query_limit_admits_exact_and_refuses_one_over",
+    },
+    AuditRow {
+        name: "query.exact-multi-role-selection",
+        production: SourceId::Query,
+        entrypoint: "fn selected_fact<'a>(",
+        expansion: "for component in head",
+        retained: "let mut facts = facts",
+        bound_source: SourceId::Query,
+        limit: "max_work",
+        precheck_or_charge: "work.tick()?",
+        checked_conversion_or_arithmetic: "work.tick()?",
         evidence_source: SourceId::AuthorityEvidence,
         evidence_test: "tc011_each_query_limit_admits_exact_and_refuses_one_over",
     },
@@ -535,7 +688,9 @@ fn function_scope<'a>(text: &'a str, anchor: &str) -> &'a str {
 fn assert_evidence(row: &AuditRow) {
     let evidence_kind = if matches!(
         row.name,
-        "partial.qualified-history-lookup" | "activation.strict-proof-copy"
+        "common.escaped-collection-key-classification"
+            | "partial.qualified-history-lookup"
+            | "activation.strict-proof-copy"
     ) {
         EvidenceKind::StructurallyDominated
     } else {
@@ -607,7 +762,7 @@ fn tc013_each_c00_expansion_path_names_its_dominating_bound_and_evidence() {
     }
     assert_eq!(
         ROWS.len(),
-        28,
+        39,
         "every inventoried expansion path must remain explicit"
     );
     for row in ROWS {

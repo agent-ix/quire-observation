@@ -192,6 +192,7 @@ fn authority_proofs(
     progress: ExecutionState,
     closure: ExecutionState,
     evidence: EvidenceState,
+    include_capture: bool,
 ) -> AuthorityProofs {
     let context = Context::new(History::batch(qualified), owner, subject, 1, None);
     let record = &qualified.records()[0];
@@ -300,27 +301,36 @@ fn authority_proofs(
     )
     .expect("strict-read completeness authority");
 
-    AuthorityProofs::new(
-        &capture_view,
-        progress_view.as_ref(),
-        closure_view.as_ref(),
-        Some(&completeness_view),
-    )
-    .expect("compose strict-read authority proofs")
+    if include_capture {
+        AuthorityProofs::new(
+            &capture_view,
+            progress_view.as_ref(),
+            closure_view.as_ref(),
+            Some(&completeness_view),
+        )
+        .expect("compose strict-read authority proofs")
+    } else {
+        AuthorityProofs::without_capture(
+            progress_view.as_ref(),
+            closure_view.as_ref(),
+            Some(&completeness_view),
+        )
+        .expect("compose trigger-absent authority proofs")
+    }
 }
 
 fn selection(
     qualified: &QualifiedObservation,
     owner: &AuthoritySelection,
     subject: &SubjectSelection,
-    activation: ActivationState,
+    trigger: TriggerCase,
 ) -> Selection {
     selection_axes(
         qualified,
         owner,
         subject,
         AxesCase {
-            activation,
+            trigger,
             progress: ExecutionState::Closed,
             closure: ExecutionState::Open,
             evidence: EvidenceState::Complete,
@@ -329,9 +339,15 @@ fn selection(
     )
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum TriggerCase {
+    Absent,
+    Admitted,
+}
+
 #[derive(Clone, Copy)]
 struct AxesCase {
-    activation: ActivationState,
+    trigger: TriggerCase,
     progress: ExecutionState,
     closure: ExecutionState,
     evidence: EvidenceState,
@@ -352,9 +368,10 @@ fn selection_axes(
         axes.progress,
         axes.closure,
         axes.evidence,
+        axes.trigger == TriggerCase::Admitted,
     );
     let selected = Selection::new(
-        activation_selection(qualified, axes.activation, "12.00", "source:payments"),
+        activation_selection(qualified, axes.trigger, "12.00", "source:payments"),
         progress_selection(axes.progress),
         interval(8, 12),
         interval(10, 20),
@@ -378,24 +395,27 @@ fn selection_axes(
 
 fn activation_selection(
     qualified: &QualifiedObservation,
-    state: ActivationState,
+    trigger: TriggerCase,
     canonical_value: &str,
     provenance_identity: &str,
 ) -> ActivationSelection {
     let record = &qualified.records()[0];
-    ActivationSelection::new(
-        id("obligation:refund"),
-        record.identity.clone(),
-        interval(8, 12),
-        vec![Capture::new(
-            id("capture:amount"),
+    if trigger == TriggerCase::Admitted {
+        ActivationSelection::new(
+            id("obligation:refund"),
             record.identity.clone(),
-            id("type:decimal"),
-            canonical_value.to_owned(),
-            id(provenance_identity),
-        )],
-        state,
-    )
+            interval(8, 12),
+            vec![Capture::new(
+                id("capture:amount"),
+                record.identity.clone(),
+                id("type:decimal"),
+                canonical_value.to_owned(),
+                id(provenance_identity),
+            )],
+        )
+    } else {
+        ActivationSelection::without_trigger(id("obligation:refund"), interval(8, 12))
+    }
 }
 
 fn progress_selection(state: ExecutionState) -> ProgressSelection {
@@ -454,9 +474,10 @@ fn tc008_later_observation_value_cannot_rewrite_original_activation_capture() {
                 ExecutionState::Closed,
                 ExecutionState::Closed,
                 EvidenceState::Complete,
+                true,
             );
             Selection::new(
-                activation_selection(qualified, ActivationState::Active, value, "source:payments"),
+                activation_selection(qualified, TriggerCase::Admitted, value, "source:payments"),
                 progress_selection(ExecutionState::Closed),
                 interval(8, 12),
                 interval(10, 20),
@@ -553,16 +574,12 @@ fn tc008_activation_capture_set_must_be_nonempty_sorted_and_distinct() {
 
 #[trace("TC-008", "FR-008-AC-2", "FR-008-AC-4")]
 #[test]
-fn tc008_every_assessment_axis_remains_independently_selected() {
+fn tc008_derived_activation_crosses_independent_scope_and_contribution_axes() {
     let qualified = qualified();
     let owner = owner();
     let subject = subject(&qualified);
     let context = Context::new(History::batch(&qualified), &owner, &subject, 1, None);
-    for activation in [
-        ActivationState::Inactive,
-        ActivationState::Active,
-        ActivationState::Unknown,
-    ] {
+    for trigger in [TriggerCase::Absent, TriggerCase::Admitted] {
         for progress in [
             ExecutionState::Open,
             ExecutionState::Closed,
@@ -584,7 +601,7 @@ fn tc008_every_assessment_axis_remains_independently_selected() {
                             &owner,
                             &subject,
                             AxesCase {
-                                activation,
+                                trigger,
                                 progress,
                                 closure,
                                 evidence,
@@ -602,7 +619,16 @@ fn tc008_every_assessment_axis_remains_independently_selected() {
                         )
                         .expect("independent axis product strict-reads");
                         let payload = view.payload();
-                        assert_eq!(payload.activation(), activation);
+                        let expected_activation = if trigger == TriggerCase::Admitted {
+                            ActivationState::Active
+                        } else if closure == ExecutionState::Closed
+                            && evidence == EvidenceState::Complete
+                        {
+                            ActivationState::Inactive
+                        } else {
+                            ActivationState::Unknown
+                        };
+                        assert_eq!(payload.activation(), expected_activation);
                         assert_eq!(payload.progress(), progress);
                         assert_eq!(payload.closure(), closure);
                         assert_eq!(payload.evidence(), evidence);
@@ -775,13 +801,30 @@ fn tc008_versioned_owner_round_trips_all_independent_authority() {
     let qualified = qualified();
     let owner = owner();
     let subject = subject(&qualified);
-    let selected = selection(&qualified, &owner, &subject, ActivationState::Active);
+    let selected = selection(&qualified, &owner, &subject, TriggerCase::Admitted);
     let context = Context::new(History::batch(&qualified), &owner, &subject, 1, None);
     let first = authority::activation::derive(context, &selected, Limits::owner_max())
         .expect("derive activation authority");
     let second = authority::activation::derive(context, &selected, Limits::owner_max())
         .expect("derive activation authority again");
     assert_eq!(first.bytes(), second.bytes());
+
+    let population_exact = Limits {
+        max_population_entries: qualified.records().len(),
+        ..Limits::owner_max()
+    };
+    authority::activation::derive(context, &selected, population_exact)
+        .expect("exact activation record-index bound admits");
+    let population_one_over = Limits {
+        max_population_entries: qualified.records().len() - 1,
+        ..Limits::owner_max()
+    };
+    let first_error = authority::activation::derive(context, &selected, population_one_over)
+        .expect_err("one-over activation record-index bound");
+    let repeated_error = authority::activation::derive(context, &selected, population_one_over)
+        .expect_err("repeated one-over activation record-index bound");
+    assert_eq!(first_error, repeated_error);
+    assert_eq!(first_error.code(), ErrorCode::ResourceIncomplete);
 
     let view = authority::activation::read(first.bytes(), context, &selected, Limits::owner_max())
         .expect("strict-read activation authority");
@@ -804,7 +847,13 @@ fn tc008_versioned_owner_round_trips_all_independent_authority() {
     assert_eq!(captures.len(), 1);
     assert_eq!(captures[0].canonical_value, "12.00");
     assert_eq!(captures[0].provenance_identity, "source:payments");
-    assert_eq!(payload.capture_authority().revision, 1);
+    assert_eq!(
+        payload
+            .capture_authority()
+            .expect("capture authority")
+            .revision,
+        1
+    );
     assert_eq!(payload.progress_authority().unwrap().revision, 1);
     assert_eq!(payload.closure_authority().unwrap().revision, 1);
     assert_eq!(payload.completeness_authority().unwrap().revision, 1);
@@ -933,7 +982,18 @@ fn tc008_versioned_owner_round_trips_all_independent_authority() {
     assert_eq!(first_error, repeated_error);
     assert_eq!(first_error.code(), ErrorCode::ResourceIncomplete);
 
-    let mismatched = selection(&qualified, &owner, &subject, ActivationState::Unknown);
+    let mismatched = selection(&qualified, &owner, &subject, TriggerCase::Absent);
+    let byte_first = authority::activation::read(
+        first.bytes(),
+        context,
+        &mismatched,
+        Limits {
+            max_input_bytes: first.bytes().len() - 1,
+            ..Limits::owner_max()
+        },
+    )
+    .expect_err("one-over input refuses before mismatched semantic selection");
+    assert_eq!(byte_first.code(), ErrorCode::ResourceIncomplete);
     let error =
         authority::activation::read(first.bytes(), context, &mismatched, Limits::owner_max())
             .expect_err("strict reader rejects a different independent selection");
@@ -954,6 +1014,7 @@ fn tc008_owner_refuses_foreign_scope_clock_even_when_intervals_agree() {
         ExecutionState::Closed,
         ExecutionState::Closed,
         EvidenceState::Complete,
+        true,
     );
     let foreign = |earliest, latest| {
         EventTimeInterval::new(
@@ -978,7 +1039,6 @@ fn tc008_owner_refuses_foreign_scope_clock_even_when_intervals_agree() {
                 "12.00".to_owned(),
                 id("source:payments"),
             )],
-            ActivationState::Active,
         ),
         ProgressSelection::new(foreign(0, 29), foreign(30, 30)),
         foreign(8, 12),
@@ -1009,6 +1069,7 @@ fn tc008_owner_refuses_cross_wired_source_capture_and_support_authority() {
         ExecutionState::Closed,
         ExecutionState::Closed,
         EvidenceState::Complete,
+        true,
     );
     let foreign_owner = AuthoritySelection {
         definition_identity: owner.definition_identity.clone(),
@@ -1022,6 +1083,7 @@ fn tc008_owner_refuses_cross_wired_source_capture_and_support_authority() {
         ExecutionState::Closed,
         ExecutionState::Closed,
         EvidenceState::Complete,
+        true,
     );
     let base = |activation, progress| {
         Selection::new(
@@ -1045,7 +1107,6 @@ fn tc008_owner_refuses_cross_wired_source_capture_and_support_authority() {
                     "12.00".to_owned(),
                     id("source:payments"),
                 )],
-                ActivationState::Active,
             ),
             progress_selection(ExecutionState::Closed),
         ),
@@ -1061,32 +1122,26 @@ fn tc008_owner_refuses_cross_wired_source_capture_and_support_authority() {
                     "12.00".to_owned(),
                     id("source:payments"),
                 )],
-                ActivationState::Active,
             ),
             progress_selection(ExecutionState::Closed),
         ),
         base(
             activation_selection(
                 &qualified,
-                ActivationState::Active,
+                TriggerCase::Admitted,
                 "13.00",
                 "source:payments",
             ),
             progress_selection(ExecutionState::Closed),
         ),
         base(
-            activation_selection(
-                &qualified,
-                ActivationState::Active,
-                "12.00",
-                "source:foreign",
-            ),
+            activation_selection(&qualified, TriggerCase::Admitted, "12.00", "source:foreign"),
             progress_selection(ExecutionState::Closed),
         ),
         base(
             activation_selection(
                 &qualified,
-                ActivationState::Active,
+                TriggerCase::Admitted,
                 "12.00",
                 "source:payments",
             ),
@@ -1105,7 +1160,7 @@ fn tc008_owner_refuses_cross_wired_source_capture_and_support_authority() {
         Selection::new(
             activation_selection(
                 &qualified,
-                ActivationState::Active,
+                TriggerCase::Admitted,
                 "12.00",
                 "source:payments",
             ),

@@ -351,6 +351,24 @@ fn tc007_partial_fact_is_canonical_strictly_read_and_fail_closed() {
     assert_eq!(view.payload().interval().latest, "12");
     assert_eq!(view.payload().ingestion_position(), "15");
 
+    let invalid_selection = authority::partial::Selection::new(
+        id("observation:absent"),
+        PossibilitySet::new(true, true, ValueReason::Missing).expect("coherent missing value"),
+        fact_interval(),
+        15,
+    );
+    let byte_first = authority::partial::read(
+        first.bytes(),
+        context,
+        &invalid_selection,
+        Limits {
+            max_input_bytes: first.bytes().len() - 1,
+            ..Limits::owner_max()
+        },
+    )
+    .expect_err("one-over input refuses before invalid semantic selection");
+    assert_eq!(byte_first.code(), ErrorCode::ResourceIncomplete);
+
     for (exact, lower) in [
         (
             Limits {
