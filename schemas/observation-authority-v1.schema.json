@@ -3126,6 +3126,7 @@
           "required": [
             "activation_identity",
             "obligation_identity",
+            "trigger_identity",
             "trigger_observation_identity",
             "activation_interval",
             "captures",
@@ -3157,23 +3158,28 @@
               "type": "string",
               "minLength": 1
             },
-            "trigger_observation_identity": {
+            "trigger_identity": {
               "type": "string",
               "minLength": 1
+            },
+            "trigger_observation_identity": {
+              "oneOf": [
+                {"type": "null"},
+                {"type": "string", "minLength": 1}
+              ]
             },
             "activation_interval": {
               "$ref": "#/$defs/interval"
             },
             "captures": {
               "type": "array",
-              "minItems": 1,
               "uniqueItems": true,
               "items": {
                 "$ref": "#/$defs/capture"
               }
             },
             "capture_authority": {
-              "$ref": "#/$defs/proof"
+              "$ref": "#/$defs/optionalProof"
             },
             "activation": {
               "enum": [
@@ -3256,7 +3262,12 @@
             "settlement": {
               "$ref": "#/$defs/optionalContribution"
             }
-          }
+          },
+          "oneOf": [
+            {"properties": {"trigger_observation_identity": {"type": "string", "minLength": 1}, "captures": {"minItems": 1}, "capture_authority": {"$ref": "#/$defs/proof"}, "activation": {"const": "active"}}},
+            {"properties": {"trigger_observation_identity": {"type": "null"}, "captures": {"maxItems": 0}, "capture_authority": {"type": "null"}, "activation": {"const": "inactive"}, "closure": {"const": "closed"}, "evidence": {"const": "complete"}}},
+            {"properties": {"trigger_observation_identity": {"type": "null"}, "captures": {"maxItems": 0}, "capture_authority": {"type": "null"}, "activation": {"const": "unknown"}}, "not": {"properties": {"closure": {"const": "closed"}, "evidence": {"const": "complete"}}, "required": ["closure", "evidence"]}}
+          ]
         },
         "predecessor": {
           "$ref": "urn:agent-ix:quire-observation:record:1#/$defs/predecessor"

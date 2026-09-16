@@ -59,5 +59,9 @@ description: "Chronological log of changes to the Plan-002 bundle."
   multi-activation query selection cannot substitute another payload; escaped JSON keys retain
   collection preflight; strict readers reject oversized bytes before semantic work; and
   dependency, support, record-index and prefix-allocation work is bounded and charged. TC-013 now
-  pins 39 paths, all 115 tests pass, strict coverage is 91/91 with zero status lies, and Plan-002
-  remains honestly 7/9 pending Task-023 real-consumer integration and Task-024 promotion.
+  pins 42 paths. Exact-head review then found and remediation closed a second-order absence gap:
+  trigger-absent selection now names the exact semantic trigger, rejects matching admitted
+  history, and joins only matching progress authority. Historical bundle reads preflight bytes
+  before lineage work, terminal outcome clones and replacement construction have dominating exact
+  state checks, and the multi-activation oracle distinguishes active from inactive payloads.
+  Plan-002 remains honestly 7/9 pending Task-023 real-consumer integration and Task-024 promotion.

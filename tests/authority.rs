@@ -226,6 +226,7 @@ fn activation_selection(
     authority::activation::Selection::new(
         authority::activation::ActivationSelection::new(
             id("obligation:refund"),
+            id("trigger:refund-request"),
             record.identity.clone(),
             activation_interval(8, 12),
             vec![authority::activation::Capture::new(
@@ -2173,7 +2174,7 @@ fn tc009_initial_bundle_is_canonical_complete_and_strictly_read() {
         .expect("repeat initial publication");
     assert_eq!(
         format!("{:x}", Sha256::digest(first.document().bytes())),
-        "3e703a9cf709cf70fed4df57ecbac00e778da155a52194acb2d95d3b3e93c24b",
+        "7cfa6afae4ee0e8d48af33dad3a04bd0695768e249f38f2184b4725f3f07591c",
         "the existing v1 canonical fixture bytes are immutable",
     );
     assert_eq!(first.document().bytes(), second.document().bytes());
@@ -3021,6 +3022,15 @@ fn query_request_in_scope(
     } else {
         id("signal:refund")
     };
+    let trigger_identity = if !effects.is_empty()
+        && effects
+            .iter()
+            .all(|(identity, _, _)| identity.starts_with("receipt:"))
+    {
+        id("trigger:receipt-ack")
+    } else {
+        id("trigger:refund-request")
+    };
     let mut relationships = Vec::new();
     let mut records = Vec::new();
     for (index, (effect_identity, value, event_time_nanos)) in effects.iter().enumerate() {
@@ -3048,7 +3058,7 @@ fn query_request_in_scope(
             schema_identity: id("schema:refund/v1"),
             subject: root.clone(),
             signal_identity: signal_identity.clone(),
-            trigger_identity: id("trigger:refund-request"),
+            trigger_identity: trigger_identity.clone(),
             unit: id("USD"),
             value: ValueState::Present {
                 value_type: id("signed-integer"),
@@ -3076,7 +3086,7 @@ fn query_request_in_scope(
             source_identity: id("source:payments"),
             schema_identity: id("schema:refund/v1"),
             signal_identity,
-            trigger_identity: id("trigger:refund-request"),
+            trigger_identity,
             unit: id("USD"),
             subject_kind: root.kind().clone(),
             required: !effects
@@ -3351,7 +3361,7 @@ fn query_lineage_with_scope_and_conflict(
     };
 
     let capture_selection = authority::capture::Selection::new(
-        id("trigger:refund-request"),
+        records[0].trigger_identity.clone(),
         capture_anchor,
         records
             .iter()
@@ -3447,11 +3457,13 @@ fn query_lineage_with_scope_and_conflict(
     let activation = if trigger_absent {
         authority::activation::ActivationSelection::without_trigger(
             id("obligation:refund"),
+            id("trigger:refund-request"),
             activation_interval(8, 12),
         )
     } else {
         authority::activation::ActivationSelection::new(
             id("obligation:refund"),
+            id("trigger:refund-request"),
             records[0].identity.clone(),
             activation_interval(8, 12),
             records
@@ -3489,38 +3501,17 @@ fn query_lineage_with_scope_and_conflict(
     let activation = authority::activation::derive(context, &activation_selection, limits)
         .expect("query activation");
     let additional_activation_selection = additional_activation.then(|| {
-        let proofs = authority::activation::AuthorityProofs::new(
-            &capture_view,
-            Some(&progress_view),
+        let proofs = authority::activation::AuthorityProofs::without_capture(
+            None,
             Some(&closure_view),
             Some(&completeness_view),
         )
         .expect("additional query activation proofs");
         authority::activation::Selection::new(
-            authority::activation::ActivationSelection::new(
+            authority::activation::ActivationSelection::without_trigger(
                 id("obligation:refund-alt"),
-                records[0].identity.clone(),
+                id("trigger:chargeback-request"),
                 activation_interval(8, 12),
-                records
-                    .iter()
-                    .enumerate()
-                    .map(|(index, record)| {
-                        let ValueState::Present {
-                            value_type,
-                            canonical_value,
-                        } = &record.value
-                        else {
-                            panic!("query record value must be present");
-                        };
-                        authority::activation::Capture::new(
-                            id(format!("capture:refund:{index}").as_str()),
-                            record.identity.clone(),
-                            value_type.clone(),
-                            canonical_value.clone(),
-                            id("source:payments"),
-                        )
-                    })
-                    .collect(),
             ),
             authority::activation::ProgressSelection::new(
                 activation_interval(query_range(scope).0, scope_end - 1),
@@ -3987,30 +3978,43 @@ fn tc011_exact_multi_activation_selection_never_uses_an_unselected_payload() {
         .filter(|component| component.role() == ComponentRole::Activation)
         .map(|component| id(component.identity()))
         .collect::<Vec<_>>();
-    let capture_authorities = lineage
+    let capture_component = lineage
+        .head()
+        .payload()
+        .components()
+        .find(|component| component.role() == ComponentRole::Capture)
+        .map(|component| id(component.identity()))
+        .expect("fixture capture component");
+    let activation_authorities = lineage
         .head()
         .payload()
         .records()
         .filter_map(|fact| match fact.payload() {
-            EmbeddedPayloadRef::Activation(value) => Some(id(value
-                .capture_authority()
-                .expect("triggered activation has capture authority")
-                .document_identity)),
+            EmbeddedPayloadRef::Activation(value) => Some((
+                value
+                    .capture_authority()
+                    .map(|authority| id(authority.document_identity)),
+                value.activation(),
+            )),
             _ => None,
         })
         .collect::<Vec<_>>();
-    let pairs = capture_authorities
+    let pairs = activation_authorities
         .into_iter()
         .zip(activation_components)
         .collect::<Vec<_>>();
     assert_eq!(pairs.len(), 2, "fixture must retain two activations");
-    assert_eq!(
-        pairs[0].0, pairs[1].0,
-        "both facts use the singleton capture"
-    );
     assert_ne!(pairs[0].1, pairs[1].1, "activation identities are distinct");
+    assert_eq!(
+        pairs
+            .iter()
+            .filter(|((capture, _), _)| capture.is_some())
+            .count(),
+        1,
+        "one activation is active and one is independently inactive",
+    );
 
-    for (capture, activation) in &pairs {
+    for ((capture_authority, activation_state), activation) in &pairs {
         let selection = query_selection_with_overrides(
             &lineage,
             DuplicatePolicy::OccurrencePreserving,
@@ -4021,7 +4025,7 @@ fn tc011_exact_multi_activation_selection_never_uses_an_unselected_payload() {
             SHIPMENT_KIND.as_bytes(),
             "signal:refund",
             &QueryAuthorityOverrides {
-                capture_component_identity: Some(capture.clone()),
+                capture_component_identity: Some(capture_component.clone()),
                 activation_component_identity: Some(activation.clone()),
                 ..QueryAuthorityOverrides::default()
             },
@@ -4029,10 +4033,26 @@ fn tc011_exact_multi_activation_selection_never_uses_an_unselected_payload() {
         let evaluation =
             authority::query::evaluate(&lineage, &selection, authority::query::Limits::owner_max())
                 .expect("each exact authority pair is queryable");
-        assert!(matches!(
-            evaluation.outcome(),
-            Outcome::Complete(value) if value.value() == &AggregateValue::Sum(100)
-        ));
+        if let Some(capture_authority) = capture_authority {
+            assert_eq!(capture_authority, &capture_component);
+            assert_eq!(
+                *activation_state,
+                authority::activation::ActivationState::Active
+            );
+            assert!(matches!(
+                evaluation.outcome(),
+                Outcome::Complete(value) if value.value() == &AggregateValue::Sum(100)
+            ));
+        } else {
+            assert_eq!(
+                *activation_state,
+                authority::activation::ActivationState::Inactive
+            );
+            assert!(matches!(
+                evaluation.outcome(),
+                Outcome::Refused(value) if value.reason() == RefusalReason::ForeignAuthority
+            ));
+        }
     }
 
     let selection = query_selection_with_overrides(
@@ -4048,7 +4068,14 @@ fn tc011_exact_multi_activation_selection_never_uses_an_unselected_payload() {
             capture_component_identity: Some(id(
                 "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
             )),
-            activation_component_identity: Some(pairs[1].1.clone()),
+            activation_component_identity: Some(
+                pairs
+                    .iter()
+                    .find(|((capture, _), _)| capture.is_some())
+                    .expect("active activation")
+                    .1
+                    .clone(),
+            ),
             ..QueryAuthorityOverrides::default()
         },
     );
@@ -4893,7 +4920,7 @@ fn tc011_each_query_limit_admits_exact_and_refuses_one_over() {
     assert_eq!(
         usage,
         authority::query::Usage {
-            input_bytes: 47_968,
+            input_bytes: 48_060,
             members: 2,
             occurrences: 2,
             arithmetic_steps: 2,
@@ -7578,7 +7605,7 @@ proptest! {
     }
 }
 
-#[trace("TC-009", "FR-009-AC-2", "FR-009-AC-4")]
+#[trace("TC-009", "FR-009-AC-2", "FR-009-AC-4", "TC-012", "NFR-003-AC-2")]
 #[test]
 fn tc009_successor_replay_and_same_key_contradiction_are_exact() {
     use authority::availability::DependencyState;
@@ -7632,6 +7659,18 @@ fn tc009_successor_replay_and_same_key_contradiction_are_exact() {
         Limits::owner_max(),
     )
     .expect("strict-read historical successor from its exact predecessor view");
+    let byte_first = authority::bundle::read_revision(
+        successor.document().bytes(),
+        context,
+        &Selection::new(Vec::new(), Vec::new()),
+        Some(initial.view()),
+        Limits {
+            max_input_bytes: successor.document().bytes().len() - 1,
+            ..Limits::owner_max()
+        },
+    )
+    .expect_err("historical one-over input refuses before lineage and selection work");
+    assert_eq!(byte_first.code(), authority::ErrorCode::ResourceIncomplete);
 
     let known_child = LineageView::from_views(
         initial.view(),

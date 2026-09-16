@@ -186,7 +186,6 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
         || qualified.records().iter().any(|record| {
             &record.clock_identity != selection.clock.clock_identity()
                 || &record.clock_revision != selection.clock.clock_revision()
-                || record.trigger_identity != selection.captured_trigger_identity
         })
     {
         return Err(Error::new(

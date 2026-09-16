@@ -8,6 +8,7 @@
 //! evaluator formulas or manufacture temporal/protocol truth.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::io;
 
 use serde::Serialize;
 use sha2::{Digest as _, Sha256};
@@ -1195,6 +1196,8 @@ impl<'a, E: Evaluator> IncrementalRun<'a, E> {
         let result = (|| {
             if let Some(terminal) = self.terminal.as_ref() {
                 self.ensure_prefix_capacity(false, terminal)?;
+                self.work
+                    .ensure_state_capacity(outcome_state_bytes(terminal, &self.work)?)?;
             }
             let outcome = if let Some(terminal) = &self.terminal {
                 terminal.clone()
@@ -1246,6 +1249,8 @@ impl<'a, E: Evaluator> IncrementalRun<'a, E> {
         let staged = (|| {
             if let Some(terminal) = self.terminal.as_ref() {
                 self.ensure_prefix_capacity(true, terminal)?;
+                self.work
+                    .ensure_state_capacity(outcome_state_bytes(terminal, &self.work)?)?;
             }
             let outcome = if let Some(terminal) = &self.terminal {
                 terminal.clone()
@@ -1933,7 +1938,16 @@ fn convert_outcome(
         } => {
             let evidence_digest =
                 validate_support_and_digest(prepared, inputs, disposition, &support, work)?;
-            work.ensure_state_capacity(canonical_result.len())?;
+            let retained_bytes = replacement_state_bytes_before_build(
+                plan,
+                prepared,
+                disposition,
+                &support,
+                &evidence_digest,
+                &canonical_result,
+                work,
+            )?;
+            work.ensure_state_capacity(retained_bytes)?;
             let replacement = build_replacement(
                 plan,
                 prepared,
@@ -1943,7 +1957,9 @@ fn convert_outcome(
                 canonical_result,
                 work.limits.max_output_bytes,
             )?;
-            work.charge_state(replacement_state_bytes(&replacement, work)?)?;
+            let built_bytes = replacement_state_bytes(&replacement, work)?;
+            debug_assert_eq!(built_bytes, retained_bytes);
+            work.charge_state(built_bytes)?;
             Outcome::Replaced(replacement)
         }
     })
@@ -2208,6 +2224,88 @@ fn build_replacement(
         evaluator_bytes,
         bytes,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn replacement_state_bytes_before_build(
+    plan: &Plan,
+    prepared: &PreparedJob<'_>,
+    disposition: Disposition,
+    support: &DecisionSupport,
+    evidence_digest: &Digest,
+    evaluator_bytes: &[u8],
+    work: &Work,
+) -> Result<usize> {
+    let evaluator_digest = Digest::new(Sha256::digest(evaluator_bytes).into());
+    let wire = ReplacementWire {
+        contract: "quire.observation.repair-result/v1",
+        plan_identity: plan.identity().as_str(),
+        prior_identity: prepared.prior.identity().as_str(),
+        prior_digest: format!("sha256:{:x}", Sha256::digest(prepared.prior.bytes())),
+        package_identity: prepared.job.selected.package_identity.as_str(),
+        package_revision: prepared.job.selected.package_revision.as_str(),
+        package_digest: digest_hex(&prepared.job.selected.package_digest),
+        profile_identity: prepared.job.selected.profile_identity.as_str(),
+        profile_revision: prepared.job.selected.profile_revision.as_str(),
+        profile_digest: digest_hex(&prepared.job.selected.profile_digest),
+        input_unit: prepared.job.input_unit.as_str(),
+        disposition,
+        support_kind: support.kind,
+        support_identity: support.identity.as_str(),
+        evidence_digest: digest_hex(evidence_digest),
+        evaluator_digest: digest_hex(&evaluator_digest),
+    };
+    let mut counter = CountingWriter::new(work.limits.max_output_bytes);
+    serde_json::to_writer(&mut counter, &wire).map_err(|_| work.exhausted())?;
+    let evidence_identity_bytes =
+        support
+            .evidence_identities
+            .iter()
+            .try_fold(0usize, |sum, identity| {
+                sum.checked_add(identity.as_str().len())
+                    .ok_or_else(|| work.exhausted())
+            })?;
+    checked_state_sum(
+        [
+            "sha256:".len() + 64,
+            prepared.prior.identity().as_str().len(),
+            support.identity.as_str().len(),
+            evidence_identity_bytes,
+            std::mem::size_of::<Digest>() * 2,
+            counter.len,
+            evaluator_bytes.len(),
+        ],
+        work,
+    )
+}
+
+struct CountingWriter {
+    len: usize,
+    limit: usize,
+}
+
+impl CountingWriter {
+    const fn new(limit: usize) -> Self {
+        Self { len: 0, limit }
+    }
+}
+
+impl io::Write for CountingWriter {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let next = self
+            .len
+            .checked_add(buffer.len())
+            .ok_or_else(|| io::Error::other("canonical output size overflow"))?;
+        if next > self.limit {
+            return Err(io::Error::other("canonical output byte limit exceeded"));
+        }
+        self.len = next;
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 fn finish_run(

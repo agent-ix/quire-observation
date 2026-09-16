@@ -59,6 +59,18 @@ fn qualified() -> Box<QualifiedObservation> {
 }
 
 fn qualified_with_value(value: &str) -> Box<QualifiedObservation> {
+    qualified_with_value_trigger_and_time(value, "trigger:refund-request", 10)
+}
+
+fn qualified_without_refund_trigger() -> Box<QualifiedObservation> {
+    qualified_with_value_trigger_and_time("12.00", "trigger:receipt-ack", 10)
+}
+
+fn qualified_with_value_trigger_and_time(
+    value: &str,
+    trigger_identity: &str,
+    event_time_nanos: i128,
+) -> Box<QualifiedObservation> {
     let producer = producer();
     let subject = order(&producer, "order:O1");
     let mut request = AdmissionRequest {
@@ -73,7 +85,7 @@ fn qualified_with_value(value: &str) -> Box<QualifiedObservation> {
             source_identity: id("source:payments"),
             schema_identity: id("schema:amount/v1"),
             signal_identity: id("signal:amount"),
-            trigger_identity: id("trigger:refund-request"),
+            trigger_identity: id(trigger_identity),
             unit: id("USD"),
             subject_kind: subject.kind().clone(),
             required: true,
@@ -115,7 +127,7 @@ fn qualified_with_value(value: &str) -> Box<QualifiedObservation> {
             schema_identity: id("schema:amount/v1"),
             subject,
             signal_identity: id("signal:amount"),
-            trigger_identity: id("trigger:refund-request"),
+            trigger_identity: id(trigger_identity),
             unit: id("USD"),
             value: ValueState::Present {
                 value_type: id("type:decimal"),
@@ -123,8 +135,8 @@ fn qualified_with_value(value: &str) -> Box<QualifiedObservation> {
             },
             visibility: Visibility::External,
             anchor: Anchor::TimestampNanos(10),
-            event_time_nanos: 10,
-            ingestion_time_nanos: 15,
+            event_time_nanos,
+            ingestion_time_nanos: event_time_nanos + 5,
             causal_relationship_identity: None,
             clock_identity: id("clock:event-time"),
             clock_revision: id("1"),
@@ -194,27 +206,52 @@ fn authority_proofs(
     evidence: EvidenceState,
     include_capture: bool,
 ) -> AuthorityProofs {
+    authority_proofs_for_trigger(
+        qualified,
+        owner,
+        subject,
+        progress,
+        closure,
+        evidence,
+        include_capture,
+        "trigger:refund-request",
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn authority_proofs_for_trigger(
+    qualified: &QualifiedObservation,
+    owner: &AuthoritySelection,
+    subject: &SubjectSelection,
+    progress: ExecutionState,
+    closure: ExecutionState,
+    evidence: EvidenceState,
+    include_capture: bool,
+    trigger_identity: &str,
+) -> AuthorityProofs {
     let context = Context::new(History::batch(qualified), owner, subject, 1, None);
     let record = &qualified.records()[0];
-    let capture_selection = authority::capture::Selection::new(
-        id("trigger:refund-request"),
-        Anchor::TimestampNanos(10),
-        vec![authority::capture::Binding::new(
-            id("capture:amount"),
-            id("binding:amount"),
-            record.identity.clone(),
-        )],
-    );
-    let capture_document =
-        authority::capture::derive(context, &capture_selection, Limits::owner_max())
-            .expect("derive complete capture authority");
-    let capture_view = authority::capture::read(
-        capture_document.bytes(),
-        context,
-        &capture_selection,
-        Limits::owner_max(),
-    )
-    .expect("strict-read complete capture authority");
+    let capture_view = include_capture.then(|| {
+        let capture_selection = authority::capture::Selection::new(
+            id(trigger_identity),
+            Anchor::TimestampNanos(10),
+            vec![authority::capture::Binding::new(
+                id("capture:amount"),
+                id("binding:amount"),
+                record.identity.clone(),
+            )],
+        );
+        let capture_document =
+            authority::capture::derive(context, &capture_selection, Limits::owner_max())
+                .expect("derive complete capture authority");
+        authority::capture::read(
+            capture_document.bytes(),
+            context,
+            &capture_selection,
+            Limits::owner_max(),
+        )
+        .expect("strict-read complete capture authority")
+    });
 
     let progress_view = match progress {
         ExecutionState::Incomplete => None,
@@ -229,7 +266,7 @@ fn authority_proofs(
                 vec![id("source:payments")],
                 boundary(state),
                 state,
-                id("trigger:refund-request"),
+                id(trigger_identity),
                 cutoff(40),
                 id("restoration:O1"),
             );
@@ -303,7 +340,7 @@ fn authority_proofs(
 
     if include_capture {
         AuthorityProofs::new(
-            &capture_view,
+            capture_view.as_ref().expect("capture view requested"),
             progress_view.as_ref(),
             closure_view.as_ref(),
             Some(&completeness_view),
@@ -403,6 +440,7 @@ fn activation_selection(
     if trigger == TriggerCase::Admitted {
         ActivationSelection::new(
             id("obligation:refund"),
+            id("trigger:refund-request"),
             record.identity.clone(),
             interval(8, 12),
             vec![Capture::new(
@@ -414,7 +452,11 @@ fn activation_selection(
             )],
         )
     } else {
-        ActivationSelection::without_trigger(id("obligation:refund"), interval(8, 12))
+        ActivationSelection::without_trigger(
+            id("obligation:refund"),
+            id("trigger:refund-request"),
+            interval(8, 12),
+        )
     }
 }
 
@@ -434,6 +476,7 @@ fn tc008_trigger_and_original_capture_provenance_bind_activation_identity() {
     let first = authority::activation::activation_identity(
         &id("obligation:refund"),
         &id("trigger:first"),
+        &id("observation:first"),
         &interval(8, 12),
         std::slice::from_ref(&captured),
         Limits::owner_max(),
@@ -442,6 +485,7 @@ fn tc008_trigger_and_original_capture_provenance_bind_activation_identity() {
     let second = authority::activation::activation_identity(
         &id("obligation:refund"),
         &id("trigger:second"),
+        &id("observation:second"),
         &interval(8, 12),
         std::slice::from_ref(&captured),
         Limits::owner_max(),
@@ -563,6 +607,7 @@ fn tc008_activation_capture_set_must_be_nonempty_sorted_and_distinct() {
         let error = authority::activation::activation_identity(
             &id("obligation:refund"),
             &id("trigger:first"),
+            &id("observation:first"),
             &interval(8, 12),
             &captures,
             Limits::owner_max(),
@@ -575,11 +620,15 @@ fn tc008_activation_capture_set_must_be_nonempty_sorted_and_distinct() {
 #[trace("TC-008", "FR-008-AC-2", "FR-008-AC-4")]
 #[test]
 fn tc008_derived_activation_crosses_independent_scope_and_contribution_axes() {
-    let qualified = qualified();
     let owner = owner();
-    let subject = subject(&qualified);
-    let context = Context::new(History::batch(&qualified), &owner, &subject, 1, None);
     for trigger in [TriggerCase::Absent, TriggerCase::Admitted] {
+        let qualified = if trigger == TriggerCase::Absent {
+            qualified_without_refund_trigger()
+        } else {
+            qualified()
+        };
+        let subject = subject(&qualified);
+        let context = Context::new(History::batch(&qualified), &owner, &subject, 1, None);
         for progress in [
             ExecutionState::Open,
             ExecutionState::Closed,
@@ -664,6 +713,162 @@ fn tc008_derived_activation_crosses_independent_scope_and_contribution_axes() {
             }
         }
     }
+}
+
+#[trace("TC-008", "FR-008-AC-2", "FR-008-AC-6")]
+#[test]
+fn tc008_trigger_absence_is_proved_for_the_exact_selected_trigger() {
+    let admitted = qualified();
+    let owner = owner();
+    let admitted_subject = subject(&admitted);
+    let contradicted = selection_axes(
+        &admitted,
+        &owner,
+        &admitted_subject,
+        AxesCase {
+            trigger: TriggerCase::Absent,
+            progress: ExecutionState::Closed,
+            closure: ExecutionState::Closed,
+            evidence: EvidenceState::Complete,
+            include_contributions: false,
+        },
+    );
+    let error = authority::activation::derive(
+        Context::new(
+            History::batch(&admitted),
+            &owner,
+            &admitted_subject,
+            1,
+            None,
+        ),
+        &contradicted,
+        Limits::owner_max(),
+    )
+    .expect_err("caller omission cannot override a matching admitted trigger");
+    assert_eq!(error.code(), ErrorCode::MissingPremise);
+
+    let absent = qualified_without_refund_trigger();
+    let absent_subject = subject(&absent);
+    let foreign_progress = authority_proofs_for_trigger(
+        &absent,
+        &owner,
+        &absent_subject,
+        ExecutionState::Closed,
+        ExecutionState::Closed,
+        EvidenceState::Complete,
+        false,
+        "trigger:refund-request",
+    );
+    let cross_wired = Selection::new(
+        ActivationSelection::without_trigger(
+            id("obligation:refund"),
+            id("trigger:chargeback-request"),
+            interval(8, 12),
+        ),
+        progress_selection(ExecutionState::Closed),
+        interval(8, 12),
+        interval(10, 20),
+        foreign_progress,
+    );
+    let error = authority::activation::derive(
+        Context::new(History::batch(&absent), &owner, &absent_subject, 1, None),
+        &cross_wired,
+        Limits::owner_max(),
+    )
+    .expect_err("absent scope cannot borrow progress from another trigger");
+    assert_eq!(error.code(), ErrorCode::AuthorityMismatch);
+}
+
+#[trace("TC-008", "FR-008-AC-2", "FR-008-AC-6")]
+#[test]
+fn tc008_schema_rejects_incoherent_trigger_capture_and_classification_states() {
+    let admitted = qualified();
+    let owner = owner();
+    let admitted_subject = subject(&admitted);
+    let admitted_selection = selection_axes(
+        &admitted,
+        &owner,
+        &admitted_subject,
+        AxesCase {
+            trigger: TriggerCase::Admitted,
+            progress: ExecutionState::Closed,
+            closure: ExecutionState::Closed,
+            evidence: EvidenceState::Complete,
+            include_contributions: false,
+        },
+    );
+    let admitted_document = authority::activation::derive(
+        Context::new(
+            History::batch(&admitted),
+            &owner,
+            &admitted_subject,
+            1,
+            None,
+        ),
+        &admitted_selection,
+        Limits::owner_max(),
+    )
+    .expect("active schema fixture");
+    let schema: serde_json::Value = serde_json::from_slice(authority::activation::SCHEMA_BYTES)
+        .expect("activation schema JSON");
+    let record_schema: serde_json::Value = serde_json::from_slice(include_bytes!(
+        "../schemas/observation-record-v1.schema.json"
+    ))
+    .expect("record schema JSON");
+    let registry = jsonschema::Registry::new()
+        .add("urn:agent-ix:quire-observation:record:1", record_schema)
+        .expect("record schema URI")
+        .prepare()
+        .expect("record schema registry");
+    let validator = jsonschema::options()
+        .with_registry(&registry)
+        .build(&schema)
+        .expect("activation schema compiles");
+    let active: serde_json::Value =
+        serde_json::from_slice(admitted_document.bytes()).expect("active document JSON");
+    assert!(validator.is_valid(&active));
+    let mut absent_trigger_observation = active.clone();
+    absent_trigger_observation["payload"]["trigger_observation_identity"] = serde_json::Value::Null;
+    assert!(!validator.is_valid(&absent_trigger_observation));
+    let mut empty_captures: serde_json::Value =
+        serde_json::from_slice(admitted_document.bytes()).expect("active mutation JSON");
+    empty_captures["payload"]["captures"] = serde_json::json!([]);
+    assert!(!validator.is_valid(&empty_captures));
+    let mut absent_capture_proof: serde_json::Value =
+        serde_json::from_slice(admitted_document.bytes()).expect("active mutation JSON");
+    absent_capture_proof["payload"]["capture_authority"] = serde_json::Value::Null;
+    assert!(!validator.is_valid(&absent_capture_proof));
+    let mut inactive_with_trigger: serde_json::Value =
+        serde_json::from_slice(admitted_document.bytes()).expect("active mutation JSON");
+    inactive_with_trigger["payload"]["activation"] = serde_json::json!("inactive");
+    assert!(!validator.is_valid(&inactive_with_trigger));
+
+    let absent = qualified_without_refund_trigger();
+    let absent_subject = subject(&absent);
+    let absent_selection = selection_axes(
+        &absent,
+        &owner,
+        &absent_subject,
+        AxesCase {
+            trigger: TriggerCase::Absent,
+            progress: ExecutionState::Closed,
+            closure: ExecutionState::Closed,
+            evidence: EvidenceState::Complete,
+            include_contributions: false,
+        },
+    );
+    let absent_document = authority::activation::derive(
+        Context::new(History::batch(&absent), &owner, &absent_subject, 1, None),
+        &absent_selection,
+        Limits::owner_max(),
+    )
+    .expect("inactive schema fixture");
+    let inactive: serde_json::Value =
+        serde_json::from_slice(absent_document.bytes()).expect("inactive document JSON");
+    assert!(validator.is_valid(&inactive));
+    let mut unknown_closed_complete = inactive;
+    unknown_closed_complete["payload"]["activation"] = serde_json::json!("unknown");
+    assert!(!validator.is_valid(&unknown_closed_complete));
 }
 
 #[trace("TC-008", "FR-008-AC-3", "FR-008-AC-4", "TC-012")]
@@ -997,7 +1202,7 @@ fn tc008_versioned_owner_round_trips_all_independent_authority() {
     let error =
         authority::activation::read(first.bytes(), context, &mismatched, Limits::owner_max())
             .expect_err("strict reader rejects a different independent selection");
-    assert_eq!(error.code(), ErrorCode::ExpectedMismatch);
+    assert_eq!(error.code(), ErrorCode::MissingPremise);
 }
 
 #[trace("TC-008", "FR-008-AC-6")]
@@ -1030,6 +1235,7 @@ fn tc008_owner_refuses_foreign_scope_clock_even_when_intervals_agree() {
     let selected = Selection::new(
         ActivationSelection::new(
             id("obligation:refund"),
+            id("trigger:refund-request"),
             record.identity.clone(),
             foreign(8, 12),
             vec![Capture::new(
@@ -1098,6 +1304,7 @@ fn tc008_owner_refuses_cross_wired_source_capture_and_support_authority() {
         base(
             ActivationSelection::new(
                 id("obligation:refund"),
+                id("trigger:refund-request"),
                 id("observation:absent-trigger"),
                 interval(8, 12),
                 vec![Capture::new(
@@ -1113,6 +1320,7 @@ fn tc008_owner_refuses_cross_wired_source_capture_and_support_authority() {
         base(
             ActivationSelection::new(
                 id("obligation:refund"),
+                id("trigger:refund-request"),
                 record.identity.clone(),
                 interval(8, 12),
                 vec![Capture::new(

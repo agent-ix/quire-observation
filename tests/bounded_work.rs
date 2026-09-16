@@ -45,13 +45,13 @@ const SOURCES: &[Source] = &[
         id: SourceId::Activation,
         path: "src/authority/activation.rs",
         text: include_str!("../src/authority/activation.rs"),
-        sha256: "2d9be2340233051555eeb8f7cb63a3ceb0de47687c1290b1adf2f8a4a3345034",
+        sha256: "b8a16c34433ebcfc834bf838326bfd151502cce1dc1835d8321a275b9c0e6429",
     },
     Source {
         id: SourceId::Bundle,
         path: "src/authority/bundle.rs",
         text: include_str!("../src/authority/bundle.rs"),
-        sha256: "25081ee72b4ac4aefc2d26972afb095d1b84f6dcb9c6900a2a331d727f44404a",
+        sha256: "cdfe30fa584583e4f66f5add2cbc7614efedd19ba2e2b02a92fba1de836341ad",
     },
     Source {
         id: SourceId::Repair,
@@ -63,7 +63,7 @@ const SOURCES: &[Source] = &[
         id: SourceId::Coordination,
         path: "src/authority/coordination.rs",
         text: include_str!("../src/authority/coordination.rs"),
-        sha256: "309268d9b80a148d6bceff78f7c2a81a63934d4797d05f54224aff70a4594d54",
+        sha256: "116b1cb9598f079971763837bf1f690c1c1962e3fd0123b86ea2c5e64bd5e856",
     },
     Source {
         id: SourceId::Query,
@@ -81,7 +81,7 @@ const SOURCES: &[Source] = &[
         id: SourceId::AuthorityEvidence,
         path: "tests/authority.rs",
         text: include_str!("authority.rs"),
-        sha256: "ddd7109d13cbbb996cfc2bedd90977ef095329af8473c1b4e98ad5a1161296b5",
+        sha256: "69ce60239edd809fde1973a854ca1f6ff6bbec890eaba38aab5fdbfcd310eeba",
     },
     Source {
         id: SourceId::PartialEvidence,
@@ -93,7 +93,7 @@ const SOURCES: &[Source] = &[
         id: SourceId::ActivationEvidence,
         path: "tests/activation_authority.rs",
         text: include_str!("activation_authority.rs"),
-        sha256: "a2aa964d30448d069cf3333dfcbce022eab2cf6753f9d70a9a8e7d6e9d4bdd4c",
+        sha256: "b34c49cd93dcdcfa05364491340d1711904bb6122bcb0cbfdd47582e405b50e9",
     },
 ];
 
@@ -374,15 +374,26 @@ const ROWS: &[AuditRow] = &[
         production: SourceId::Bundle,
         entrypoint: "fn read_for(\n",
         expansion: "preflight_for_contract(bytes, limits.effective(), contract)?",
-        retained:
-            "let expected = publish_for(contract, profile, context, selection, lineage, limits)?",
+        retained: "read_for_preflighted(",
         bound_source: SourceId::Common,
         limit: "max_input_bytes",
         precheck_or_charge: "if bytes.len() > limits.max_input_bytes",
-        checked_conversion_or_arithmetic:
-            "read_exact_preflighted(contract, bytes, expected.document(), limits, observed)",
+        checked_conversion_or_arithmetic: "observed,",
         evidence_source: SourceId::AuthorityEvidence,
         evidence_test: "tc009_initial_bundle_is_canonical_complete_and_strictly_read",
+    },
+    AuditRow {
+        name: "bundle.revision-byte-first-strict-read",
+        production: SourceId::Bundle,
+        entrypoint: "fn read_revision_for(\n",
+        expansion: "preflight_for_contract(bytes, limits.effective(), contract)?",
+        retained: "LineageView::from_views(view, &[], limits)?",
+        bound_source: SourceId::Common,
+        limit: "max_input_bytes",
+        precheck_or_charge: "if bytes.len() > limits.max_input_bytes",
+        checked_conversion_or_arithmetic: "read_for_preflighted(",
+        evidence_source: SourceId::AuthorityEvidence,
+        evidence_test: "tc009_successor_replay_and_same_key_contradiction_are_exact",
     },
     AuditRow {
         name: "repair.graph-indexes",
@@ -507,6 +518,34 @@ const ROWS: &[AuditRow] = &[
             "tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths",
     },
     AuditRow {
+        name: "coordination.push-terminal-clone-preallocation",
+        production: SourceId::Coordination,
+        entrypoint: "pub fn push(&mut self",
+        expansion: "terminal.clone()",
+        retained: "let outcome = if let Some(terminal)",
+        bound_source: SourceId::Coordination,
+        limit: "max_state_bytes",
+        precheck_or_charge: "ensure_state_capacity(outcome_state_bytes(terminal",
+        checked_conversion_or_arithmetic: "outcome_state_bytes(terminal",
+        evidence_source: SourceId::AuthorityEvidence,
+        evidence_test:
+            "tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths",
+    },
+    AuditRow {
+        name: "coordination.close-terminal-clone-preallocation",
+        production: SourceId::Coordination,
+        entrypoint: "pub fn close(&mut self",
+        expansion: "terminal.clone()",
+        retained: "let outcome = if let Some(terminal)",
+        bound_source: SourceId::Coordination,
+        limit: "max_state_bytes",
+        precheck_or_charge: "ensure_state_capacity(outcome_state_bytes(terminal",
+        checked_conversion_or_arithmetic: "outcome_state_bytes(terminal",
+        evidence_source: SourceId::AuthorityEvidence,
+        evidence_test:
+            "tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths",
+    },
+    AuditRow {
         name: "coordination.pairwise-orders",
         production: SourceId::Coordination,
         entrypoint: "fn derive_orders(",
@@ -528,8 +567,8 @@ const ROWS: &[AuditRow] = &[
         retained: "let replacement = build_replacement",
         bound_source: SourceId::Coordination,
         limit: "max_state_bytes",
-        precheck_or_charge: "ensure_state_capacity",
-        checked_conversion_or_arithmetic: "replacement_state_bytes",
+        precheck_or_charge: "work.ensure_state_capacity(retained_bytes)?",
+        checked_conversion_or_arithmetic: "replacement_state_bytes_before_build",
         evidence_source: SourceId::AuthorityEvidence,
         evidence_test:
             "tc010_each_coordinator_limit_admits_exact_and_refuses_one_over_on_both_paths",
@@ -762,7 +801,7 @@ fn tc013_each_c00_expansion_path_names_its_dominating_bound_and_evidence() {
     }
     assert_eq!(
         ROWS.len(),
-        39,
+        42,
         "every inventoried expansion path must remain explicit"
     );
     for row in ROWS {
@@ -828,4 +867,29 @@ fn tc013_open_form_loops_are_consuming_or_metered_without_factorial_materializat
     assert!(coordination.contains("for left in 0..right"));
     assert!(!coordination.contains("permutations("));
     assert!(!coordination.contains("factorial"));
+
+    for entrypoint in ["pub fn push(&mut self", "pub fn close(&mut self"] {
+        let scope = function_scope(coordination, entrypoint);
+        let preflight = scope
+            .find("ensure_state_capacity(outcome_state_bytes(terminal")
+            .expect("terminal clone has an exact state preflight");
+        let clone = scope
+            .find("terminal.clone()")
+            .expect("terminal outcome clone remains explicit");
+        assert!(
+            preflight < clone,
+            "terminal clone preflight must dominate allocation"
+        );
+    }
+    let convert = function_scope(coordination, "fn convert_outcome(");
+    let retained_preflight = convert
+        .find("replacement_state_bytes_before_build")
+        .expect("replacement retained size is computed before construction");
+    let replacement_build = convert
+        .find("let replacement = build_replacement")
+        .expect("replacement construction remains explicit");
+    assert!(
+        retained_preflight < replacement_build,
+        "replacement state preflight must dominate wire/result allocation"
+    );
 }

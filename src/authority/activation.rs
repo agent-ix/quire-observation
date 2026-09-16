@@ -177,7 +177,7 @@ pub const CONTRACT: &str = "quire.observation.activation-scope-authority/v1";
 pub const SCHEMA_BYTES: &[u8] =
     include_bytes!("../../schemas/observation-activation-scope-authority-v1.schema.json");
 /// Lowercase SHA-256 digest of [`SCHEMA_BYTES`].
-pub const SCHEMA_SHA256: &str = "0a6c26385d9f64166b72e939315bfe4accfdd125f9354e22ddf127023eaf1823";
+pub const SCHEMA_SHA256: &str = "c17ad8b3ec10c48e535bc3a762738b979206c01af20c31775d8a9a9e0a97fab6";
 
 /// Optional evaluator-owned contribution with an exact nonempty support set.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -384,6 +384,7 @@ impl Contribution {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ActivationSelection {
     obligation_identity: Identity,
+    trigger_identity: Identity,
     trigger_observation_identity: Option<Identity>,
     interval: EventTimeInterval,
     captures: Vec<Capture>,
@@ -394,12 +395,14 @@ impl ActivationSelection {
     #[must_use]
     pub fn new(
         obligation_identity: Identity,
+        trigger_identity: Identity,
         trigger_observation_identity: Identity,
         interval: EventTimeInterval,
         captures: Vec<Capture>,
     ) -> Self {
         Self {
             obligation_identity,
+            trigger_identity,
             trigger_observation_identity: Some(trigger_observation_identity),
             interval,
             captures,
@@ -408,9 +411,14 @@ impl ActivationSelection {
 
     /// Selects a trigger scope for which no trigger was admitted.
     #[must_use]
-    pub fn without_trigger(obligation_identity: Identity, interval: EventTimeInterval) -> Self {
+    pub fn without_trigger(
+        obligation_identity: Identity,
+        trigger_identity: Identity,
+        interval: EventTimeInterval,
+    ) -> Self {
         Self {
             obligation_identity,
+            trigger_identity,
             trigger_observation_identity: None,
             interval,
             captures: Vec::new(),
@@ -485,6 +493,7 @@ impl Selection {
 pub struct ActivationView {
     activation_identity: String,
     obligation_identity: String,
+    trigger_identity: String,
     trigger_observation_identity: Option<String>,
     activation_interval: IntervalWire,
     captures: Vec<CaptureWire>,
@@ -555,6 +564,12 @@ impl ActivationView {
     #[must_use]
     pub fn obligation_identity(&self) -> &str {
         &self.obligation_identity
+    }
+
+    /// Returns the exact semantic trigger identity assessed for presence or absence.
+    #[must_use]
+    pub fn trigger_identity(&self) -> &str {
+        &self.trigger_identity
     }
 
     /// Returns the selected trigger observation identity.
@@ -873,6 +888,7 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
     }
     let activation_id = activation_scope_identity(
         &selection.activation.obligation_identity,
+        &selection.activation.trigger_identity,
         selection.activation.trigger_observation_identity.as_ref(),
         &selection.activation.interval,
         &selection.activation.captures,
@@ -890,7 +906,8 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
                     Usage::default(),
                 )
             })?;
-            if trigger.clock_identity != *selection.activation.interval.clock_identity()
+            if trigger.trigger_identity != selection.activation.trigger_identity
+                || trigger.clock_identity != *selection.activation.interval.clock_identity()
                 || trigger.clock_revision != *selection.activation.interval.clock_revision()
             {
                 return Err(Error::new(
@@ -956,7 +973,20 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
             }
             (Some(trigger), Some(proof_wire(&capture_proof.common)))
         }
-        (None, None) if selection.activation.captures.is_empty() => (None, None),
+        (None, None) if selection.activation.captures.is_empty() => {
+            if qualified
+                .records()
+                .iter()
+                .any(|record| record.trigger_identity == selection.activation.trigger_identity)
+            {
+                return Err(Error::new(
+                    ErrorCode::MissingPremise,
+                    "trigger absence is contradicted by qualified history",
+                    Usage::default(),
+                ));
+            }
+            (None, None)
+        }
         _ => {
             return Err(Error::new(
                 ErrorCode::CaptureMismatch,
@@ -973,10 +1003,7 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
                 || proof.clock_identity != selection.progress.progress.clock_identity().as_str()
                 || proof.clock_revision != selection.progress.progress.clock_revision().as_str()
                 || proof.required_sources != required
-                || trigger.is_some_and(|trigger| {
-                    proof.captured_trigger_identity != trigger.trigger_identity.as_str()
-                })
-                || (trigger.is_none() && proof.captured_trigger_identity.is_empty())
+                || proof.captured_trigger_identity != selection.activation.trigger_identity.as_str()
                 || selection.progress.progress.earliest() != proof.frontier
                 || selection.progress.progress.latest() != proof.frontier
             {
@@ -1086,6 +1113,7 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
     let payload = ActivationView {
         activation_identity: activation_id.as_str().to_owned(),
         obligation_identity: selection.activation.obligation_identity.as_str().to_owned(),
+        trigger_identity: selection.activation.trigger_identity.as_str().to_owned(),
         trigger_observation_identity: selection
             .activation
             .trigger_observation_identity
@@ -1285,7 +1313,8 @@ fn contribution_wire(
 struct ActivationPreimage<'a> {
     identity_version: &'static str,
     obligation_identity: &'a str,
-    trigger_identity: Option<&'a str>,
+    trigger_identity: &'a str,
+    trigger_observation_identity: Option<&'a str>,
     interval: IntervalPreimage<'a>,
     captures: Vec<CapturePreimage<'a>>,
 }
@@ -1310,17 +1339,20 @@ struct CapturePreimage<'a> {
     provenance_identity: &'a str,
 }
 
-/// Derives the exact activation identity from trigger, interval, and complete capture set.
+/// Derives the exact activation identity from semantic trigger, admitted observation,
+/// interval, and complete capture set.
 pub fn activation_identity(
     obligation_identity: &Identity,
     trigger_identity: &Identity,
+    trigger_observation_identity: &Identity,
     interval: &EventTimeInterval,
     captures: &[Capture],
     limits: Limits,
 ) -> Result<Identity> {
     activation_scope_identity(
         obligation_identity,
-        Some(trigger_identity),
+        trigger_identity,
+        Some(trigger_observation_identity),
         interval,
         captures,
         limits,
@@ -1329,7 +1361,8 @@ pub fn activation_identity(
 
 fn activation_scope_identity(
     obligation_identity: &Identity,
-    trigger_identity: Option<&Identity>,
+    trigger_identity: &Identity,
+    trigger_observation_identity: Option<&Identity>,
     interval: &EventTimeInterval,
     captures: &[Capture],
     limits: Limits,
@@ -1337,12 +1370,13 @@ fn activation_scope_identity(
     interval.validate_limits(limits)?;
     let effective = limits.effective();
     if !obligation_identity.valid()
-        || trigger_identity.is_some_and(|identity| !identity.valid())
-        || trigger_identity.is_some() != !captures.is_empty()
+        || !trigger_identity.valid()
+        || trigger_observation_identity.is_some_and(|identity| !identity.valid())
+        || trigger_observation_identity.is_some() != !captures.is_empty()
     {
         return Err(Error::new(
             ErrorCode::InvalidSelection,
-            "activation requires either a trigger with captures or an absent-trigger scope",
+            "activation requires a semantic trigger and either an observation with captures or an absent-trigger scope",
             Usage::default(),
         ));
     }
@@ -1357,8 +1391,9 @@ fn activation_scope_identity(
         ));
     }
     validate_string(obligation_identity.as_str(), effective)?;
-    if let Some(trigger_identity) = trigger_identity {
-        validate_string(trigger_identity.as_str(), effective)?;
+    validate_string(trigger_identity.as_str(), effective)?;
+    if let Some(trigger_observation_identity) = trigger_observation_identity {
+        validate_string(trigger_observation_identity.as_str(), effective)?;
     }
     for capture in captures {
         if !capture.identity.valid()
@@ -1403,9 +1438,10 @@ fn activation_scope_identity(
     })?;
     sorted.extend(captures);
     let preimage = ActivationPreimage {
-        identity_version: "quire.observation.activation/v1",
+        identity_version: "quire.observation.activation/v2",
         obligation_identity: obligation_identity.as_str(),
-        trigger_identity: trigger_identity.map(Identity::as_str),
+        trigger_identity: trigger_identity.as_str(),
+        trigger_observation_identity: trigger_observation_identity.map(Identity::as_str),
         interval: IntervalPreimage {
             clock_identity: interval.clock_identity().as_str(),
             clock_revision: interval.clock_revision().as_str(),

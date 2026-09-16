@@ -22,7 +22,7 @@ pub const CONTRACT: &str = "quire.observation-authority/v1";
 pub const SCHEMA_BYTES: &[u8] =
     include_bytes!("../../schemas/observation-authority-v1.schema.json");
 /// Lowercase SHA-256 digest of [`SCHEMA_BYTES`].
-pub const SCHEMA_SHA256: &str = "6b6f4e3b08a4b16476b55ae6cdfdff4440b8c053f056ffd7b9bdcde47e200296";
+pub const SCHEMA_SHA256: &str = "9614d8077bd1e667507b2107eab08e0f7934337115ce3e10c8c55b5d5538cdab";
 /// Immutable structurally empty bundle-contract label.
 pub const V2_CONTRACT: &str = "quire.observation-authority/v2";
 /// Pinned JSON Schema bytes for [`V2_CONTRACT`].
@@ -1100,6 +1100,22 @@ fn read_for(
     limits: Limits,
 ) -> Result<View> {
     let observed = preflight_for_contract(bytes, limits.effective(), contract)?;
+    read_for_preflighted(
+        contract, profile, bytes, context, selection, lineage, limits, observed,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn read_for_preflighted(
+    contract: &'static str,
+    profile: Profile,
+    bytes: &[u8],
+    context: Context<'_>,
+    selection: &Selection,
+    lineage: Option<&LineageView>,
+    limits: Limits,
+    observed: Usage,
+) -> Result<View> {
     let expected = publish_for(contract, profile, context, selection, lineage, limits)?;
     read_exact_preflighted(contract, bytes, expected.document(), limits, observed)
 }
@@ -1157,6 +1173,7 @@ fn read_revision_for(
     predecessor: Option<&View>,
     limits: Limits,
 ) -> Result<View> {
+    let observed = preflight_for_contract(bytes, limits.effective(), contract)?;
     let lineage = match (context.predecessor(), predecessor) {
         (None, None) => None,
         (Some(document), Some(view)) if document.identity() == view.identity() => {
@@ -1170,7 +1187,7 @@ fn read_revision_for(
             ));
         }
     };
-    read_for(
+    read_for_preflighted(
         contract,
         profile,
         bytes,
@@ -1178,6 +1195,7 @@ fn read_revision_for(
         selection,
         lineage.as_ref(),
         limits,
+        observed,
     )
 }
 

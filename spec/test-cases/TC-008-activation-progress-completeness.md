@@ -16,7 +16,7 @@ and settlement as independently selected authority facts.
 ## Test Procedure
 
 1. Generate active inputs with an admitted trigger plus strict complete capture
-   authority, inactive inputs with no trigger plus closed/complete authority,
+   authority, inactive inputs with no matching trigger in qualified history plus closed/complete authority,
    and activation-unknown inputs with no trigger plus every open, incomplete,
    or contradicted scope-authority combination. Retain equal captured values
    under distinct admitted trigger identities and later value mutations.
@@ -29,6 +29,9 @@ and settlement as independently selected authority facts.
    late, and uncertain-lateness cases while permuting arrival order.
 5. Independently omit or cross-wire each population, window, clock, source,
    capture, support, and authority-revision selection.
+6. Claim trigger absence against history that contains that exact trigger, bind
+   absent selection to a foreign trigger progress proof, and mutate emitted
+   schema instances across trigger/capture/proof/classification invariants.
 
 ## Expected Results
 

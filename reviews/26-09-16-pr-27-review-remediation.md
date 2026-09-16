@@ -22,6 +22,10 @@ under-accounted work/state paths. The owner-stage delta now derives activation s
 authority inputs, resolves every selected multi-role fact by its exact component identity, decodes
 fixed JSON keys allocation-free before collection preflight, and accounts for dependency scans,
 support lookup, activation record lookup, and incremental prefix allocation before retention.
+A subsequent exact-head review found that caller omission still stood in for trigger absence,
+historical bundle reads could construct lineage before byte preflight, and two coordination
+allocations were not dominated by their full retained-state checks. Those second-order findings
+are now included in this remediation rather than treated as review-only follow-up.
 
 ## Verdict
 
@@ -34,7 +38,7 @@ staged owner merge completes issue #23 or the C00 plan.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | high | Removed caller-selected activation state. An admitted trigger plus matching strict capture authority derives `active`; a trigger-absent closed/complete scope derives `inactive`; every other trigger-absent scope derives `unknown`. | FR-008, TC-008 Cartesian oracle, `activation::derive` |
+| FND-001 | high | Removed caller-selected activation state and caller-asserted absence. Every selection carries an exact semantic trigger identity; absence rejects any matching admitted history and progress must bind the same trigger. An admitted trigger plus matching strict capture authority derives `active`; a proven trigger-absent closed/complete scope derives `inactive`; every other proven-absent scope derives `unknown`. | FR-008, TC-008 Cartesian and negative-control oracles, `activation::derive` |
 | FND-002 | medium | Reconciled FR-008 success/error semantics: semantic unknown and missing-source coverage are valid explicit incomplete facts, not refusal paths. | FR-008 Error Conditions, TC-008 |
 | FND-003 | medium | Reconciled NFR-003 matrix status to complete. | TM-001, TC-010, TC-012, TC-013 |
 | FND-004 | high | Exact role-plus-component resolution now carries the selected embedded payload into query evaluation; either of two activation facts is independently queryable and a foreign selected component refuses. | `query::selected_fact`, `tc011_exact_multi_activation_selection_never_uses_an_unselected_payload` |
@@ -43,10 +47,13 @@ staged owner merge completes issue #23 or the C00 plan.
 | FND-007 | high | Coordinator dependency preparation charges every edge scan; support validation prechecks its evidence index and uses a charged binary lookup over sorted inputs. | TC-010 exact/one-over work/state evidence |
 | FND-008 | high | Activation indexes the bounded qualified history once and uses indexed trigger, capture-source, verdict, and settlement support lookup. | TC-008 exact/one-over `max_population_entries` evidence |
 | FND-009 | medium | Incremental prefix capacity is computed from a borrowed evaluator outcome and checked before cloning or terminal-state promotion. | TC-010 rollback and exact/one-over state evidence |
+| FND-010 | medium | Historical revision readers now byte-preflight before predecessor lineage construction and reuse the observed usage in the strict reader. | TC-009 historical one-over negative control, `bundle::read_revision_for` |
+| FND-011 | high | Terminal outcome clones are dominated by full outcome-state capacity checks; decisive replacement retained size is counted before canonical wire/result allocation. | TC-010 rollback evidence, TC-013 ordering assertions |
+| FND-012 | medium | Multi-activation selection evidence now pairs one active and one independently inactive payload, so payload substitution changes the observable query outcome. | TC-011 exact multi-role oracle |
 
 ## Revision-bound resource evidence
 
-TC-013 now inventories 39 scoped expansion/allocation paths instead of 28. The added rows bind
+TC-013 now inventories 42 scoped expansion/allocation paths instead of 28. The added rows bind
 escaped-key classification, preflighted strict deserialization, all three byte-first readers, activation record indexing, charged
 dependency preparation, support-index allocation, binary support lookup, prefix preallocation,
 and exact multi-role query selection. Current reviewed SHA-256 values are:
@@ -55,16 +62,17 @@ and exact multi-role query selection. Current reviewed SHA-256 values are:
 | --- | --- |
 | `src/authority/common.rs` | `379bcf5cd4bf014cb0b4633bc76b188e4aed308f2532db3fd5028d99a2d870bd` |
 | `src/authority/partial.rs` | `33de9f39f3e422bf2d364ceba7e302101b230d4fe6a3ce8d4f6ce4cf8a0e8237` |
-| `src/authority/activation.rs` | `2d9be2340233051555eeb8f7cb63a3ceb0de47687c1290b1adf2f8a4a3345034` |
-| `src/authority/bundle.rs` | `25081ee72b4ac4aefc2d26972afb095d1b84f6dcb9c6900a2a331d727f44404a` |
-| `src/authority/coordination.rs` | `309268d9b80a148d6bceff78f7c2a81a63934d4797d05f54224aff70a4594d54` |
+| `src/authority/activation.rs` | `b8a16c34433ebcfc834bf838326bfd151502cce1dc1835d8321a275b9c0e6429` |
+| `src/authority/progress.rs` | `da5ac2bbc3c541cd6d43b346b5786be48b6057a002ebce743d2be38bd2a47265` |
+| `src/authority/bundle.rs` | `cdfe30fa584583e4f66f5add2cbc7614efedd19ba2e2b02a92fba1de836341ad` |
+| `src/authority/coordination.rs` | `116b1cb9598f079971763837bf1f690c1c1962e3fd0123b86ea2c5e64bd5e856` |
 | `src/authority/query.rs` | `26eaaf49db4113d5c011bf474a496e189351e9274de01be911ac8f1d82ec612f` |
 | `tests/partial_interval.rs` | `711adfb64cfb0827dd9d5a62ad65081fc1321eb5d6089d660b8bd6e33e1a1d59` |
-| `tests/activation_authority.rs` | `a2aa964d30448d069cf3333dfcbce022eab2cf6753f9d70a9a8e7d6e9d4bdd4c` |
-| `tests/authority.rs` | `ddd7109d13cbbb996cfc2bedd90977ef095329af8473c1b4e98ad5a1161296b5` |
+| `tests/activation_authority.rs` | `b34c49cd93dcdcfa05364491340d1711904bb6122bcb0cbfdd47582e405b50e9` |
+| `tests/authority.rs` | `69ce60239edd809fde1973a854ca1f6ff6bbec890eaba38aab5fdbfcd310eeba` |
 
 The activation/scope-authority schema digest is
-`0a6c26385d9f64166b72e939315bfe4accfdd125f9354e22ddf127023eaf1823`.
+`c17ad8b3ec10c48e535bc3a762738b979206c01af20c31775d8a9a9e0a97fab6`.
 
 ## Remaining gates
 
@@ -77,7 +85,7 @@ The activation/scope-authority schema digest is
 
 - `cargo fmt --all -- --check`: PASS.
 - `cargo clippy --locked --all-targets --all-features -- -D warnings`: PASS.
-- `cargo test --locked --all-targets --all-features -- --test-threads=1`: PASS, 115 tests.
+- `cargo test --locked --all-targets --all-features -- --test-threads=1`: PASS, 117 tests.
 - `RUSTDOCFLAGS='-D warnings' cargo doc --locked --all-features --no-deps`: PASS.
 - `cargo deny check --disable-fetch`: PASS (`advisories`, `bans`, `licenses`, `sources`) using a
   writable temporary copy of the existing advisory database because the shared cache is read-only.
