@@ -22,6 +22,10 @@ pub const OWNER_MAX: Limits = Limits {
     max_positions: 10_000,
     max_capture_bindings: 10_000,
     max_required_sources: 10_000,
+    max_bundle_components: 10_000,
+    max_replacements: 10_000,
+    max_conflicts: 10_000,
+    max_lineage_children: 10_000,
     max_visited_fields: 1_000_000,
 };
 
@@ -44,6 +48,14 @@ pub struct Limits {
     pub max_capture_bindings: usize,
     /// Maximum required observation sources.
     pub max_required_sources: usize,
+    /// Maximum components retained in one authority bundle.
+    pub max_bundle_components: usize,
+    /// Maximum explicit replacement edges in one bundle revision.
+    pub max_replacements: usize,
+    /// Maximum explicit conflict facts in one bundle revision.
+    pub max_conflicts: usize,
+    /// Maximum direct children retained in one supplied lineage view.
+    pub max_lineage_children: usize,
     /// Maximum object members and array elements visited while scanning.
     pub max_visited_fields: usize,
 }
@@ -70,6 +82,10 @@ impl Limits {
             max_positions: min(self.max_positions, OWNER_MAX.max_positions),
             max_capture_bindings: min(self.max_capture_bindings, OWNER_MAX.max_capture_bindings),
             max_required_sources: min(self.max_required_sources, OWNER_MAX.max_required_sources),
+            max_bundle_components: min(self.max_bundle_components, OWNER_MAX.max_bundle_components),
+            max_replacements: min(self.max_replacements, OWNER_MAX.max_replacements),
+            max_conflicts: min(self.max_conflicts, OWNER_MAX.max_conflicts),
+            max_lineage_children: min(self.max_lineage_children, OWNER_MAX.max_lineage_children),
             max_visited_fields: min(self.max_visited_fields, OWNER_MAX.max_visited_fields),
         }
     }
@@ -107,6 +123,14 @@ pub struct Usage {
     pub capture_bindings: usize,
     /// Required-source entries visited.
     pub required_sources: usize,
+    /// Bundle components visited or retained.
+    pub bundle_components: usize,
+    /// Replacement edges visited or retained.
+    pub replacements: usize,
+    /// Explicit conflict facts visited or retained.
+    pub conflicts: usize,
+    /// Direct lineage children visited or retained.
+    pub lineage_children: usize,
     /// Object members and array elements visited.
     pub visited_fields: usize,
 }
@@ -150,10 +174,18 @@ pub enum ErrorCode {
     InvalidInterval,
     /// Two intervals name different clock, revision, or unit domains.
     IntervalDomainMismatch,
+    /// A supplied bundle predecessor is not the selected current head.
+    StaleHead,
+    /// A supplied lineage already contains a competing successor.
+    KnownSibling,
+    /// A declared bundle replacement is incomplete or cross-wired.
+    InvalidReplacement,
+    /// One authority/scope/revision key names unequal canonical bytes.
+    IdentityContradiction,
 }
 
 impl ErrorCode {
-    const ALL: [Self; 18] = [
+    const ALL: [Self; 22] = [
         Self::InvalidSelection,
         Self::IdentityMismatch,
         Self::RevisionMismatch,
@@ -172,6 +204,10 @@ impl ErrorCode {
         Self::InvalidPossibilitySet,
         Self::InvalidInterval,
         Self::IntervalDomainMismatch,
+        Self::StaleHead,
+        Self::KnownSibling,
+        Self::InvalidReplacement,
+        Self::IdentityContradiction,
     ];
 
     /// Returns every stable code exactly once.
@@ -211,6 +247,10 @@ impl ErrorCode {
             Self::InvalidPossibilitySet => "QOBS-AUTH-INVALID-POSSIBILITY-SET",
             Self::InvalidInterval => "QOBS-AUTH-INVALID-INTERVAL",
             Self::IntervalDomainMismatch => "QOBS-AUTH-INTERVAL-DOMAIN-MISMATCH",
+            Self::StaleHead => "QOBS-AUTH-STALE-HEAD",
+            Self::KnownSibling => "QOBS-AUTH-KNOWN-SIBLING",
+            Self::InvalidReplacement => "QOBS-AUTH-INVALID-REPLACEMENT",
+            Self::IdentityContradiction => "QOBS-AUTH-IDENTITY-CONTRADICTION",
         }
     }
 }
@@ -670,6 +710,10 @@ impl<'a> Context<'a> {
     pub const fn revision(self) -> u64 {
         self.revision
     }
+
+    pub(crate) const fn predecessor(self) -> Option<&'a Document> {
+        self.predecessor
+    }
 }
 
 /// Canonical immutable owner bytes.
@@ -881,6 +925,10 @@ where
         positions: declared_usage.positions,
         capture_bindings: declared_usage.capture_bindings,
         required_sources: declared_usage.required_sources,
+        bundle_components: declared_usage.bundle_components,
+        replacements: declared_usage.replacements,
+        conflicts: declared_usage.conflicts,
+        lineage_children: declared_usage.lineage_children,
         ..Usage::default()
     };
     let mut usage = semantic_floor;
@@ -921,7 +969,7 @@ where
             max_input_bytes: effective.max_output_bytes,
             ..effective
         };
-        let observed = preflight(&bytes, scan_limits)?;
+        let observed = preflight_for_contract(&bytes, scan_limits, contract)?;
         let next_usage = Usage {
             wire_bytes: observed.wire_bytes,
             depth: observed.depth,
@@ -936,6 +984,10 @@ where
             required_sources: observed
                 .required_sources
                 .max(semantic_floor.required_sources),
+            bundle_components: semantic_floor.bundle_components,
+            replacements: semantic_floor.replacements,
+            conflicts: semantic_floor.conflicts,
+            lineage_children: semantic_floor.lineage_children,
             visited_fields: observed.visited_fields,
         };
         if next_usage == usage {
@@ -970,7 +1022,7 @@ where
     P: Clone + Eq + Serialize + DeserializeOwned,
 {
     let effective = limits.effective();
-    let observed = preflight(bytes, effective)?;
+    let observed = preflight_for_contract(bytes, effective, contract)?;
     let contract_probe: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| {
         Error::new(
             ErrorCode::InvalidJson,
@@ -1097,6 +1149,10 @@ fn validate_usage(usage: Usage, limits: Limits) -> Result<()> {
         || usage.positions > limits.max_positions
         || usage.capture_bindings > limits.max_capture_bindings
         || usage.required_sources > limits.max_required_sources
+        || usage.bundle_components > limits.max_bundle_components
+        || usage.replacements > limits.max_replacements
+        || usage.conflicts > limits.max_conflicts
+        || usage.lineage_children > limits.max_lineage_children
         || usage.visited_fields > limits.max_visited_fields;
     if exceeded {
         return Err(Error::new(
@@ -1315,6 +1371,23 @@ struct ScanState {
 }
 
 pub(crate) fn preflight(bytes: &[u8], limits: Limits) -> Result<Usage> {
+    preflight_with_profile(bytes, limits, ScanProfile::Generic)
+}
+
+pub(crate) fn preflight_for_contract(
+    bytes: &[u8],
+    limits: Limits,
+    contract: &str,
+) -> Result<Usage> {
+    let profile = match contract {
+        "quire.observation-authority/v1" => ScanProfile::Bundle,
+        "quire.observation-authority-lineage/v1" => ScanProfile::Lineage,
+        _ => ScanProfile::Generic,
+    };
+    preflight_with_profile(bytes, limits, profile)
+}
+
+fn preflight_with_profile(bytes: &[u8], limits: Limits, profile: ScanProfile) -> Result<Usage> {
     if bytes.len() > limits.max_input_bytes {
         return Err(Error::new(
             ErrorCode::ResourceIncomplete,
@@ -1336,6 +1409,7 @@ pub(crate) fn preflight(bytes: &[u8], limits: Limits) -> Result<Usage> {
         bytes,
         position: 0,
         limits,
+        profile,
         state: ScanState::default(),
     };
     scanner.value(1, ArrayKind::Other)?;
@@ -1357,13 +1431,25 @@ enum ArrayKind {
     Positions,
     Captures,
     Sources,
+    BundleComponents,
+    Replacements,
+    Conflicts,
+    LineageChildren,
     Other,
+}
+
+#[derive(Clone, Copy)]
+enum ScanProfile {
+    Generic,
+    Bundle,
+    Lineage,
 }
 
 struct Scanner<'a> {
     bytes: &'a [u8],
     position: usize,
     limits: Limits,
+    profile: ScanProfile,
     state: ScanState,
 }
 
@@ -1391,8 +1477,9 @@ impl Scanner<'_> {
         }
         loop {
             let kind = {
+                let profile = self.profile;
                 let key = self.string()?;
-                array_kind(key)
+                array_kind(key, depth, profile)
             };
             self.charge_visit()?;
             self.whitespace();
@@ -1571,6 +1658,26 @@ impl Scanner<'_> {
                 self.limits.max_required_sources,
                 "required sources exceed effective limit",
             ),
+            ArrayKind::BundleComponents => (
+                &mut self.state.usage.bundle_components,
+                self.limits.max_bundle_components,
+                "bundle components exceed effective limit",
+            ),
+            ArrayKind::Replacements => (
+                &mut self.state.usage.replacements,
+                self.limits.max_replacements,
+                "bundle replacements exceed effective limit",
+            ),
+            ArrayKind::Conflicts => (
+                &mut self.state.usage.conflicts,
+                self.limits.max_conflicts,
+                "bundle conflicts exceed effective limit",
+            ),
+            ArrayKind::LineageChildren => (
+                &mut self.state.usage.lineage_children,
+                self.limits.max_lineage_children,
+                "lineage children exceed effective limit",
+            ),
             ArrayKind::Other => return Ok(()),
         };
         *slot = (*slot).max(count);
@@ -1608,13 +1715,30 @@ impl Scanner<'_> {
     }
 }
 
-fn array_kind(key: &[u8]) -> ArrayKind {
+fn array_kind(key: &[u8], object_depth: usize, profile: ScanProfile) -> ArrayKind {
     match key {
         b"members" | b"required_members" | b"required_results" | b"available_results"
         | b"facts" => ArrayKind::Population,
+        b"positions" if matches!(profile, ScanProfile::Bundle) && object_depth == 2 => {
+            ArrayKind::BundleComponents
+        }
         b"positions" => ArrayKind::Positions,
         b"bindings" => ArrayKind::Captures,
         b"required_sources" | b"observation_sources" | b"sources" => ArrayKind::Sources,
+        b"components" | b"records" | b"populations" | b"progress"
+            if matches!(profile, ScanProfile::Bundle) && object_depth == 2 =>
+        {
+            ArrayKind::BundleComponents
+        }
+        b"replacements" if matches!(profile, ScanProfile::Bundle) && object_depth == 2 => {
+            ArrayKind::Replacements
+        }
+        b"conflicts" if matches!(profile, ScanProfile::Bundle) && object_depth == 2 => {
+            ArrayKind::Conflicts
+        }
+        b"direct_children" if matches!(profile, ScanProfile::Lineage) && object_depth == 1 => {
+            ArrayKind::LineageChildren
+        }
         _ => ArrayKind::Other,
     }
 }

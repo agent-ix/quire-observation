@@ -6,6 +6,7 @@
 mod support;
 
 use ix_trace_rs::trace;
+use proptest::prelude::*;
 use quire_observation::authority::{
     self, AuthoritySelection, Context, History, IncrementalHistory, Limits, OpenClosed,
     SubjectSelection, TemporalBoundary,
@@ -28,6 +29,10 @@ fn digest(value: u8) -> Digest {
 }
 
 fn qualified() -> Box<QualifiedObservation> {
+    qualified_with_window("window:O1")
+}
+
+fn qualified_with_window(window_identity: &str) -> Box<QualifiedObservation> {
     let producer = producer();
     let subject = order(&producer, "order:O1");
     let causal_identity = RelationshipIdentity::new("relationship:O1-S1").unwrap();
@@ -74,7 +79,7 @@ fn qualified() -> Box<QualifiedObservation> {
             closure_identity: Some(id("closure-definition:windows")),
             closure_digest: Some(digest(4)),
             kind: ScopeKind::Window {
-                window_identity: id("window:O1"),
+                window_identity: id(window_identity),
             },
             range: ClockRange::Timestamp {
                 start_nanos: 0,
@@ -138,10 +143,18 @@ fn owner() -> AuthoritySelection {
 }
 
 fn subject(qualified: &QualifiedObservation) -> SubjectSelection {
+    let scope_identity = match &qualified.scope().kind {
+        ScopeKind::Snapshot { snapshot_identity } => snapshot_identity.clone(),
+        ScopeKind::Window { window_identity } => window_identity.clone(),
+    };
     SubjectSelection {
-        scope_identity: id("window:O1"),
+        scope_identity,
         population_identity: qualified.scope().population_identity.clone(),
     }
+}
+
+fn selected_subject(qualified: &QualifiedObservation) -> SubjectSelection {
+    subject(qualified)
 }
 
 fn boundary(state: OpenClosed) -> TemporalBoundary {
@@ -425,6 +438,125 @@ fn derive_all(
     }
 }
 
+fn derive_revised_all(
+    history: History<'_>,
+    owner: &AuthoritySelection,
+    subject: &SubjectSelection,
+    prior: &Documents,
+) -> Documents {
+    let limits = Limits::owner_max();
+    let record = &history.qualified().records()[0];
+
+    let capture_context = Context::new(history, owner, subject, 2, Some(&prior.capture));
+    let capture_selection = capture_selection(record);
+    let capture = authority::capture::derive(capture_context, &capture_selection, limits)
+        .expect("derive revised capture");
+    let capture_view =
+        authority::capture::read(capture.bytes(), capture_context, &capture_selection, limits)
+            .expect("read revised capture");
+
+    let progress_context = Context::new(history, owner, subject, 2, Some(&prior.progress));
+    let progress_selection = progress_authority_selection();
+    let progress = authority::progress::derive(progress_context, &progress_selection, limits)
+        .expect("derive revised progress");
+    let progress_view = authority::progress::read(
+        progress.bytes(),
+        progress_context,
+        &progress_selection,
+        limits,
+    )
+    .expect("read revised progress");
+
+    let closure_context = Context::new(history, owner, subject, 2, Some(&prior.closure));
+    let closure_selection = closure_selection();
+    let closure = authority::closure::derive(closure_context, &closure_selection, limits)
+        .expect("derive revised closure");
+    let closure_view =
+        authority::closure::read(closure.bytes(), closure_context, &closure_selection, limits)
+            .expect("read revised closure");
+
+    let completeness_context = Context::new(history, owner, subject, 2, Some(&prior.completeness));
+    let completeness_selection = completeness_selection(record);
+    let completeness =
+        authority::completeness::derive(completeness_context, &completeness_selection, limits)
+            .expect("derive revised completeness");
+    let completeness_view = authority::completeness::read(
+        completeness.bytes(),
+        completeness_context,
+        &completeness_selection,
+        limits,
+    )
+    .expect("read revised completeness");
+    let proofs = authority::activation::AuthorityProofs::new(
+        &capture_view,
+        Some(&progress_view),
+        Some(&closure_view),
+        Some(&completeness_view),
+    )
+    .expect("compose revised strict-read activation proofs");
+
+    Documents {
+        activation: authority::activation::derive(
+            Context::new(history, owner, subject, 2, Some(&prior.activation)),
+            &activation_selection(record, proofs),
+            limits,
+        )
+        .expect("derive revised activation"),
+        observation: authority::observation::derive(
+            Context::new(history, owner, subject, 2, Some(&prior.observation)),
+            &authority::observation::Selection::new(record.identity.clone(), cutoff(40)),
+            limits,
+        )
+        .expect("derive revised observation"),
+        population: authority::population::derive(
+            Context::new(history, owner, subject, 2, Some(&prior.population)),
+            limits,
+        )
+        .expect("derive revised population"),
+        position: authority::position::derive(
+            Context::new(history, owner, subject, 2, Some(&prior.position)),
+            &authority::position::Selection::new(
+                id("ledger:O1"),
+                id("clock:event-time"),
+                id("1"),
+                vec![authority::position::Position::new(
+                    0,
+                    record.identity.clone(),
+                )],
+            ),
+            limits,
+        )
+        .expect("derive revised position"),
+        clock: authority::clock::derive(
+            Context::new(history, owner, subject, 2, Some(&prior.clock)),
+            &authority::clock::Selection::new(id("clock:event-time"), id("1")),
+            limits,
+        )
+        .expect("derive revised clock"),
+        partial: authority::partial::derive(
+            Context::new(history, owner, subject, 2, Some(&prior.partial)),
+            &partial_selection(record),
+            limits,
+        )
+        .expect("derive revised partial"),
+        capture,
+        progress,
+        closure,
+        completeness,
+        availability: authority::availability::derive(
+            Context::new(history, owner, subject, 2, Some(&prior.availability)),
+            &authority::availability::Selection::new(
+                vec![id("result:O1")],
+                vec![],
+                authority::availability::DependencyState::Available,
+                authority::availability::DependencyState::Available,
+            ),
+            limits,
+        )
+        .expect("derive revised availability"),
+    }
+}
+
 fn reader_accepts(
     kind: ArtifactKind,
     bytes: &[u8],
@@ -674,7 +806,7 @@ fn tc004_all_eleven_owner_contracts_derive_canonical_documents() {
 #[test]
 fn tc004_error_code_catalog_is_closed_and_round_trips_exactly() {
     let codes = authority::ErrorCode::all();
-    assert_eq!(codes.len(), 18);
+    assert_eq!(codes.len(), 22);
     let mut labels = codes
         .iter()
         .map(|code| {
@@ -706,6 +838,10 @@ fn tc004_owner_resource_maxima_are_pinned() {
             max_positions: 10_000,
             max_capture_bindings: 10_000,
             max_required_sources: 10_000,
+            max_bundle_components: 10_000,
+            max_replacements: 10_000,
+            max_conflicts: 10_000,
+            max_lineage_children: 10_000,
             max_visited_fields: 1_000_000,
         }
     );
@@ -1988,4 +2124,1122 @@ fn tc005_qualified_owner_contracts_version_without_mutating_v1() {
         authority::population::CONTRACT,
         "quire.observation.population/v2"
     );
+}
+
+fn bundle_components(documents: &Documents) -> Vec<authority::bundle::Component> {
+    use authority::bundle::{Component, ComponentRole};
+
+    [
+        (ComponentRole::Observation, &documents.observation),
+        (ComponentRole::Population, &documents.population),
+        (ComponentRole::Position, &documents.position),
+        (ComponentRole::Clock, &documents.clock),
+        (ComponentRole::Partial, &documents.partial),
+        (ComponentRole::Capture, &documents.capture),
+        (ComponentRole::Progress, &documents.progress),
+        (ComponentRole::Activation, &documents.activation),
+        (ComponentRole::Closure, &documents.closure),
+        (ComponentRole::Completeness, &documents.completeness),
+        (ComponentRole::Availability, &documents.availability),
+    ]
+    .into_iter()
+    .map(|(role, document)| {
+        Component::from_document(role, document).expect("owner document matches component role")
+    })
+    .collect()
+}
+
+#[trace("TC-009", "FR-009-AC-1", "FR-009-AC-5")]
+#[test]
+fn tc009_initial_bundle_is_canonical_complete_and_strictly_read() {
+    let qualified = qualified();
+    let owner = owner();
+    let subject = subject(&qualified);
+    let context = Context::new(History::batch(&qualified), &owner, &subject, 1, None);
+    let documents = derive_all(History::batch(&qualified), &owner, &subject);
+    let components = bundle_components(&documents);
+    let selection = authority::bundle::Selection::new(components.clone(), vec![]);
+    let first = authority::bundle::publish(context, &selection, None, Limits::owner_max())
+        .expect("publish initial complete I07 bundle");
+    let second = authority::bundle::publish(context, &selection, None, Limits::owner_max())
+        .expect("repeat initial publication");
+    assert_eq!(first.document().bytes(), second.document().bytes());
+    assert_eq!(first.document().identity(), second.document().identity());
+    assert_eq!(
+        first.disposition(),
+        authority::bundle::Disposition::Published
+    );
+    assert_eq!(first.view().payload().components().len(), 11);
+    assert_eq!(first.view().payload().records().len(), 5);
+    assert_eq!(first.view().payload().populations().len(), 2);
+    assert_eq!(first.view().payload().positions().len(), 2);
+    assert_eq!(first.view().payload().progress().len(), 2);
+    assert_eq!(first.view().payload().conflicts().len(), 0);
+    use authority::bundle::{ComponentRole, EmbeddedPayloadRef};
+    for fact in first
+        .view()
+        .payload()
+        .records()
+        .chain(first.view().payload().populations())
+        .chain(first.view().payload().positions())
+        .chain(first.view().payload().progress())
+    {
+        let (expected, typed) = match fact.role() {
+            ComponentRole::Observation => (
+                &documents.observation,
+                matches!(fact.payload(), EmbeddedPayloadRef::Observation(_)),
+            ),
+            ComponentRole::Population => (
+                &documents.population,
+                matches!(fact.payload(), EmbeddedPayloadRef::Population(_)),
+            ),
+            ComponentRole::Position => (
+                &documents.position,
+                matches!(fact.payload(), EmbeddedPayloadRef::Position(_)),
+            ),
+            ComponentRole::Clock => (
+                &documents.clock,
+                matches!(fact.payload(), EmbeddedPayloadRef::Clock(_)),
+            ),
+            ComponentRole::Partial => (
+                &documents.partial,
+                matches!(fact.payload(), EmbeddedPayloadRef::Partial(_)),
+            ),
+            ComponentRole::Capture => (
+                &documents.capture,
+                matches!(fact.payload(), EmbeddedPayloadRef::Capture(_)),
+            ),
+            ComponentRole::Progress => (
+                &documents.progress,
+                matches!(fact.payload(), EmbeddedPayloadRef::Progress(_)),
+            ),
+            ComponentRole::Activation => (
+                &documents.activation,
+                matches!(fact.payload(), EmbeddedPayloadRef::Activation(_)),
+            ),
+            ComponentRole::Closure => (
+                &documents.closure,
+                matches!(fact.payload(), EmbeddedPayloadRef::Closure(_)),
+            ),
+            ComponentRole::Completeness => (
+                &documents.completeness,
+                matches!(fact.payload(), EmbeddedPayloadRef::Completeness(_)),
+            ),
+            ComponentRole::Availability => (
+                &documents.availability,
+                matches!(fact.payload(), EmbeddedPayloadRef::Availability(_)),
+            ),
+        };
+        assert!(typed, "embedded payload must retain its closed role type");
+        assert_eq!(fact.canonical_document_bytes(), expected.bytes());
+    }
+    let replay = authority::bundle::publish(
+        context,
+        &selection,
+        Some(first.lineage()),
+        Limits::owner_max(),
+    )
+    .expect("initial current-head replay");
+    assert_eq!(
+        replay.disposition(),
+        authority::bundle::Disposition::Replayed
+    );
+
+    let mut reversed = components;
+    reversed.reverse();
+    let permuted = authority::bundle::publish(
+        context,
+        &authority::bundle::Selection::new(reversed, vec![]),
+        None,
+        Limits::owner_max(),
+    )
+    .expect("component presentation order is non-semantic");
+    assert_eq!(first.document().bytes(), permuted.document().bytes());
+    for shift in 0..selection.components().len() {
+        let mut generated = selection.components().to_vec();
+        generated.rotate_left(shift);
+        if shift % 2 == 1 {
+            generated.reverse();
+        }
+        let candidate = authority::bundle::publish(
+            context,
+            &authority::bundle::Selection::new(generated, vec![]),
+            None,
+            Limits::owner_max(),
+        )
+        .expect("generated component permutation");
+        assert_eq!(candidate.document().bytes(), first.document().bytes());
+        assert_eq!(candidate.document().identity(), first.document().identity());
+    }
+
+    let alternate_record = authority::observation::derive(
+        context,
+        &authority::observation::Selection::new(
+            qualified.records()[0].identity.clone(),
+            cutoff(41),
+        ),
+        Limits::owner_max(),
+    )
+    .expect("second selected record document");
+    let mut record_set = selection.components().to_vec();
+    record_set.push(
+        authority::bundle::Component::from_document(
+            authority::bundle::ComponentRole::Observation,
+            &alternate_record,
+        )
+        .expect("second record component"),
+    );
+    let duplicate_subject = authority::bundle::publish(
+        context,
+        &authority::bundle::Selection::new(record_set, vec![]),
+        None,
+        Limits::owner_max(),
+    )
+    .expect_err("same authority-qualified fact subject must not occur twice");
+    assert_eq!(
+        duplicate_subject.code(),
+        authority::ErrorCode::InvalidSelection
+    );
+
+    use authority::bundle::{Conflict, ConflictKind};
+    let conflicts = vec![
+        Conflict::new(ConflictKind::Duplicate, &selection.components()[0]),
+        Conflict::new(ConflictKind::Contradiction, &selection.components()[4]),
+        Conflict::new(
+            ConflictKind::UnresolvedCorrelation,
+            &selection.components()[7],
+        ),
+    ];
+    let conflict_selection = authority::bundle::Selection::with_conflicts(
+        selection.components().to_vec(),
+        vec![],
+        conflicts.clone(),
+    );
+    let conflict_bundle =
+        authority::bundle::publish(context, &conflict_selection, None, Limits::owner_max())
+            .expect("bundle with every explicit conflict kind");
+    let conflict_kinds = conflict_bundle
+        .view()
+        .payload()
+        .conflicts()
+        .map(|conflict| conflict.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        conflict_kinds,
+        vec![
+            ConflictKind::Duplicate,
+            ConflictKind::Contradiction,
+            ConflictKind::UnresolvedCorrelation,
+        ]
+    );
+    authority::bundle::read(
+        conflict_bundle.document().bytes(),
+        context,
+        &conflict_selection,
+        None,
+        Limits::owner_max(),
+    )
+    .expect("strict-read explicit conflicts");
+    let mut permuted_conflicts = conflicts;
+    permuted_conflicts.reverse();
+    let permuted_conflict_bundle = authority::bundle::publish(
+        context,
+        &authority::bundle::Selection::with_conflicts(
+            selection.components().to_vec(),
+            vec![],
+            permuted_conflicts,
+        ),
+        None,
+        Limits::owner_max(),
+    )
+    .expect("conflict presentation order is non-semantic");
+    assert_eq!(
+        conflict_bundle.document().bytes(),
+        permuted_conflict_bundle.document().bytes()
+    );
+    authority::bundle::read(
+        first.document().bytes(),
+        context,
+        &selection,
+        None,
+        Limits::owner_max(),
+    )
+    .expect("strict-read initial bundle");
+    authority::bundle::read_lineage(
+        first.lineage().document().bytes(),
+        first.view(),
+        &[],
+        Limits::owner_max(),
+    )
+    .expect("strict-read canonical initial lineage");
+
+    let alternate_availability = authority::availability::derive(
+        context,
+        &authority::availability::Selection::new(
+            vec![id("result:O1")],
+            vec![],
+            authority::availability::DependencyState::Available,
+            authority::availability::DependencyState::Available,
+        ),
+        Limits::owner_max(),
+    )
+    .expect("alternate valid availability");
+    let mut alternate_components = selection.components().to_vec();
+    let availability_index = alternate_components
+        .iter()
+        .position(|component| component.role() == authority::bundle::ComponentRole::Availability)
+        .expect("availability role");
+    alternate_components[availability_index] = authority::bundle::Component::from_document(
+        authority::bundle::ComponentRole::Availability,
+        &alternate_availability,
+    )
+    .expect("alternate availability component");
+    let error = authority::bundle::read(
+        first.document().bytes(),
+        context,
+        &authority::bundle::Selection::new(alternate_components, vec![]),
+        None,
+        Limits::owner_max(),
+    )
+    .expect_err("reader must revalidate the independently selected component set");
+    assert_eq!(error.code(), authority::ErrorCode::ExpectedMismatch);
+}
+
+#[trace("TC-009", "FR-009-AC-1", "FR-009-AC-5")]
+#[test]
+fn tc009_bundle_schema_accepts_emitted_typed_wire_and_rejects_role_mismatches() {
+    use serde_json::Value;
+
+    let qualified = qualified();
+    let owner = owner();
+    let subject = subject(&qualified);
+    let history = History::batch(&qualified);
+    let context = Context::new(history, &owner, &subject, 1, None);
+    let documents = derive_all(history, &owner, &subject);
+    let selection = authority::bundle::Selection::new(bundle_components(&documents), vec![]);
+    let publication = authority::bundle::publish(context, &selection, None, Limits::owner_max())
+        .expect("canonical bundle for schema validation");
+
+    let schema: Value =
+        serde_json::from_slice(authority::bundle::SCHEMA_BYTES).expect("bundle schema is JSON");
+    let validator = jsonschema::validator_for(&schema)
+        .expect("standalone compound bundle schema and owner resources compile");
+    let emitted: Value =
+        serde_json::from_slice(publication.document().bytes()).expect("emitted bundle is JSON");
+    assert!(
+        validator.is_valid(&emitted),
+        "emitted typed bundle must satisfy its advertised schema"
+    );
+
+    let observation_index = emitted["payload"]["records"]
+        .as_array()
+        .expect("record fact array")
+        .iter()
+        .position(|fact| fact["role"] == "observation")
+        .expect("observation fact");
+    let mut mismatched_kind = emitted.clone();
+    mismatched_kind["payload"]["records"][observation_index]["payload"]["kind"] =
+        Value::String("availability".to_owned());
+    assert!(!validator.is_valid(&mismatched_kind));
+
+    let mut empty_payload = emitted.clone();
+    empty_payload["payload"]["records"][observation_index]["payload"]["value"] =
+        Value::Object(serde_json::Map::new());
+    assert!(!validator.is_valid(&empty_payload));
+
+    let mut wrong_projection = emitted.clone();
+    wrong_projection["payload"]["records"][observation_index] =
+        emitted["payload"]["populations"][0].clone();
+    assert!(!validator.is_valid(&wrong_projection));
+
+    let mut invalid_subject = emitted;
+    invalid_subject["payload"]["records"][observation_index]["fact_subject"]["semantic_key"] =
+        Value::Null;
+    assert!(!validator.is_valid(&invalid_subject));
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[trace("TC-009", "FR-009-AC-1", "FR-009-AC-4")]
+    #[test]
+    fn tc009_generated_component_permutations_and_replays_are_idempotent(
+        swaps in prop::collection::vec(0usize..11, 0..48)
+    ) {
+        let qualified = qualified();
+        let owner = owner();
+        let subject = subject(&qualified);
+        let history = History::batch(&qualified);
+        let context = Context::new(history, &owner, &subject, 1, None);
+        let documents = derive_all(history, &owner, &subject);
+        let components = bundle_components(&documents);
+        let expected = authority::bundle::publish(
+            context,
+            &authority::bundle::Selection::new(components.clone(), vec![]),
+            None,
+            Limits::owner_max(),
+        )
+        .expect("canonical generated baseline");
+        let mut generated = components;
+        for (left, right) in swaps.into_iter().enumerate() {
+            let len = generated.len();
+            generated.swap(left % len, right % len);
+        }
+        let candidate = authority::bundle::publish(
+            context,
+            &authority::bundle::Selection::new(generated, vec![]),
+            None,
+            Limits::owner_max(),
+        )
+        .expect("generated permutation");
+        prop_assert_eq!(candidate.document().bytes(), expected.document().bytes());
+        prop_assert_eq!(candidate.document().identity(), expected.document().identity());
+        let replay = authority::bundle::publish(
+            context,
+            &authority::bundle::Selection::new(bundle_components(&documents), vec![]),
+            Some(expected.lineage()),
+            Limits::owner_max(),
+        )
+        .expect("generated exact replay");
+        prop_assert_eq!(replay.disposition(), authority::bundle::Disposition::Replayed);
+    }
+}
+
+#[trace("TC-009", "FR-009-AC-1", "FR-009-AC-5")]
+#[test]
+fn tc009_bundle_and_lineage_strict_readers_reject_wire_mutations() {
+    use serde_json::Value;
+
+    let qualified = qualified();
+    let owner = owner();
+    let subject = subject(&qualified);
+    let history = History::batch(&qualified);
+    let context = Context::new(history, &owner, &subject, 1, None);
+    let documents = derive_all(history, &owner, &subject);
+    let selection = authority::bundle::Selection::new(bundle_components(&documents), vec![]);
+    let publication = authority::bundle::publish(context, &selection, None, Limits::owner_max())
+        .expect("initial publication");
+
+    let mut contract: Value =
+        serde_json::from_slice(publication.document().bytes()).expect("canonical bundle JSON");
+    contract["contract"] = Value::String("quire.observation-authority/v0".to_owned());
+    let error = authority::bundle::read(
+        &serde_json::to_vec(&contract).expect("encode contract mutation"),
+        context,
+        &selection,
+        None,
+        Limits::owner_max(),
+    )
+    .expect_err("foreign contract");
+    assert_eq!(error.code(), authority::ErrorCode::ContractMismatch);
+
+    for index in 0..selection.components().len() {
+        let digest = publication
+            .view()
+            .payload()
+            .components()
+            .nth(index)
+            .expect("component at generated index")
+            .digest();
+        let canonical = std::str::from_utf8(publication.document().bytes())
+            .expect("canonical owner bytes are UTF-8");
+        let mutated = canonical.replacen(digest, &"0".repeat(64), 1);
+        let error = authority::bundle::read(
+            mutated.as_bytes(),
+            context,
+            &selection,
+            None,
+            Limits::owner_max(),
+        )
+        .expect_err("every component mutation must refuse");
+        assert_eq!(error.code(), authority::ErrorCode::IdentityMismatch);
+    }
+
+    let mut unknown: Value =
+        serde_json::from_slice(publication.document().bytes()).expect("canonical bundle JSON");
+    unknown["unexpected"] = Value::Bool(true);
+    let error = authority::bundle::read(
+        &serde_json::to_vec(&unknown).expect("encode unknown-field mutation"),
+        context,
+        &selection,
+        None,
+        Limits::owner_max(),
+    )
+    .expect_err("unknown bundle field");
+    assert_eq!(error.code(), authority::ErrorCode::InvalidJson);
+
+    let pretty = serde_json::to_string_pretty(
+        &serde_json::from_slice::<Value>(publication.document().bytes())
+            .expect("canonical bundle JSON"),
+    )
+    .expect("encode pretty bundle mutation");
+    let error = authority::bundle::read(
+        pretty.as_bytes(),
+        context,
+        &selection,
+        None,
+        Limits::owner_max(),
+    )
+    .expect_err("noncanonical bundle encoding");
+    assert_eq!(error.code(), authority::ErrorCode::NonCanonical);
+
+    let lineage_value: Value = serde_json::from_slice(publication.lineage().document().bytes())
+        .expect("canonical lineage JSON");
+    let head_digest = lineage_value["head"]["digest"]
+        .as_str()
+        .expect("lineage head digest");
+    let lineage_text = std::str::from_utf8(publication.lineage().document().bytes())
+        .expect("canonical lineage bytes are UTF-8");
+    let lineage = lineage_text.replacen(head_digest, &"0".repeat(64), 1);
+    let error = authority::bundle::read_lineage(
+        lineage.as_bytes(),
+        publication.view(),
+        &[],
+        Limits::owner_max(),
+    )
+    .expect_err("lineage stamp mutation");
+    assert_eq!(error.code(), authority::ErrorCode::IdentityMismatch);
+}
+
+fn successor_bundle_selection(
+    history: History<'_>,
+    owner: &AuthoritySelection,
+    subject: &SubjectSelection,
+    documents: &Documents,
+    revision: u64,
+    available_results: Vec<Identity>,
+    producer: authority::availability::DependencyState,
+) -> authority::bundle::Selection {
+    use authority::bundle::{Component, ComponentRole, Replacement, Selection};
+
+    let context = Context::new(
+        history,
+        owner,
+        subject,
+        revision,
+        Some(&documents.availability),
+    );
+    let revised = authority::availability::derive(
+        context,
+        &authority::availability::Selection::new(
+            vec![id("result:O1")],
+            available_results,
+            producer,
+            authority::availability::DependencyState::Available,
+        ),
+        Limits::owner_max(),
+    )
+    .expect("derive revised availability");
+    let mut components = bundle_components(documents);
+    let index = components
+        .iter()
+        .position(|component| component.role() == ComponentRole::Availability)
+        .expect("availability component");
+    let prior = components[index].clone();
+    let successor = Component::from_document(ComponentRole::Availability, &revised)
+        .expect("revised availability component");
+    let replacement = Replacement::new(&prior, &successor).expect("same-role replacement");
+    components[index] = successor;
+    Selection::new(components, vec![replacement])
+}
+
+#[trace("TC-009", "FR-009-AC-2", "FR-009-AC-4")]
+#[test]
+fn tc009_successor_replay_and_same_key_contradiction_are_exact() {
+    use authority::availability::DependencyState;
+    use authority::bundle::{Disposition, LineageView, Selection};
+
+    let qualified = qualified();
+    let owner = owner();
+    let subject = subject(&qualified);
+    let history = History::batch(&qualified);
+    let documents = derive_all(history, &owner, &subject);
+    let initial_context = Context::new(history, &owner, &subject, 1, None);
+    let initial_selection = Selection::new(bundle_components(&documents), vec![]);
+    let initial = authority::bundle::publish(
+        initial_context,
+        &initial_selection,
+        None,
+        Limits::owner_max(),
+    )
+    .expect("initial bundle");
+    let prior_bytes = initial.document().bytes().to_vec();
+
+    let selection = successor_bundle_selection(
+        history,
+        &owner,
+        &subject,
+        &documents,
+        2,
+        vec![],
+        DependencyState::Available,
+    );
+    let context = Context::new(history, &owner, &subject, 2, Some(initial.document()));
+    let successor = authority::bundle::publish(
+        context,
+        &selection,
+        Some(initial.lineage()),
+        Limits::owner_max(),
+    )
+    .expect("valid direct successor");
+    assert_eq!(successor.disposition(), Disposition::Published);
+    assert_eq!(
+        successor.document().predecessor(),
+        Some(initial.document().identity())
+    );
+    assert_eq!(successor.view().payload().replacements().len(), 1);
+    assert_eq!(initial.document().bytes(), prior_bytes);
+    authority::bundle::read_revision(
+        successor.document().bytes(),
+        context,
+        &selection,
+        Some(initial.view()),
+        Limits::owner_max(),
+    )
+    .expect("strict-read historical successor from its exact predecessor view");
+
+    let known_child = LineageView::from_views(
+        initial.view(),
+        std::slice::from_ref(successor.view()),
+        Limits::owner_max(),
+    )
+    .expect("known child lineage");
+    let replay =
+        authority::bundle::publish(context, &selection, Some(&known_child), Limits::owner_max())
+            .expect("known exact child replay");
+    assert_eq!(replay.disposition(), Disposition::Replayed);
+    assert_eq!(replay.document().bytes(), successor.document().bytes());
+
+    let head_replay = authority::bundle::publish(
+        context,
+        &selection,
+        Some(successor.lineage()),
+        Limits::owner_max(),
+    )
+    .expect("current-head replay");
+    assert_eq!(head_replay.disposition(), Disposition::Replayed);
+
+    let conflicting_selection = successor_bundle_selection(
+        history,
+        &owner,
+        &subject,
+        &documents,
+        2,
+        vec![id("result:O1")],
+        DependencyState::Unavailable,
+    );
+    let conflicting = authority::bundle::publish(
+        context,
+        &conflicting_selection,
+        Some(initial.lineage()),
+        Limits::owner_max(),
+    )
+    .expect("derive competing candidate against empty lineage");
+    let conflicting_lineage = LineageView::from_views(
+        initial.view(),
+        std::slice::from_ref(conflicting.view()),
+        Limits::owner_max(),
+    )
+    .expect("competing keyed child lineage");
+    let error = authority::bundle::publish(
+        context,
+        &selection,
+        Some(&conflicting_lineage),
+        Limits::owner_max(),
+    )
+    .expect_err("same key with unequal bytes must refuse");
+    assert_eq!(error.code(), authority::ErrorCode::IdentityContradiction);
+    assert_eq!(initial.document().bytes(), prior_bytes);
+}
+
+#[trace("TC-009", "FR-009-AC-2", "FR-009-AC-3")]
+#[test]
+fn tc009_every_component_role_replaces_one_fact_at_a_time() {
+    use authority::bundle::{Replacement, Selection};
+
+    let qualified = qualified();
+    let owner = owner();
+    let subject = subject(&qualified);
+    let history = History::batch(&qualified);
+    let prior_documents = derive_all(history, &owner, &subject);
+    let revised_documents = derive_revised_all(history, &owner, &subject, &prior_documents);
+    let prior_components = bundle_components(&prior_documents);
+    let revised_components = bundle_components(&revised_documents);
+    let initial = authority::bundle::publish(
+        Context::new(history, &owner, &subject, 1, None),
+        &Selection::new(prior_components.clone(), vec![]),
+        None,
+        Limits::owner_max(),
+    )
+    .expect("initial complete bundle");
+    let predecessor_bytes = initial.document().bytes().to_vec();
+
+    for (index, (prior, revised)) in prior_components.iter().zip(&revised_components).enumerate() {
+        assert_eq!(prior.role(), revised.role());
+        let replacement =
+            Replacement::new(prior, revised).expect("same-role and same-fact-subject replacement");
+        let mut selected = prior_components.clone();
+        selected[index] = revised.clone();
+        let publication = authority::bundle::publish(
+            Context::new(history, &owner, &subject, 2, Some(initial.document())),
+            &Selection::new(selected, vec![replacement]),
+            Some(initial.lineage()),
+            Limits::owner_max(),
+        )
+        .expect("publish one independently replaced role");
+        let edge = publication
+            .view()
+            .payload()
+            .replacements()
+            .next()
+            .expect("one replacement edge");
+        assert_eq!(edge.role(), prior.role());
+        assert_eq!(edge.prior_identity(), prior.identity());
+        assert_eq!(edge.successor_identity(), revised.identity());
+        assert_eq!(initial.document().bytes(), predecessor_bytes);
+    }
+}
+
+#[trace("TC-009", "FR-009-AC-3")]
+#[test]
+fn tc009_stale_and_known_sibling_lineage_refuse_distinctly() {
+    use authority::availability::DependencyState;
+    use authority::bundle::{LineageView, Selection};
+
+    let qualified = qualified();
+    let owner = owner();
+    let subject = subject(&qualified);
+    let history = History::batch(&qualified);
+    let documents = derive_all(history, &owner, &subject);
+    let initial_context = Context::new(history, &owner, &subject, 1, None);
+    let initial_selection = Selection::new(bundle_components(&documents), vec![]);
+    let initial = authority::bundle::publish(
+        initial_context,
+        &initial_selection,
+        None,
+        Limits::owner_max(),
+    )
+    .expect("initial bundle");
+    let selection_two = successor_bundle_selection(
+        history,
+        &owner,
+        &subject,
+        &documents,
+        2,
+        vec![],
+        DependencyState::Available,
+    );
+    let context_two = Context::new(history, &owner, &subject, 2, Some(initial.document()));
+    let successor = authority::bundle::publish(
+        context_two,
+        &selection_two,
+        Some(initial.lineage()),
+        Limits::owner_max(),
+    )
+    .expect("revision two");
+    let missing =
+        authority::bundle::publish(context_two, &selection_two, None, Limits::owner_max())
+            .expect_err("later publication requires lineage");
+    assert_eq!(missing.code(), authority::ErrorCode::StaleHead);
+    let missing_predecessor = authority::bundle::publish(
+        Context::new(history, &owner, &subject, 2, None),
+        &selection_two,
+        None,
+        Limits::owner_max(),
+    )
+    .expect_err("later revision without a predecessor must refuse");
+    assert_eq!(
+        missing_predecessor.code(),
+        authority::ErrorCode::RevisionMismatch
+    );
+
+    let self_link = LineageView::from_views(
+        initial.view(),
+        std::slice::from_ref(initial.view()),
+        Limits::owner_max(),
+    )
+    .expect_err("lineage cannot retain its head as its own child");
+    assert_eq!(self_link.code(), authority::ErrorCode::InvalidSelection);
+    let non_increasing = authority::bundle::publish(
+        Context::new(history, &owner, &subject, 1, Some(initial.document())),
+        &initial_selection,
+        Some(initial.lineage()),
+        Limits::owner_max(),
+    )
+    .expect_err("non-increasing revision must refuse");
+    assert_eq!(
+        non_increasing.code(),
+        authority::ErrorCode::PredecessorMismatch
+    );
+
+    let mut foreign_owner = owner.clone();
+    foreign_owner.definition_identity = id("definition:foreign-lineage");
+    let foreign_documents = derive_all(history, &foreign_owner, &subject);
+    let foreign = authority::bundle::publish(
+        Context::new(history, &foreign_owner, &subject, 1, None),
+        &Selection::new(bundle_components(&foreign_documents), vec![]),
+        None,
+        Limits::owner_max(),
+    )
+    .expect("foreign initial lineage");
+    let cross_authority = authority::bundle::publish(
+        context_two,
+        &selection_two,
+        Some(foreign.lineage()),
+        Limits::owner_max(),
+    )
+    .expect_err("cross-authority lineage must refuse");
+    assert_eq!(
+        cross_authority.code(),
+        authority::ErrorCode::AuthorityMismatch
+    );
+
+    let foreign_qualified = qualified_with_window("window:O2");
+    let foreign_subject = selected_subject(&foreign_qualified);
+    let foreign_history = History::batch(&foreign_qualified);
+    let foreign_scope_documents = derive_all(foreign_history, &owner, &foreign_subject);
+    let foreign_scope = authority::bundle::publish(
+        Context::new(foreign_history, &owner, &foreign_subject, 1, None),
+        &Selection::new(bundle_components(&foreign_scope_documents), vec![]),
+        None,
+        Limits::owner_max(),
+    )
+    .expect("foreign-scope initial lineage");
+    let cross_scope = authority::bundle::publish(
+        context_two,
+        &selection_two,
+        Some(foreign_scope.lineage()),
+        Limits::owner_max(),
+    )
+    .expect_err("cross-scope lineage must refuse");
+    assert_eq!(cross_scope.code(), authority::ErrorCode::AuthorityMismatch);
+
+    let selection_three = successor_bundle_selection(
+        history,
+        &owner,
+        &subject,
+        &documents,
+        3,
+        vec![id("result:O1")],
+        DependencyState::Unavailable,
+    );
+    let context_three = Context::new(history, &owner, &subject, 3, Some(initial.document()));
+    let stale = authority::bundle::publish(
+        context_three,
+        &selection_three,
+        Some(successor.lineage()),
+        Limits::owner_max(),
+    )
+    .expect_err("old predecessor is stale against newer head");
+    assert_eq!(stale.code(), authority::ErrorCode::StaleHead);
+
+    let sibling = authority::bundle::publish(
+        context_three,
+        &selection_three,
+        Some(initial.lineage()),
+        Limits::owner_max(),
+    )
+    .expect("revision-three competing direct child");
+    let branched = LineageView::from_views(
+        initial.view(),
+        std::slice::from_ref(sibling.view()),
+        Limits::owner_max(),
+    )
+    .expect("known sibling lineage");
+    let error = authority::bundle::publish(
+        context_two,
+        &selection_two,
+        Some(&branched),
+        Limits::owner_max(),
+    )
+    .expect_err("different known child must refuse as sibling");
+    assert_eq!(error.code(), authority::ErrorCode::KnownSibling);
+}
+
+#[trace("TC-009", "FR-009-AC-5")]
+#[test]
+fn tc009_component_replacement_and_lineage_bounds_fail_closed() {
+    use authority::availability::DependencyState;
+    use authority::bundle::{Component, ComponentRole, LineageView, Replacement, Selection};
+
+    let qualified = qualified();
+    let owner = owner();
+    let subject = subject(&qualified);
+    let history = History::batch(&qualified);
+    let documents = derive_all(history, &owner, &subject);
+    let context = Context::new(history, &owner, &subject, 1, None);
+    let components = bundle_components(&documents);
+
+    for index in 0..components.len() {
+        let mut omitted = components.clone();
+        omitted.remove(index);
+        let error = authority::bundle::publish(
+            context,
+            &Selection::new(omitted, vec![]),
+            None,
+            Limits::owner_max(),
+        )
+        .expect_err("every missing component family must refuse");
+        assert_eq!(error.code(), authority::ErrorCode::InvalidSelection);
+
+        let mut duplicated = components.clone();
+        duplicated.push(components[index].clone());
+        let error = authority::bundle::publish(
+            context,
+            &Selection::new(duplicated, vec![]),
+            None,
+            Limits::owner_max(),
+        )
+        .expect_err("every duplicated component family must refuse");
+        assert_eq!(error.code(), authority::ErrorCode::InvalidSelection);
+    }
+    assert_eq!(
+        Component::from_document(ComponentRole::Availability, &documents.observation)
+            .expect_err("cross-role component")
+            .code(),
+        authority::ErrorCode::InvalidSelection
+    );
+    assert_eq!(
+        Replacement::new(&components[0], &components[1])
+            .expect_err("cross-role replacement")
+            .code(),
+        authority::ErrorCode::InvalidReplacement
+    );
+    assert_eq!(
+        Replacement::new(&components[0], &components[0])
+            .expect_err("self replacement")
+            .code(),
+        authority::ErrorCode::InvalidReplacement
+    );
+    let changed_subject_document = authority::availability::derive(
+        Context::new(history, &owner, &subject, 2, Some(&documents.availability)),
+        &authority::availability::Selection::new(
+            vec![id("result:other")],
+            vec![id("result:other")],
+            DependencyState::Available,
+            DependencyState::Available,
+        ),
+        Limits::owner_max(),
+    )
+    .expect("different result-subject availability");
+    let prior_availability = components
+        .iter()
+        .find(|component| component.role() == ComponentRole::Availability)
+        .expect("prior availability component");
+    let changed_subject =
+        Component::from_document(ComponentRole::Availability, &changed_subject_document)
+            .expect("changed result-subject component");
+    assert_eq!(
+        Replacement::new(prior_availability, &changed_subject)
+            .expect_err("replacement cannot change its fact-level subject")
+            .code(),
+        authority::ErrorCode::InvalidReplacement
+    );
+
+    let mut foreign_owner = owner.clone();
+    foreign_owner.definition_identity = id("definition:foreign");
+    let foreign_documents = derive_all(history, &foreign_owner, &subject);
+    let foreign_availability =
+        Component::from_document(ComponentRole::Availability, &foreign_documents.availability)
+            .expect("foreign-authority availability component");
+    assert_eq!(
+        Replacement::new(prior_availability, &foreign_availability)
+            .expect_err("replacement cannot cross authority")
+            .code(),
+        authority::ErrorCode::InvalidReplacement
+    );
+    let mut cross_wired = components.clone();
+    let availability_index = cross_wired
+        .iter()
+        .position(|component| component.role() == ComponentRole::Availability)
+        .expect("availability role");
+    cross_wired[availability_index] =
+        Component::from_document(ComponentRole::Availability, &foreign_documents.availability)
+            .expect("foreign but internally valid component");
+    let error = authority::bundle::publish(
+        context,
+        &Selection::new(cross_wired, vec![]),
+        None,
+        Limits::owner_max(),
+    )
+    .expect_err("foreign authority component must refuse");
+    assert_eq!(error.code(), authority::ErrorCode::AuthorityMismatch);
+
+    let foreign_qualified = qualified_with_window("window:foreign-replacement");
+    let foreign_subject = selected_subject(&foreign_qualified);
+    let foreign_history = History::batch(&foreign_qualified);
+    let foreign_scope_documents = derive_all(foreign_history, &owner, &foreign_subject);
+    let foreign_scope_availability = Component::from_document(
+        ComponentRole::Availability,
+        &foreign_scope_documents.availability,
+    )
+    .expect("foreign-scope availability component");
+    assert_eq!(
+        Replacement::new(prior_availability, &foreign_scope_availability)
+            .expect_err("replacement cannot cross scope")
+            .code(),
+        authority::ErrorCode::InvalidReplacement
+    );
+
+    let component_limits = Limits {
+        max_bundle_components: 10,
+        ..Limits::owner_max()
+    };
+    let error = authority::bundle::publish(
+        context,
+        &Selection::new(components.clone(), vec![]),
+        None,
+        component_limits,
+    )
+    .expect_err("one-over component bound");
+    assert_eq!(error.code(), authority::ErrorCode::ResourceIncomplete);
+    assert_eq!(error.usage().bundle_components, 11);
+
+    authority::bundle::publish(
+        context,
+        &Selection::new(components.clone(), vec![]),
+        None,
+        Limits {
+            max_bundle_components: 11,
+            ..Limits::owner_max()
+        },
+    )
+    .expect("exact component bound admits");
+    authority::bundle::publish(
+        context,
+        &Selection::new(components.clone(), vec![]),
+        None,
+        Limits {
+            max_positions: 1,
+            max_bundle_components: 11,
+            ..Limits::owner_max()
+        },
+    )
+    .expect("bundle position-fact projection does not consume position-ledger entry capacity");
+
+    use authority::bundle::{Conflict, ConflictKind};
+    let explicit_conflict = Conflict::new(ConflictKind::Duplicate, &components[0]);
+    let conflict_selection =
+        Selection::with_conflicts(components.clone(), vec![], vec![explicit_conflict.clone()]);
+    let error = authority::bundle::publish(
+        context,
+        &conflict_selection,
+        None,
+        Limits {
+            max_conflicts: 0,
+            ..Limits::owner_max()
+        },
+    )
+    .expect_err("one-over conflict bound");
+    assert_eq!(error.code(), authority::ErrorCode::ResourceIncomplete);
+    assert_eq!(error.usage().conflicts, 1);
+    authority::bundle::publish(
+        context,
+        &conflict_selection,
+        None,
+        Limits {
+            max_conflicts: 1,
+            ..Limits::owner_max()
+        },
+    )
+    .expect("exact conflict bound admits");
+    let duplicate_conflicts = Selection::with_conflicts(
+        components.clone(),
+        vec![],
+        vec![explicit_conflict.clone(), explicit_conflict],
+    );
+    assert_eq!(
+        authority::bundle::publish(context, &duplicate_conflicts, None, Limits::owner_max())
+            .expect_err("duplicate explicit conflict must refuse")
+            .code(),
+        authority::ErrorCode::InvalidSelection
+    );
+
+    let initial = authority::bundle::publish(
+        context,
+        &Selection::new(components, vec![]),
+        None,
+        Limits::owner_max(),
+    )
+    .expect("initial bundle");
+    let successor_selection = successor_bundle_selection(
+        history,
+        &owner,
+        &subject,
+        &documents,
+        2,
+        vec![],
+        DependencyState::Available,
+    );
+    let successor_context = Context::new(history, &owner, &subject, 2, Some(initial.document()));
+    let omitted_replacement = Selection::new(successor_selection.components().to_vec(), vec![]);
+    let error = authority::bundle::publish(
+        successor_context,
+        &omitted_replacement,
+        Some(initial.lineage()),
+        Limits::owner_max(),
+    )
+    .expect_err("changed component requires an explicit replacement");
+    assert_eq!(error.code(), authority::ErrorCode::InvalidReplacement);
+
+    let duplicated_replacement = Selection::new(
+        successor_selection.components().to_vec(),
+        vec![
+            successor_selection.replacements()[0].clone(),
+            successor_selection.replacements()[0].clone(),
+        ],
+    );
+    let error = authority::bundle::publish(
+        successor_context,
+        &duplicated_replacement,
+        Some(initial.lineage()),
+        Limits::owner_max(),
+    )
+    .expect_err("duplicate replacement must refuse");
+    assert_eq!(error.code(), authority::ErrorCode::InvalidReplacement);
+    let replacement_limits = Limits {
+        max_replacements: 0,
+        ..Limits::owner_max()
+    };
+    let error = authority::bundle::publish(
+        successor_context,
+        &successor_selection,
+        Some(initial.lineage()),
+        replacement_limits,
+    )
+    .expect_err("one-over replacement bound");
+    assert_eq!(error.code(), authority::ErrorCode::ResourceIncomplete);
+    assert_eq!(error.usage().replacements, 1);
+
+    let successor = authority::bundle::publish(
+        successor_context,
+        &successor_selection,
+        Some(initial.lineage()),
+        Limits {
+            max_replacements: 1,
+            ..Limits::owner_max()
+        },
+    )
+    .expect("exact replacement bound admits");
+    LineageView::from_views(
+        initial.view(),
+        std::slice::from_ref(successor.view()),
+        Limits {
+            max_lineage_children: 1,
+            ..Limits::owner_max()
+        },
+    )
+    .expect("exact lineage-child bound admits");
+    let lineage_limits = Limits {
+        max_lineage_children: 0,
+        ..Limits::owner_max()
+    };
+    let error = LineageView::from_views(
+        initial.view(),
+        std::slice::from_ref(successor.view()),
+        lineage_limits,
+    )
+    .expect_err("one-over lineage-child bound");
+    assert_eq!(error.code(), authority::ErrorCode::ResourceIncomplete);
+    assert_eq!(error.usage().lineage_children, 1);
 }

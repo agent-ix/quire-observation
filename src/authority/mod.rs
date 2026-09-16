@@ -11,6 +11,7 @@ mod common;
 
 pub mod activation;
 pub mod availability;
+pub mod bundle;
 pub mod capture;
 pub mod clock;
 pub mod closure;

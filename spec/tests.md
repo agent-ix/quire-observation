@@ -42,7 +42,7 @@ relationships:
 | FR-006 | FR-006-AC-1..FR-006-AC-8 | TC-006 | ✅ complete |
 | FR-007 | FR-007-AC-1..FR-007-AC-5 | TC-007 | ✅ complete |
 | FR-008 | FR-008-AC-1..FR-008-AC-6 | TC-008 | ✅ complete |
-| FR-009 | FR-009-AC-1..FR-009-AC-5 | TC-009 | 🚧 planned |
+| FR-009 | FR-009-AC-1..FR-009-AC-5 | TC-009 | ✅ complete |
 | FR-010 | FR-010-AC-1..FR-010-AC-6 | TC-010 | 🚧 planned |
 | FR-011 | FR-011-AC-1..FR-011-AC-6 | TC-011 | 🚧 planned |
 
@@ -66,7 +66,7 @@ relationships:
 | TC-006 | Prove finite topology retention and exact boundary anchoring | Integration | P0 | FR-006-AC-1..FR-006-AC-8 | ✅ complete |
 | TC-007 | Preserve partial values and interval order | Property | P0 | FR-007-AC-1..FR-007-AC-5 | ✅ complete |
 | TC-008 | Preserve activation and scope-authority axes | Property | P0 | FR-008-AC-1..FR-008-AC-6 | ✅ complete |
-| TC-009 | Publish immutable revisioned authority bundles | Property | P0 | FR-009-AC-1..FR-009-AC-5 | 🚧 planned |
+| TC-009 | Publish immutable revisioned authority bundles | Property | P0 | FR-009-AC-1..FR-009-AC-5 | ✅ complete |
 | TC-010 | Agree batch, incremental and repaired authority | Property | P0 | FR-010-AC-1..FR-010-AC-6 | 🚧 planned |
 | TC-011 | Evaluate closed related-workflow populations | Property | P0 | FR-011-AC-1..FR-011-AC-6 | 🚧 planned |
 | TC-012 | Bound and reproduce C00 observation work | Property | P0 | NFR-003-AC-2 | 🚧 planned |

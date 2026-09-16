@@ -20,3 +20,9 @@ description: "Chronological log of changes to the Plan-002 bundle."
   activation, execution, evidence, lateness, verdict and settlement facts; exact silence
   coverage; machine-distinct premise refusals; and TC-008 Cartesian, mutation and cross-wire
   evidence. Reconciled coverage is 64/88 backed rows with zero status lies.
+* **2026-09-15** — Completed Task-018 with canonical immutable revisioned bundles and
+  bounded lineage views; typed exact owner facts; explicit conflict and fact-subject domains;
+  strict predecessor, replacement, replay and branch validation; a standalone compound JSON
+  Schema; and the full TC-009 property, mutation, cross-wire and exact/one-over matrix.
+  Independent semantic and Rust reviews are clean. Reconciled coverage is 70/88 backed rows
+  with FR-009 at 5/5 and zero status lies; NFR-003 remains planned for Tasks 022 and 024.

@@ -2,7 +2,7 @@
 id: Task-018
 title: "FR-009 — revisioned I07 bundles and lineage views"
 type: Task
-status: not_started
+status: done
 track: A
 priority: P0
 relationships:
@@ -28,11 +28,11 @@ views that distinguish initial publication, exact replay, valid succession and c
 
 ## Subtasks
 
-- [ ] Write TC-009 canonicalization, mutation, replay and lineage failure tests first.
-- [ ] Define bundle/component/replacement identity domains and canonical ordering.
-- [ ] Validate initial and later revisions against the supplied current-head/child view.
-- [ ] Preserve predecessor bytes and produce one canonical successor lineage view.
-- [ ] Implement a strict reader that validates every expected independent selection.
+- [x] Write TC-009 canonicalization, mutation, replay and lineage failure tests first.
+- [x] Define bundle/component/replacement identity domains and canonical ordering.
+- [x] Validate initial and later revisions against the supplied current-head/child view.
+- [x] Preserve predecessor bytes and produce one canonical successor lineage view.
+- [x] Implement a strict reader that validates every expected independent selection.
 
 ## Deliverables
 
