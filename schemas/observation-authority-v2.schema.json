@@ -1,0 +1,366 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-ix:quire-observation:authority:2",
+  "title": "Structurally empty observation authority bundle v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "identity", "revision", "authority", "subject", "payload", "predecessor", "limits"],
+  "properties": {
+    "contract": {"const": "quire.observation-authority/v2"},
+    "identity": {"$ref": "#/$defs/identity"},
+    "revision": {"type": "integer", "minimum": 1},
+    "authority": {"$ref": "#/$defs/authority"},
+    "subject": {"$ref": "#/$defs/subject"},
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["components", "replacements", "records", "populations", "positions", "progress", "conflicts", "bounds", "usage"],
+      "properties": {
+        "components": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": {"$ref": "#/$defs/component"},
+          "allOf": [
+            {"contains": {"properties": {"role": {"const": "population"}}, "required": ["role"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"role": {"const": "position"}}, "required": ["role"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"role": {"const": "clock"}}, "required": ["role"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"role": {"const": "progress"}}, "required": ["role"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"role": {"const": "closure"}}, "required": ["role"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"role": {"const": "completeness"}}, "required": ["role"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"role": {"const": "availability"}}, "required": ["role"]}, "minContains": 1, "maxContains": 1}
+          ]
+        },
+        "replacements": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/replacement"}},
+        "records": {
+          "type": "array", "minItems": 1, "maxItems": 1, "items": {"$ref": "#/$defs/embeddedFact"},
+          "contains": {"$ref": "#/$defs/emptyAvailability"}, "minContains": 1, "maxContains": 1
+        },
+        "populations": {
+          "type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/embeddedFact"},
+          "allOf": [
+            {"contains": {"$ref": "#/$defs/emptyPopulation"}, "minContains": 1, "maxContains": 1},
+            {"contains": {"$ref": "#/$defs/emptyCompleteness"}, "minContains": 1, "maxContains": 1}
+          ]
+        },
+        "positions": {
+          "type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/embeddedFact"},
+          "allOf": [
+            {"contains": {"$ref": "#/$defs/emptyPosition"}, "minContains": 1, "maxContains": 1},
+            {"contains": {"$ref": "#/$defs/clockFact"}, "minContains": 1, "maxContains": 1}
+          ]
+        },
+        "progress": {
+          "type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/embeddedFact"},
+          "allOf": [
+            {"contains": {"$ref": "#/$defs/progressFact"}, "minContains": 1, "maxContains": 1},
+            {"contains": {"$ref": "#/$defs/closureFact"}, "minContains": 1, "maxContains": 1}
+          ]
+        },
+        "conflicts": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/conflict"}},
+        "bounds": {"$ref": "#/$defs/bounds"},
+        "usage": {"$ref": "#/$defs/usage"}
+      }
+    },
+    "predecessor": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/identity"}]},
+    "limits": {"$ref": "#/$defs/limits"}
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 1048576},
+    "identity": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["definition_identity", "definition_revision", "definition_digest"],
+      "properties": {
+        "definition_identity": {"$ref": "#/$defs/text"}, "definition_revision": {"$ref": "#/$defs/text"}, "definition_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "subject": {
+      "type": "object", "additionalProperties": false, "required": ["scope_identity", "population_identity"],
+      "properties": {"scope_identity": {"$ref": "#/$defs/text"}, "population_identity": {"$ref": "#/$defs/text"}}
+    },
+    "emptyRole": {"enum": ["population", "position", "clock", "progress", "closure", "completeness", "availability"]},
+    "component": {
+      "type": "object", "additionalProperties": false, "required": ["role", "contract", "identity", "digest", "revision"],
+      "properties": {
+        "role": {"$ref": "#/$defs/emptyRole"}, "contract": {"$ref": "#/$defs/text"}, "identity": {"$ref": "#/$defs/identity"},
+        "digest": {"$ref": "#/$defs/digest"}, "revision": {"type": "integer", "minimum": 1}
+      }
+    },
+    "replacement": {
+      "type": "object", "additionalProperties": false, "required": ["role", "prior_identity", "successor_identity"],
+      "properties": {"role": {"$ref": "#/$defs/emptyRole"}, "prior_identity": {"$ref": "#/$defs/identity"}, "successor_identity": {"$ref": "#/$defs/identity"}}
+    },
+    "factSubject": {
+      "type": "object", "additionalProperties": false, "required": ["scope_identity", "population_identity", "semantic_key"],
+      "properties": {"scope_identity": {"$ref": "#/$defs/text"}, "population_identity": {"$ref": "#/$defs/text"}, "semantic_key": {}}
+    },
+    "embeddedFact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["role", "fact_subject", "observation_identity", "payload", "canonical_document"],
+      "properties": {
+        "role": {"$ref": "#/$defs/emptyRole"}, "fact_subject": {"$ref": "#/$defs/factSubject"}, "observation_identity": {"type": "null"},
+        "payload": {
+          "type": "object", "additionalProperties": false, "required": ["kind", "value"],
+          "properties": {"kind": {"$ref": "#/$defs/emptyRole"}, "value": {"type": "object"}}
+        },
+        "canonical_document": {"$ref": "#/$defs/text"}
+      }
+    },
+    "integerText": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)$"},
+    "naturalText": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+    "textSet": {
+      "type": "array", "maxItems": 10000, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/text"}
+    },
+    "producerDigest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["algorithm", "domain", "version", "value"],
+      "properties": {
+        "algorithm": {"const": "sha256"}, "domain": {"$ref": "#/$defs/text"},
+        "version": {"$ref": "#/$defs/text"}, "value": {"$ref": "#/$defs/identity"}
+      }
+    },
+    "producerAuthority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["bundleIdentity", "bundleRevision", "digest"],
+      "properties": {
+        "bundleIdentity": {"$ref": "#/$defs/text"},
+        "bundleRevision": {
+          "type": "object", "additionalProperties": false, "required": ["namespace", "value"],
+          "properties": {"namespace": {"$ref": "#/$defs/text"}, "value": {"$ref": "#/$defs/text"}}
+        },
+        "digest": {"$ref": "#/$defs/producerDigest"}
+      }
+    },
+    "producer": {
+      "type": "object", "additionalProperties": false, "required": ["authority", "interface_version"],
+      "properties": {"authority": {"$ref": "#/$defs/producerAuthority"}, "interface_version": {"const": "1.2.0"}}
+    },
+    "producerConfiguration": {
+      "type": "object", "additionalProperties": false, "required": ["identity", "digest"],
+      "properties": {"identity": {"$ref": "#/$defs/text"}, "digest": {"$ref": "#/$defs/producerDigest"}}
+    },
+    "definition": {
+      "type": "object", "additionalProperties": false, "required": ["identity", "digest"],
+      "properties": {"identity": {"$ref": "#/$defs/text"}, "digest": {"$ref": "#/$defs/digest"}}
+    },
+    "populationSelection": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false, "required": ["kind", "identity"],
+          "properties": {"kind": {"const": "snapshot"}, "identity": {"$ref": "#/$defs/text"}}
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "identity", "start_nanos", "end_exclusive_nanos"],
+          "properties": {
+            "kind": {"const": "event-time-window"}, "identity": {"$ref": "#/$defs/text"},
+            "start_nanos": {"$ref": "#/$defs/integerText"}, "end_exclusive_nanos": {"$ref": "#/$defs/integerText"}
+          }
+        }
+      ]
+    },
+    "populationValue": {
+      "type": "object", "additionalProperties": false,
+      "required": ["population_identity", "producer", "membership_rule_identity", "membership_digest", "selection", "required_members", "observation_sources", "configuration", "closure", "completeness_dependencies", "progress_dependencies"],
+      "properties": {
+        "population_identity": {"type": "string", "pattern": "^sha256-jcs:[0-9a-f]{64}$"},
+        "producer": {"$ref": "#/$defs/producer"},
+        "membership_rule_identity": {"type": "string", "pattern": "^sha256-jcs:[0-9a-f]{64}$"},
+        "membership_digest": {"$ref": "#/$defs/digest"}, "selection": {"$ref": "#/$defs/populationSelection"},
+        "required_members": {"$ref": "#/$defs/textSet"}, "observation_sources": {"$ref": "#/$defs/textSet"},
+        "configuration": {"$ref": "#/$defs/producerConfiguration"}, "closure": {"$ref": "#/$defs/definition"},
+        "completeness_dependencies": {"$ref": "#/$defs/textSet"}, "progress_dependencies": {"$ref": "#/$defs/textSet"}
+      }
+    },
+    "clockSelection": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false, "required": ["family", "start", "end_exclusive"],
+          "properties": {"family": {"const": "event-position"}, "start": {"$ref": "#/$defs/naturalText"}, "end_exclusive": {"$ref": "#/$defs/naturalText"}}
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["family", "start", "end_exclusive", "epoch_nanos", "period_nanos"],
+          "properties": {
+            "family": {"const": "fixed-sample"}, "start": {"$ref": "#/$defs/naturalText"},
+            "end_exclusive": {"$ref": "#/$defs/naturalText"}, "epoch_nanos": {"$ref": "#/$defs/integerText"},
+            "period_nanos": {"$ref": "#/$defs/naturalText"}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["family", "start_nanos", "end_exclusive_nanos"],
+          "properties": {"family": {"const": "timestamped-event"}, "start_nanos": {"$ref": "#/$defs/integerText"}, "end_exclusive_nanos": {"$ref": "#/$defs/integerText"}}
+        }
+      ]
+    },
+    "boundary": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["clock_family", "lower", "upper_inclusive", "carrier_end_exclusive", "watermark"],
+          "properties": {
+            "clock_family": {"enum": ["event-position", "fixed-sample"]}, "lower": {"$ref": "#/$defs/naturalText"},
+            "upper_inclusive": {"$ref": "#/$defs/naturalText"}, "carrier_end_exclusive": {"$ref": "#/$defs/naturalText"},
+            "watermark": {"$ref": "#/$defs/naturalText"}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["clock_family", "lower_nanos", "upper_inclusive_nanos", "carrier_end_exclusive_nanos", "watermark_nanos"],
+          "properties": {
+            "clock_family": {"const": "timestamped-event"}, "lower_nanos": {"$ref": "#/$defs/integerText"},
+            "upper_inclusive_nanos": {"$ref": "#/$defs/integerText"}, "carrier_end_exclusive_nanos": {"$ref": "#/$defs/integerText"},
+            "watermark_nanos": {"$ref": "#/$defs/integerText"}
+          }
+        }
+      ]
+    },
+    "positionValue": {
+      "type": "object", "additionalProperties": false, "required": ["ledger_identity", "clock_identity", "clock_revision", "positions"],
+      "properties": {
+        "ledger_identity": {"$ref": "#/$defs/text"}, "clock_identity": {"$ref": "#/$defs/text"}, "clock_revision": {"$ref": "#/$defs/text"},
+        "positions": {"type": "array", "maxItems": 10000, "items": {
+          "type": "object", "additionalProperties": false, "required": ["position", "observation_identity"],
+          "properties": {"position": {"$ref": "#/$defs/naturalText"}, "observation_identity": {"$ref": "#/$defs/text"}}
+        }}
+      }
+    },
+    "clockValue": {
+      "type": "object", "additionalProperties": false, "required": ["clock_identity", "clock_revision", "selection"],
+      "properties": {"clock_identity": {"$ref": "#/$defs/text"}, "clock_revision": {"$ref": "#/$defs/text"}, "selection": {"$ref": "#/$defs/clockSelection"}}
+    },
+    "progressValue": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority_identity", "scope_identity", "clock_identity", "clock_revision", "required_sources", "boundary", "state", "captured_trigger_identity", "cutoff_identity", "restoration_basis_identity"],
+      "properties": {
+        "authority_identity": {"type": "string", "pattern": "^sha256-jcs:[0-9a-f]{64}$"},
+        "scope_identity": {"$ref": "#/$defs/text"}, "clock_identity": {"$ref": "#/$defs/text"}, "clock_revision": {"$ref": "#/$defs/text"},
+        "required_sources": {"$ref": "#/$defs/textSet"}, "boundary": {"$ref": "#/$defs/boundary"}, "state": {"enum": ["open", "closed"]},
+        "captured_trigger_identity": {"$ref": "#/$defs/text"}, "cutoff_identity": {"type": "string", "pattern": "^sha256-jcs:[0-9a-f]{64}$"},
+        "restoration_basis_identity": {"$ref": "#/$defs/text"}
+      }
+    },
+    "closureValue": {
+      "type": "object", "additionalProperties": false, "required": ["scope_identity", "clock_identity", "clock_revision", "required_sources", "boundary", "state"],
+      "properties": {
+        "scope_identity": {"$ref": "#/$defs/text"}, "clock_identity": {"$ref": "#/$defs/text"}, "clock_revision": {"$ref": "#/$defs/text"},
+        "required_sources": {"$ref": "#/$defs/textSet"}, "boundary": {"$ref": "#/$defs/boundary"}, "state": {"enum": ["open", "closed"]}
+      }
+    },
+    "completenessValue": {
+      "type": "object", "additionalProperties": false, "required": ["population_identity", "boundary_identity", "facts", "state"],
+      "properties": {
+        "population_identity": {"$ref": "#/$defs/text"}, "boundary_identity": {"$ref": "#/$defs/text"},
+        "facts": {"type": "array", "maxItems": 10000, "items": {
+          "type": "object", "additionalProperties": false, "required": ["member_identity", "observation_identity", "status"],
+          "properties": {"member_identity": {"$ref": "#/$defs/text"}, "observation_identity": {"type": ["string", "null"]}, "status": {"enum": ["available", "incomplete", "contradicted"]}}
+        }},
+        "state": {"enum": ["complete", "incomplete", "contradicted"]}
+      }
+    },
+    "availabilityValue": {
+      "type": "object", "additionalProperties": false, "required": ["required_results", "available_results", "state"],
+      "properties": {
+        "required_results": {"$ref": "#/$defs/textSet"}, "available_results": {"$ref": "#/$defs/textSet"},
+        "state": {"enum": ["available", "not-yet-observed", "producer-unavailable", "contract-unavailable"]}
+      }
+    },
+    "scalarFactSubject": {
+      "type": "object", "additionalProperties": false, "required": ["scope_identity", "population_identity", "semantic_key"],
+      "properties": {"scope_identity": {"$ref": "#/$defs/text"}, "population_identity": {"$ref": "#/$defs/text"}, "semantic_key": {"$ref": "#/$defs/text"}}
+    },
+    "availabilityFactSubject": {
+      "type": "object", "additionalProperties": false, "required": ["scope_identity", "population_identity", "semantic_key"],
+      "properties": {"scope_identity": {"$ref": "#/$defs/text"}, "population_identity": {"$ref": "#/$defs/text"}, "semantic_key": {"$ref": "#/$defs/textSet"}}
+    },
+    "emptyAvailability": {
+      "properties": {
+        "role": {"const": "availability"},
+        "fact_subject": {"$ref": "#/$defs/availabilityFactSubject"},
+        "payload": {"properties": {"kind": {"const": "availability"}, "value": {
+          "$ref": "#/$defs/availabilityValue", "required": ["required_results", "available_results", "state"],
+          "properties": {"required_results": {"type": "array", "maxItems": 0}, "available_results": {"type": "array", "maxItems": 0}, "state": {"const": "available"}}
+        }}}
+      }, "required": ["role", "payload"]
+    },
+    "emptyPopulation": {
+      "properties": {
+        "role": {"const": "population"},
+        "fact_subject": {"$ref": "#/$defs/scalarFactSubject"},
+        "payload": {"properties": {"kind": {"const": "population"}, "value": {
+          "$ref": "#/$defs/populationValue", "required": ["required_members"], "properties": {"required_members": {"type": "array", "maxItems": 0}}
+        }}}
+      }, "required": ["role", "payload"]
+    },
+    "emptyCompleteness": {
+      "properties": {
+        "role": {"const": "completeness"},
+        "fact_subject": {"$ref": "#/$defs/scalarFactSubject"},
+        "payload": {"properties": {"kind": {"const": "completeness"}, "value": {
+          "$ref": "#/$defs/completenessValue", "required": ["facts", "state"], "properties": {"facts": {"type": "array", "maxItems": 0}, "state": {"const": "complete"}}
+        }}}
+      }, "required": ["role", "payload"]
+    },
+    "emptyPosition": {
+      "properties": {
+        "role": {"const": "position"},
+        "fact_subject": {"$ref": "#/$defs/scalarFactSubject"},
+        "payload": {"properties": {"kind": {"const": "position"}, "value": {
+          "$ref": "#/$defs/positionValue", "required": ["positions"], "properties": {"positions": {"type": "array", "maxItems": 0}}
+        }}}
+      }, "required": ["role", "payload"]
+    },
+    "clockFact": {"properties": {"role": {"const": "clock"}, "fact_subject": {"$ref": "#/$defs/scalarFactSubject"}, "payload": {"properties": {"kind": {"const": "clock"}, "value": {"$ref": "#/$defs/clockValue"}}}}, "required": ["role", "payload"]},
+    "progressFact": {"properties": {"role": {"const": "progress"}, "fact_subject": {"$ref": "#/$defs/scalarFactSubject"}, "payload": {"properties": {"kind": {"const": "progress"}, "value": {"$ref": "#/$defs/progressValue"}}}}, "required": ["role", "payload"]},
+    "closureFact": {"properties": {"role": {"const": "closure"}, "fact_subject": {"$ref": "#/$defs/scalarFactSubject"}, "payload": {"properties": {"kind": {"const": "closure"}, "value": {"$ref": "#/$defs/closureValue"}}}}, "required": ["role", "payload"]},
+    "conflict": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "component_identity", "observation_identity"],
+      "properties": {
+        "kind": {"enum": ["duplicate", "contradiction", "unresolved-correlation"]}, "component_identity": {"$ref": "#/$defs/identity"},
+        "observation_identity": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/text"}]}
+      }
+    },
+    "bounds": {
+      "type": "object", "additionalProperties": false, "required": ["max_components", "max_replacements", "max_conflicts"],
+      "properties": {
+        "max_components": {"type": "integer", "minimum": 0, "maximum": 10000}, "max_replacements": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "max_conflicts": {"type": "integer", "minimum": 0, "maximum": 10000}
+      }
+    },
+    "usage": {
+      "type": "object", "additionalProperties": false, "required": ["components", "replacements", "conflicts"],
+      "properties": {
+        "components": {"type": "integer", "minimum": 0, "maximum": 10000}, "replacements": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "conflicts": {"type": "integer", "minimum": 0, "maximum": 10000}
+      }
+    },
+    "ownerLimits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["max_input_bytes", "max_output_bytes", "max_depth", "max_string_bytes", "max_population_entries", "max_positions", "max_capture_bindings", "max_required_sources", "max_visited_fields"],
+      "properties": {
+        "max_input_bytes": {"type": "integer", "minimum": 0, "maximum": 8388608}, "max_output_bytes": {"type": "integer", "minimum": 0, "maximum": 8388608},
+        "max_depth": {"type": "integer", "minimum": 0, "maximum": 64}, "max_string_bytes": {"type": "integer", "minimum": 0, "maximum": 1048576},
+        "max_population_entries": {"type": "integer", "minimum": 0, "maximum": 10000}, "max_positions": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "max_capture_bindings": {"type": "integer", "minimum": 0, "maximum": 10000}, "max_required_sources": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "max_visited_fields": {"type": "integer", "minimum": 0, "maximum": 1000000}
+      }
+    },
+    "ownerUsage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["wire_bytes", "depth", "string_bytes", "population_entries", "positions", "capture_bindings", "required_sources", "visited_fields"],
+      "properties": {
+        "wire_bytes": {"type": "integer", "minimum": 1, "maximum": 8388608}, "depth": {"type": "integer", "minimum": 0, "maximum": 64},
+        "string_bytes": {"type": "integer", "minimum": 0, "maximum": 1048576}, "population_entries": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "positions": {"type": "integer", "minimum": 0, "maximum": 10000}, "capture_bindings": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "required_sources": {"type": "integer", "minimum": 0, "maximum": 10000}, "visited_fields": {"type": "integer", "minimum": 0, "maximum": 1000000}
+      }
+    },
+    "limits": {
+      "type": "object", "additionalProperties": false, "required": ["effective", "usage"],
+      "properties": {"effective": {"$ref": "#/$defs/ownerLimits"}, "usage": {"$ref": "#/$defs/ownerUsage"}}
+    }
+  }
+}

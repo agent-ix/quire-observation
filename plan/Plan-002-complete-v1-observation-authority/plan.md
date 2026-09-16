@@ -30,9 +30,10 @@ selected temporal and protocol evaluators retain their own semantics.
 
 - [x] **FR-007**: preserve coherent partial values and exact interval-order uncertainty.
 - [x] **FR-008**: bind immutable activation capture and independent scope-authority axes.
-- [x] **FR-009**: publish canonical revisioned I07 bundles and strict lineage views.
+- [x] **FR-009**: publish canonical revisioned I07 bundles and strict lineage views,
+  including the immutable v2 empty-population profile required by FR-011.
 - [x] **FR-010**: derive bounded affected regions and coordinate replay/incremental parity.
-- [ ] **FR-011**: evaluate exact filter/count/sum queries over closed qualified populations.
+- [x] **FR-011**: evaluate exact filter/count/sum queries over closed qualified populations.
 
 ### Non-Functional Requirements
 
@@ -84,7 +85,9 @@ integration test and uses pinned strict readers rather than copied producer sema
   stale/branched views and strict-reader mutations for FR-009-AC-1 through FR-009-AC-5.
 - [x] **TC-010**: exact affected closure, unaffected-byte retention, decisive prefixes,
   evaluator failure and batch/incremental parity for FR-010-AC-1 through FR-010-AC-6.
-- [ ] **TC-011**: closed membership, window boundaries, duplicate policy, receipt exclusion
+- [x] **TC-009**: extend the completed v1 bundle coverage with the immutable v2
+  empty-population profile while pinning v1 bytes and behavior unchanged.
+- [x] **TC-011**: closed membership, window boundaries, duplicate policy, receipt exclusion
   and checked-prefix arithmetic for FR-011-AC-1 through FR-011-AC-6.
 
 ### Integration tests
@@ -116,8 +119,9 @@ integration test and uses pinned strict readers rather than copied producer sema
 
 ### Track B: Post-bundle parallel feature
 
-- **B1 = Task-021** closed-population queries — Hard; exit: definitive values exist only for
-  complete qualified populations under the selected duplicate and arithmetic policy.
+- **B1 = Task-021** closed-population queries — Hard; exit: the immutable v2 empty profile
+  closes the discovered FR-009 prerequisite and definitive values exist only for complete
+  qualified populations under the selected duplicate and arithmetic policy.
 
 ### Track C: Assurance and integration gates
 
@@ -145,7 +149,7 @@ Task-016 -> Task-017 -> Task-018 -> Task-019 -> Task-020 --\
 | Task-018 | A | FR-009, NFR-003 | TC-009, TC-012 | done |
 | Task-019 | A | FR-010, NFR-003 | TC-010, TC-012 | done |
 | Task-020 | A | FR-010 | TC-010 | done |
-| Task-021 | B | FR-011, NFR-003 | TC-011, TC-012 | not_started |
+| Task-021 | B | FR-011, NFR-003 | TC-011, TC-012 | done |
 | Task-022 | C | NFR-003 | TC-012, TC-013 | not_started |
 | Task-023 | C | FR-007..FR-011 | IT-002 | not_started |
 | Task-024 | Gate | FR-007..FR-011, NFR-003 | TC-007..TC-013, IT-002 | not_started |

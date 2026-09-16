@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Agent-IX
 
-//! Canonical revisioned `quire.observation-authority/v1` bundles.
+//! Canonical revisioned observation-authority v1 and empty-population v2 bundles.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
@@ -22,6 +22,14 @@ pub const SCHEMA_BYTES: &[u8] =
     include_bytes!("../../schemas/observation-authority-v1.schema.json");
 /// Lowercase SHA-256 digest of [`SCHEMA_BYTES`].
 pub const SCHEMA_SHA256: &str = "6b6f4e3b08a4b16476b55ae6cdfdff4440b8c053f056ffd7b9bdcde47e200296";
+/// Immutable structurally empty bundle-contract label.
+pub const V2_CONTRACT: &str = "quire.observation-authority/v2";
+/// Pinned JSON Schema bytes for [`V2_CONTRACT`].
+pub const V2_SCHEMA_BYTES: &[u8] =
+    include_bytes!("../../schemas/observation-authority-v2.schema.json");
+/// Lowercase SHA-256 digest of [`V2_SCHEMA_BYTES`].
+pub const V2_SCHEMA_SHA256: &str =
+    "f92335c5e5e1e3434f1c2484557ca1f512c22b496eb97319c94fcac3491f116a";
 /// Immutable lineage-view contract label.
 pub const LINEAGE_CONTRACT: &str = "quire.observation-authority-lineage/v1";
 /// Pinned JSON Schema bytes for [`LINEAGE_CONTRACT`].
@@ -74,6 +82,16 @@ impl ComponentRole {
         Self::Availability,
     ];
 
+    const EMPTY_V2: [Self; 7] = [
+        Self::Population,
+        Self::Position,
+        Self::Clock,
+        Self::Progress,
+        Self::Closure,
+        Self::Completeness,
+        Self::Availability,
+    ];
+
     const fn contract(self) -> &'static str {
         match self {
             Self::Observation => super::observation::CONTRACT,
@@ -89,6 +107,12 @@ impl ComponentRole {
             Self::Availability => super::availability::CONTRACT,
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum Profile {
+    CompleteV1,
+    EmptyV2,
 }
 
 /// Role-qualified immutable component, constructible only from an owner document.
@@ -715,14 +739,15 @@ impl LineageView {
             return Err(resource_error(0, 0, 0, direct_children.len()));
         }
         for child in direct_children {
-            if child.authority() != head.authority()
+            if child.contract() != head.contract()
+                || child.authority() != head.authority()
                 || child.subject() != head.subject()
                 || child.predecessor() != Some(head.identity())
                 || child.revision() <= head.revision()
             {
                 return Err(Error::new(
                     ErrorCode::InvalidSelection,
-                    "lineage child is not a direct same-authority successor of the head",
+                    "lineage child is not a direct same-contract same-authority successor of the head",
                     Usage::default(),
                 ));
             }
@@ -920,7 +945,42 @@ pub fn publish(
     lineage: Option<&LineageView>,
     limits: Limits,
 ) -> Result<Publication> {
-    let payload = payload(context, selection, lineage, limits)?;
+    publish_for(
+        CONTRACT,
+        Profile::CompleteV1,
+        context,
+        selection,
+        lineage,
+        limits,
+    )
+}
+
+/// Validates authority and derives one canonical structurally empty v2 bundle.
+pub fn publish_v2(
+    context: Context<'_>,
+    selection: &Selection,
+    lineage: Option<&LineageView>,
+    limits: Limits,
+) -> Result<Publication> {
+    publish_for(
+        V2_CONTRACT,
+        Profile::EmptyV2,
+        context,
+        selection,
+        lineage,
+        limits,
+    )
+}
+
+fn publish_for(
+    contract: &'static str,
+    profile: Profile,
+    context: Context<'_>,
+    selection: &Selection,
+    lineage: Option<&LineageView>,
+    limits: Limits,
+) -> Result<Publication> {
+    let payload = payload(contract, profile, context, selection, lineage, limits)?;
     let usage = Usage {
         depth: 4,
         string_bytes: payload
@@ -940,8 +1000,8 @@ pub fn publish(
             .saturating_add(payload.conflicts.len().saturating_mul(3)),
         ..Usage::default()
     };
-    let document = build_document(CONTRACT, context, &payload, usage, limits)?;
-    let view = read_exact(CONTRACT, document.bytes(), &document, limits)?;
+    let document = build_document(contract, context, &payload, usage, limits)?;
+    let view = read_exact(contract, document.bytes(), &document, limits)?;
     let disposition = disposition(&document, lineage)?;
     let successor_lineage = match (disposition, lineage) {
         (Disposition::Replayed, Some(supplied)) if supplied.head.bytes() == document.bytes() => {
@@ -965,8 +1025,50 @@ pub fn read(
     lineage: Option<&LineageView>,
     limits: Limits,
 ) -> Result<View> {
-    let expected = publish(context, selection, lineage, limits)?;
-    read_exact(CONTRACT, bytes, expected.document(), limits)
+    read_for(
+        CONTRACT,
+        Profile::CompleteV1,
+        bytes,
+        context,
+        selection,
+        lineage,
+        limits,
+    )
+}
+
+/// Strict-reads canonical structurally empty v2 bundle bytes.
+pub fn read_v2(
+    bytes: &[u8],
+    context: Context<'_>,
+    selection: &Selection,
+    lineage: Option<&LineageView>,
+    limits: Limits,
+) -> Result<View> {
+    read_for(
+        V2_CONTRACT,
+        Profile::EmptyV2,
+        bytes,
+        context,
+        selection,
+        lineage,
+        limits,
+    )
+}
+
+// The shared reader keeps contract/profile dispatch explicit while preserving
+// the same independently supplied strict-read selections as the public APIs.
+#[allow(clippy::too_many_arguments)]
+fn read_for(
+    contract: &'static str,
+    profile: Profile,
+    bytes: &[u8],
+    context: Context<'_>,
+    selection: &Selection,
+    lineage: Option<&LineageView>,
+    limits: Limits,
+) -> Result<View> {
+    let expected = publish_for(contract, profile, context, selection, lineage, limits)?;
+    read_exact(contract, bytes, expected.document(), limits)
 }
 
 /// Strict-reads one initial or historical revision without consulting current publication state.
@@ -974,6 +1076,48 @@ pub fn read(
 /// A later revision requires its exact strict-read predecessor view. Branch and
 /// current-head decisions remain exclusively in [`publish`].
 pub fn read_revision(
+    bytes: &[u8],
+    context: Context<'_>,
+    selection: &Selection,
+    predecessor: Option<&View>,
+    limits: Limits,
+) -> Result<View> {
+    read_revision_for(
+        CONTRACT,
+        Profile::CompleteV1,
+        bytes,
+        context,
+        selection,
+        predecessor,
+        limits,
+    )
+}
+
+/// Strict-reads one structurally empty v2 initial or historical revision.
+pub fn read_revision_v2(
+    bytes: &[u8],
+    context: Context<'_>,
+    selection: &Selection,
+    predecessor: Option<&View>,
+    limits: Limits,
+) -> Result<View> {
+    read_revision_for(
+        V2_CONTRACT,
+        Profile::EmptyV2,
+        bytes,
+        context,
+        selection,
+        predecessor,
+        limits,
+    )
+}
+
+// Historical reads add an independently validated predecessor to the same
+// explicit contract/profile boundary used by current-head reads.
+#[allow(clippy::too_many_arguments)]
+fn read_revision_for(
+    contract: &'static str,
+    profile: Profile,
     bytes: &[u8],
     context: Context<'_>,
     selection: &Selection,
@@ -993,10 +1137,20 @@ pub fn read_revision(
             ));
         }
     };
-    read(bytes, context, selection, lineage.as_ref(), limits)
+    read_for(
+        contract,
+        profile,
+        bytes,
+        context,
+        selection,
+        lineage.as_ref(),
+        limits,
+    )
 }
 
 fn payload(
+    contract: &'static str,
+    profile: Profile,
     context: Context<'_>,
     selection: &Selection,
     lineage: Option<&LineageView>,
@@ -1046,9 +1200,18 @@ fn payload(
             .cmp(&right.role())
             .then_with(|| left.identity().cmp(right.identity()))
     });
-    let complete_roles = ComponentRole::ALL
-        .iter()
-        .all(|role| components.iter().any(|component| component.role() == *role));
+    let complete_roles = match profile {
+        Profile::CompleteV1 => ComponentRole::ALL
+            .iter()
+            .all(|role| components.iter().any(|component| component.role() == *role)),
+        Profile::EmptyV2 => {
+            components.len() == ComponentRole::EMPTY_V2.len()
+                && ComponentRole::EMPTY_V2
+                    .iter()
+                    .all(|role| components.iter().any(|component| component.role() == *role))
+                && empty_profile_is_coherent(&components)
+        }
+    };
     let singleton_roles = [
         ComponentRole::Population,
         ComponentRole::Position,
@@ -1155,7 +1318,7 @@ fn payload(
             Usage::default(),
         ));
     }
-    validate_lineage(context, &components, &replacements, lineage)?;
+    validate_lineage(contract, context, &components, &replacements, lineage)?;
     let bounds = BundleBoundsWire {
         max_components: wire_count(effective.max_bundle_components)?,
         max_replacements: wire_count(effective.max_replacements)?,
@@ -1210,14 +1373,58 @@ fn payload(
     })
 }
 
+fn empty_profile_is_coherent(components: &[&Component]) -> bool {
+    let population_is_empty = components.iter().any(|component| {
+        matches!(
+            &component.payload,
+            EmbeddedPayloadWire::Population(value) if value.required_members().is_empty()
+        )
+    });
+    let positions_are_empty = components.iter().any(|component| {
+        matches!(
+            &component.payload,
+            EmbeddedPayloadWire::Position(value) if value.positions().len() == 0
+        )
+    });
+    let completeness_is_empty = components.iter().any(|component| {
+        matches!(
+            &component.payload,
+            EmbeddedPayloadWire::Completeness(value)
+                if value.fact_count() == 0
+        )
+    });
+    let availability_is_empty = components.iter().any(|component| {
+        matches!(
+            &component.payload,
+            EmbeddedPayloadWire::Availability(value)
+                if value.required_results().is_empty()
+                    && value.available_results().is_empty()
+                    && value.state() == super::availability::State::Available
+        )
+    });
+    population_is_empty && positions_are_empty && completeness_is_empty && availability_is_empty
+}
+
 fn validate_lineage(
+    contract: &'static str,
     context: Context<'_>,
     components: &[&Component],
     replacements: &[Replacement],
     lineage: Option<&LineageView>,
 ) -> Result<()> {
+    if context
+        .predecessor()
+        .is_some_and(|predecessor| predecessor.contract() != contract)
+    {
+        return Err(Error::new(
+            ErrorCode::InvalidSelection,
+            "bundle predecessor uses a different contract version",
+            Usage::default(),
+        ));
+    }
     if let Some(lineage) = lineage {
-        if lineage.head.authority() != context.authority()
+        if lineage.head.contract() != contract
+            || lineage.head.authority() != context.authority()
             || lineage.head.subject() != context.subject()
         {
             return Err(Error::new(
@@ -1603,6 +1810,8 @@ mod tests {
     fn schema_digest_is_pinned() {
         assert_eq!(common::schema_sha256(SCHEMA_BYTES), SCHEMA_SHA256);
         common::assert_closed_schema(SCHEMA_BYTES, CONTRACT);
+        assert_eq!(common::schema_sha256(V2_SCHEMA_BYTES), V2_SCHEMA_SHA256);
+        common::assert_closed_schema(V2_SCHEMA_BYTES, V2_CONTRACT);
         assert_eq!(
             common::schema_sha256(LINEAGE_SCHEMA_BYTES),
             LINEAGE_SCHEMA_SHA256

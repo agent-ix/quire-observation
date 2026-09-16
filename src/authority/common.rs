@@ -794,6 +794,7 @@ impl Document {
 /// Strict-reader output. Construction is private to the owner modules.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Validated<P> {
+    contract: &'static str,
     identity: Identity,
     revision: u64,
     predecessor: Option<Identity>,
@@ -804,6 +805,12 @@ pub struct Validated<P> {
 }
 
 impl<P> Validated<P> {
+    /// Returns the validated immutable owner-contract label.
+    #[must_use]
+    pub const fn contract(&self) -> &'static str {
+        self.contract
+    }
+
     /// Returns the validated document identity.
     #[must_use]
     pub const fn identity(&self) -> &Identity {
@@ -1095,6 +1102,7 @@ where
         ));
     }
     Ok(Validated {
+        contract,
         identity: Identity::new(envelope.identity),
         revision: envelope.revision,
         predecessor: envelope.predecessor.map(Identity::new),
@@ -1392,7 +1400,7 @@ pub(crate) fn preflight_for_contract(
     contract: &str,
 ) -> Result<Usage> {
     let profile = match contract {
-        "quire.observation-authority/v1" => ScanProfile::Bundle,
+        "quire.observation-authority/v1" | "quire.observation-authority/v2" => ScanProfile::Bundle,
         "quire.observation-authority-lineage/v1" => ScanProfile::Lineage,
         _ => ScanProfile::Generic,
     };

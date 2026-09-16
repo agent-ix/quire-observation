@@ -18,7 +18,9 @@ use quire_observation::{
     NATIVE_LINKED_PACKAGE_FORMAT, PRODUCER_INTERFACE_VERSION,
 };
 use sha2::{Digest as _, Sha256};
-use support::{order, producer, shipment, ORDER_SHIPMENT};
+use support::{
+    order, producer, shipment, ORDER_KIND, ORDER_SHIPMENT, ORDER_SUCCESSOR, SHIPMENT_KIND,
+};
 
 fn id(value: &str) -> Identity {
     Identity::new(value)
@@ -2170,6 +2172,11 @@ fn tc009_initial_bundle_is_canonical_complete_and_strictly_read() {
         .expect("publish initial complete I07 bundle");
     let second = authority::bundle::publish(context, &selection, None, Limits::owner_max())
         .expect("repeat initial publication");
+    assert_eq!(
+        format!("{:x}", Sha256::digest(first.document().bytes())),
+        "3e703a9cf709cf70fed4df57ecbac00e778da155a52194acb2d95d3b3e93c24b",
+        "the existing v1 canonical fixture bytes are immutable",
+    );
     assert_eq!(first.document().bytes(), second.document().bytes());
     assert_eq!(first.document().identity(), second.document().identity());
     assert_eq!(
@@ -2465,6 +2472,329 @@ fn tc009_bundle_schema_accepts_emitted_typed_wire_and_rejects_role_mismatches() 
     assert!(!validator.is_valid(&invalid_subject));
 }
 
+#[trace("TC-009", "FR-009-AC-5", "FR-009-AC-6")]
+#[test]
+fn tc009_v2_round_trips_only_the_exact_structurally_empty_profile() {
+    use authority::bundle::{ComponentRole, Selection};
+
+    let qualified = qualified();
+    let owner = owner();
+    let subject = subject(&qualified);
+    let history = History::batch(&qualified);
+    let context = Context::new(history, &owner, &subject, 1, None);
+    let documents = derive_all(history, &owner, &subject);
+    let nonempty_components = bundle_components(&documents);
+    let nonempty = Selection::new(nonempty_components.clone(), vec![]);
+
+    let v2_bytes = with_empty_v2_fixture(|context, selection, publication| {
+        assert_eq!(
+            publication.document().contract(),
+            authority::bundle::V2_CONTRACT
+        );
+        assert_eq!(
+            publication.view().contract(),
+            authority::bundle::V2_CONTRACT
+        );
+        assert_eq!(publication.view().payload().components().len(), 7);
+        assert_eq!(publication.view().payload().records().len(), 1);
+        let strict = authority::bundle::read_v2(
+            publication.document().bytes(),
+            context,
+            selection,
+            None,
+            Limits::owner_max(),
+        )
+        .expect("strict-read empty v2 bundle");
+        assert_eq!(strict.bytes(), publication.document().bytes());
+        let schema: serde_json::Value =
+            serde_json::from_slice(authority::bundle::V2_SCHEMA_BYTES).expect("v2 schema JSON");
+        let validator = jsonschema::validator_for(&schema)
+            .expect("standalone v2 schema must compile without external resources");
+        let emitted: serde_json::Value =
+            serde_json::from_slice(publication.document().bytes()).expect("emitted v2 bundle JSON");
+        assert!(
+            validator.is_valid(&emitted),
+            "emitted v2 wire must satisfy the advertised schema"
+        );
+        for role in [
+            "population",
+            "position",
+            "clock",
+            "progress",
+            "closure",
+            "completeness",
+            "availability",
+        ] {
+            let mut duplicate_role = emitted.clone();
+            duplicate_role["payload"]["components"][0]["role"] =
+                serde_json::Value::String(role.to_owned());
+            if role != "population" {
+                assert!(!validator.is_valid(&duplicate_role));
+            }
+        }
+        for (pointer, replacement) in [
+            (
+                "/payload/populations/0/payload/value/required_members",
+                serde_json::json!(["sentinel"]),
+            ),
+            (
+                "/payload/populations/1/payload/value/facts",
+                serde_json::json!([{"member_identity":"sentinel"}]),
+            ),
+            (
+                "/payload/populations/1/payload/value/state",
+                serde_json::json!("incomplete"),
+            ),
+            (
+                "/payload/positions/0/payload/value/positions",
+                serde_json::json!([{"position":"0","observation_identity":"sentinel"}]),
+            ),
+            (
+                "/payload/records/0/payload/value/required_results",
+                serde_json::json!(["sentinel"]),
+            ),
+            (
+                "/payload/records/0/payload/value/available_results",
+                serde_json::json!(["sentinel"]),
+            ),
+            (
+                "/payload/records/0/payload/value/state",
+                serde_json::json!("not-yet-observed"),
+            ),
+        ] {
+            let mut incoherent = emitted.clone();
+            *incoherent
+                .pointer_mut(pointer)
+                .expect("v2 coherence mutation path") = replacement;
+            assert!(
+                !validator.is_valid(&incoherent),
+                "v2 schema accepted incoherent mutation at {pointer}"
+            );
+        }
+        for pointer in [
+            "/payload/populations/0/payload/value/producer",
+            "/payload/populations/0/payload/value/membership_rule_identity",
+            "/payload/populations/0/payload/value/configuration",
+            "/payload/positions/1/payload/value/selection",
+            "/payload/progress/0/payload/value/required_sources",
+            "/payload/progress/1/payload/value/boundary",
+            "/payload/records/0/payload/value/available_results",
+        ] {
+            let mut incomplete_owner = emitted.clone();
+            let (parent, field) = pointer.rsplit_once('/').expect("owner field pointer");
+            incomplete_owner
+                .pointer_mut(parent)
+                .and_then(serde_json::Value::as_object_mut)
+                .expect("owner payload object")
+                .remove(field);
+            assert!(
+                !validator.is_valid(&incomplete_owner),
+                "v2 schema accepted owner document missing {pointer}"
+            );
+        }
+        assert_eq!(
+            strict
+                .payload()
+                .populations()
+                .filter_map(|fact| match fact.payload() {
+                    authority::bundle::EmbeddedPayloadRef::Population(value) => {
+                        Some(value.required_members().len())
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec![0]
+        );
+
+        assert_eq!(
+            authority::bundle::publish(context, selection, None, Limits::owner_max())
+                .expect_err("v1 cannot publish an empty profile")
+                .code(),
+            authority::ErrorCode::InvalidSelection
+        );
+        for role in [
+            ComponentRole::Population,
+            ComponentRole::Position,
+            ComponentRole::Clock,
+            ComponentRole::Progress,
+            ComponentRole::Closure,
+            ComponentRole::Completeness,
+            ComponentRole::Availability,
+        ] {
+            let mut omitted = selection.components().to_vec();
+            omitted.retain(|component| component.role() != role);
+            assert_eq!(
+                authority::bundle::publish_v2(
+                    context,
+                    &Selection::new(omitted, vec![]),
+                    None,
+                    Limits::owner_max(),
+                )
+                .expect_err("v2 requires each empty-profile role")
+                .code(),
+                authority::ErrorCode::InvalidSelection
+            );
+            let mut added = selection.components().to_vec();
+            added.push(
+                selection
+                    .components()
+                    .iter()
+                    .find(|component| component.role() == role)
+                    .expect("selected empty-profile role")
+                    .clone(),
+            );
+            assert_eq!(
+                authority::bundle::publish_v2(
+                    context,
+                    &Selection::new(added, vec![]),
+                    None,
+                    Limits::owner_max(),
+                )
+                .expect_err("v2 forbids duplicate roles")
+                .code(),
+                authority::ErrorCode::InvalidSelection
+            );
+        }
+        for role in [
+            ComponentRole::Population,
+            ComponentRole::Position,
+            ComponentRole::Completeness,
+            ComponentRole::Availability,
+        ] {
+            let replacement = nonempty_components
+                .iter()
+                .find(|component| component.role() == role)
+                .expect("nonempty coherence replacement")
+                .clone();
+            let mut incoherent = selection.components().to_vec();
+            let slot = incoherent
+                .iter_mut()
+                .find(|component| component.role() == role)
+                .expect("empty coherence role");
+            *slot = replacement;
+            assert_eq!(
+                authority::bundle::publish_v2(
+                    context,
+                    &Selection::new(incoherent, vec![]),
+                    None,
+                    Limits::owner_max(),
+                )
+                .expect_err("typed nonempty component violates the v2 profile")
+                .code(),
+                authority::ErrorCode::InvalidSelection
+            );
+        }
+        let unavailable = authority::availability::derive(
+            context,
+            &authority::availability::Selection::new(
+                vec![],
+                vec![],
+                authority::availability::DependencyState::Unavailable,
+                authority::availability::DependencyState::Available,
+            ),
+            Limits::owner_max(),
+        )
+        .expect("typed empty unavailable result authority");
+        let unavailable =
+            authority::bundle::Component::from_document(ComponentRole::Availability, &unavailable)
+                .expect("typed unavailable component");
+        let mut wrong_state = selection.components().to_vec();
+        *wrong_state
+            .iter_mut()
+            .find(|component| component.role() == ComponentRole::Availability)
+            .expect("empty availability role") = unavailable;
+        assert_eq!(
+            authority::bundle::publish_v2(
+                context,
+                &Selection::new(wrong_state, vec![]),
+                None,
+                Limits::owner_max(),
+            )
+            .expect_err("empty but unavailable authority violates the v2 profile")
+            .code(),
+            authority::ErrorCode::InvalidSelection
+        );
+        let mut raw: serde_json::Value =
+            serde_json::from_slice(publication.document().bytes()).expect("empty v2 wire JSON");
+        let components = raw["payload"]["components"]
+            .as_array_mut()
+            .expect("v2 component array");
+        let duplicate = components[0].clone();
+        components.push(duplicate);
+        let one_over_wire = serde_json::to_vec(&raw).expect("one-over v2 wire");
+        assert_eq!(
+            authority::bundle::read_v2(
+                &one_over_wire,
+                context,
+                selection,
+                None,
+                Limits {
+                    max_bundle_components: 7,
+                    ..Limits::owner_max()
+                },
+            )
+            .expect_err("v2 strict-read preflight rejects one-over raw components")
+            .code(),
+            authority::ErrorCode::ResourceIncomplete
+        );
+        publication.document().bytes().to_vec()
+    });
+
+    assert_eq!(
+        authority::bundle::publish_v2(context, &nonempty, None, Limits::owner_max())
+            .expect_err("v2 rejects a nonempty profile")
+            .code(),
+        authority::ErrorCode::InvalidSelection
+    );
+    assert_eq!(
+        authority::bundle::read(&v2_bytes, context, &nonempty, None, Limits::owner_max(),)
+            .expect_err("v1 strict reader refuses v2 contract substitution")
+            .code(),
+        authority::ErrorCode::ContractMismatch
+    );
+    for forbidden in [
+        ComponentRole::Observation,
+        ComponentRole::Partial,
+        ComponentRole::Capture,
+        ComponentRole::Activation,
+    ] {
+        let sentinel = nonempty_components
+            .iter()
+            .find(|component| component.role() == forbidden)
+            .expect("nonempty sentinel role")
+            .clone();
+        with_empty_v2_fixture(|empty_context, empty_selection, _| {
+            let mut components = empty_selection.components().to_vec();
+            components.push(sentinel);
+            assert_eq!(
+                authority::bundle::publish_v2(
+                    empty_context,
+                    &Selection::new(components, vec![]),
+                    None,
+                    Limits::owner_max(),
+                )
+                .expect_err("v2 forbids every record-dependent sentinel role")
+                .code(),
+                authority::ErrorCode::InvalidSelection
+            );
+        });
+    }
+
+    let v1 = authority::bundle::publish(context, &nonempty, None, Limits::owner_max())
+        .expect("nonempty v1 baseline");
+    let empty_v2 = empty_v2_lineage();
+    assert_eq!(
+        authority::bundle::LineageView::from_views(
+            v1.view(),
+            std::slice::from_ref(empty_v2.head()),
+            Limits::owner_max(),
+        )
+        .expect_err("a v1/v2 lineage transition must refuse")
+        .code(),
+        authority::ErrorCode::InvalidSelection
+    );
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(32))]
 
@@ -2616,6 +2946,1889 @@ fn coordinator_profile() -> authority::coordination::PackageProfile {
         id("3"),
         digest(3),
     )
+}
+
+#[derive(Clone, Copy)]
+enum QueryScope {
+    Window,
+    AdjacentWindow,
+    Snapshot,
+}
+
+fn query_range(scope: QueryScope) -> (i128, i128) {
+    match scope {
+        QueryScope::Window | QueryScope::Snapshot => (0, 30),
+        QueryScope::AdjacentWindow => (30, 60),
+    }
+}
+
+fn query_boundary(scope: QueryScope, state: OpenClosed) -> TemporalBoundary {
+    let (lower_nanos, carrier_end_exclusive_nanos) = query_range(scope);
+    TemporalBoundary::TimestampedEvent {
+        lower_nanos,
+        upper_inclusive_nanos: carrier_end_exclusive_nanos - 1,
+        carrier_end_exclusive_nanos,
+        watermark_nanos: if state == OpenClosed::Closed {
+            carrier_end_exclusive_nanos
+        } else {
+            carrier_end_exclusive_nanos - 10
+        },
+    }
+}
+
+fn query_request(effects: &[(&str, &str, i128)], required_indices: &[usize]) -> AdmissionRequest {
+    query_request_in_scope(effects, required_indices, QueryScope::Window)
+}
+
+fn query_request_in_scope(
+    effects: &[(&str, &str, i128)],
+    required_indices: &[usize],
+    scope: QueryScope,
+) -> AdmissionRequest {
+    let producer = producer();
+    let root = order(&producer, "order:O1");
+    let signal_identity = if !effects.is_empty()
+        && effects
+            .iter()
+            .all(|(identity, _, _)| identity.starts_with("receipt:"))
+    {
+        id("signal:receipt")
+    } else {
+        id("signal:refund")
+    };
+    let mut relationships = Vec::new();
+    let mut records = Vec::new();
+    for (index, (effect_identity, value, event_time_nanos)) in effects.iter().enumerate() {
+        let relationship_identity =
+            RelationshipIdentity::new(format!("relationship:refund:{index}"))
+                .expect("query relationship identity");
+        relationships.push(
+            Relationship::new(
+                &producer,
+                ORDER_SHIPMENT,
+                relationship_identity.clone(),
+                root.clone(),
+                shipment(&producer, effect_identity),
+            )
+            .expect("query relationship"),
+        );
+        let anchor = match scope {
+            QueryScope::AdjacentWindow => Anchor::TimestampNanos(*event_time_nanos),
+            QueryScope::Window | QueryScope::Snapshot => Anchor::TimestampNanos(10),
+        };
+        records.push(AdmittedRecord {
+            identity: id(format!("unsealed-query-record:{index}").as_str()),
+            binding_identity: id("binding:refund"),
+            source_identity: id("source:payments"),
+            schema_identity: id("schema:refund/v1"),
+            subject: root.clone(),
+            signal_identity: signal_identity.clone(),
+            trigger_identity: id("trigger:refund-request"),
+            unit: id("USD"),
+            value: ValueState::Present {
+                value_type: id("signed-integer"),
+                canonical_value: (*value).to_owned(),
+            },
+            visibility: Visibility::External,
+            anchor,
+            event_time_nanos: *event_time_nanos,
+            ingestion_time_nanos: event_time_nanos + 1,
+            causal_relationship_identity: Some(relationship_identity),
+            clock_identity: id("clock:event-time"),
+            clock_revision: id("1"),
+            clock_uncertainty_nanos: 0,
+        });
+    }
+    let mut request = AdmissionRequest {
+        package: PackageSelection {
+            format: NATIVE_LINKED_PACKAGE_FORMAT.to_owned(),
+            identity: id("package:refund"),
+            revision: id("1"),
+            digest: digest(1),
+        },
+        binding: ObservationBinding {
+            identity: id("binding:refund"),
+            source_identity: id("source:payments"),
+            schema_identity: id("schema:refund/v1"),
+            signal_identity,
+            trigger_identity: id("trigger:refund-request"),
+            unit: id("USD"),
+            subject_kind: root.kind().clone(),
+            required: !effects
+                .iter()
+                .any(|(identity, _, _)| identity.starts_with("receipt:")),
+        },
+        expected_subject: root,
+        relationships,
+        required_relationships: vec![],
+        scope: ScopeSelection {
+            population_identity: id("unsealed-query-population"),
+            membership_rule_identity: id("unsealed-query-membership"),
+            membership_digest: digest(0),
+            membership_document: vec![],
+            required_member_identities: required_indices
+                .iter()
+                .map(|index| id(format!("member:refund:{index}").as_str()))
+                .collect(),
+            observation_sources: vec![id("source:payments")],
+            completeness_dependencies: vec![id("completeness:refunds")],
+            progress_dependencies: vec![id("progress:refunds")],
+            clock_identity: id("clock:event-time"),
+            clock_revision: id("1"),
+            membership_complete: true,
+            closure_identity: Some(id("closure-definition:windows")),
+            closure_digest: Some(digest(4)),
+            kind: match scope {
+                QueryScope::Window => ScopeKind::Window {
+                    window_identity: id("window:O1"),
+                },
+                QueryScope::AdjacentWindow => ScopeKind::Window {
+                    window_identity: id("window:O1-next"),
+                },
+                QueryScope::Snapshot => ScopeKind::Snapshot {
+                    snapshot_identity: id("snapshot:O1"),
+                },
+            },
+            range: {
+                let (start_nanos, end_nanos) = query_range(scope);
+                ClockRange::Timestamp {
+                    start_nanos,
+                    end_nanos,
+                }
+            },
+            members: required_indices
+                .iter()
+                .map(|index| Member {
+                    object_identity: id(format!("member:refund:{index}").as_str()),
+                    record_identity: id(format!("unsealed-query-record:{index}").as_str()),
+                    anchor: match scope {
+                        QueryScope::AdjacentWindow => Anchor::TimestampNanos(effects[*index].2),
+                        QueryScope::Window | QueryScope::Snapshot => Anchor::TimestampNanos(10),
+                    },
+                })
+                .collect(),
+        },
+        records,
+        limits: ResourceLimits {
+            max_records: effects.len(),
+            max_members: required_indices.len(),
+            max_relationships: effects.len(),
+            max_required_relationships: 0,
+        },
+        producer,
+    };
+    for record in &mut request.records {
+        record.identity = authority::observation::record_identity(record, Limits::owner_max())
+            .expect("query record identity");
+    }
+    for (member, index) in request.scope.members.iter_mut().zip(required_indices) {
+        member.record_identity = request.records[*index].identity.clone();
+    }
+    authority::population::assign_request_identities(&mut request, Limits::owner_max())
+        .expect("query population identities");
+    request
+}
+
+fn query_qualified(
+    effects: &[(&str, &str, i128)],
+    required_indices: &[usize],
+) -> Box<QualifiedObservation> {
+    match admit(query_request(effects, required_indices)) {
+        AdmissionOutcome::Available { observation } => observation,
+        other => panic!("query fixture admission failed: {other:?}"),
+    }
+}
+
+fn query_qualified_in_scope(
+    effects: &[(&str, &str, i128)],
+    required_indices: &[usize],
+    scope: QueryScope,
+) -> Box<QualifiedObservation> {
+    match admit(query_request_in_scope(effects, required_indices, scope)) {
+        AdmissionOutcome::Available { observation } => observation,
+        other => panic!("query fixture admission failed: {other:?}"),
+    }
+}
+
+fn query_lineage(
+    effects: &[(&str, &str, i128)],
+    required_indices: &[usize],
+    exposure_order: &[usize],
+) -> authority::bundle::LineageView {
+    query_lineage_with_authority(
+        effects,
+        required_indices,
+        exposure_order,
+        OpenClosed::Closed,
+        OpenClosed::Closed,
+        authority::completeness::FactStatus::Available,
+    )
+}
+
+fn query_snapshot_lineage(
+    effects: &[(&str, &str, i128)],
+    required_indices: &[usize],
+    exposure_order: &[usize],
+) -> authority::bundle::LineageView {
+    query_lineage_with_scope_and_conflict(
+        effects,
+        required_indices,
+        exposure_order,
+        OpenClosed::Closed,
+        OpenClosed::Closed,
+        authority::completeness::FactStatus::Available,
+        QueryScope::Snapshot,
+        None,
+        false,
+        false,
+    )
+}
+
+fn query_adjacent_lineage(
+    effects: &[(&str, &str, i128)],
+    required_indices: &[usize],
+    exposure_order: &[usize],
+) -> authority::bundle::LineageView {
+    query_lineage_with_scope_and_conflict(
+        effects,
+        required_indices,
+        exposure_order,
+        OpenClosed::Closed,
+        OpenClosed::Closed,
+        authority::completeness::FactStatus::Available,
+        QueryScope::AdjacentWindow,
+        None,
+        false,
+        false,
+    )
+}
+
+fn query_lineage_with_authority(
+    effects: &[(&str, &str, i128)],
+    required_indices: &[usize],
+    exposure_order: &[usize],
+    progress_state: OpenClosed,
+    closure_state: OpenClosed,
+    fact_status: authority::completeness::FactStatus,
+) -> authority::bundle::LineageView {
+    query_lineage_with_conflict(
+        effects,
+        required_indices,
+        exposure_order,
+        progress_state,
+        closure_state,
+        fact_status,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn query_lineage_with_conflict(
+    effects: &[(&str, &str, i128)],
+    required_indices: &[usize],
+    exposure_order: &[usize],
+    progress_state: OpenClosed,
+    closure_state: OpenClosed,
+    fact_status: authority::completeness::FactStatus,
+    conflict: Option<authority::bundle::ConflictKind>,
+) -> authority::bundle::LineageView {
+    query_lineage_with_scope_and_conflict(
+        effects,
+        required_indices,
+        exposure_order,
+        progress_state,
+        closure_state,
+        fact_status,
+        QueryScope::Window,
+        conflict,
+        false,
+        false,
+    )
+}
+
+fn query_stale_lineage() -> authority::bundle::LineageView {
+    query_lineage_with_scope_and_conflict(
+        &[("shipment:S1", "1", 10)],
+        &[0],
+        &[0],
+        OpenClosed::Closed,
+        OpenClosed::Closed,
+        authority::completeness::FactStatus::Available,
+        QueryScope::Window,
+        None,
+        true,
+        false,
+    )
+}
+
+fn query_missing_relationship_lineage() -> authority::bundle::LineageView {
+    query_lineage_with_scope_and_conflict(
+        &[("shipment:S1", "1", 10)],
+        &[0],
+        &[0],
+        OpenClosed::Closed,
+        OpenClosed::Closed,
+        authority::completeness::FactStatus::Available,
+        QueryScope::Window,
+        None,
+        false,
+        true,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn query_lineage_with_scope_and_conflict(
+    effects: &[(&str, &str, i128)],
+    required_indices: &[usize],
+    exposure_order: &[usize],
+    progress_state: OpenClosed,
+    closure_state: OpenClosed,
+    fact_status: authority::completeness::FactStatus,
+    scope: QueryScope,
+    conflict: Option<authority::bundle::ConflictKind>,
+    known_successor: bool,
+    missing_relationship: bool,
+) -> authority::bundle::LineageView {
+    use authority::bundle::{Component, ComponentRole, Conflict, Replacement, Selection};
+
+    let qualified = if missing_relationship {
+        let mut request = query_request_in_scope(effects, required_indices, scope);
+        request.records[0].causal_relationship_identity = None;
+        request.records[0].identity =
+            authority::observation::record_identity(&request.records[0], Limits::owner_max())
+                .expect("relationship-free query record identity");
+        request.scope.members[0].record_identity = request.records[0].identity.clone();
+        authority::population::assign_request_identities(&mut request, Limits::owner_max())
+            .expect("relationship-free query population identities");
+        match admit(request) {
+            AdmissionOutcome::Available { observation } => observation,
+            other => panic!("relationship-free query fixture admission failed: {other:?}"),
+        }
+    } else {
+        query_qualified_in_scope(effects, required_indices, scope)
+    };
+    let owner = owner();
+    let subject = subject(&qualified);
+    let history = History::batch(&qualified);
+    let context = Context::new(history, &owner, &subject, 1, None);
+    let limits = Limits::owner_max();
+    let records = qualified.records();
+    let (_, scope_end) = query_range(scope);
+    let capture_anchor = match scope {
+        QueryScope::AdjacentWindow => Anchor::TimestampNanos(effects[0].2),
+        QueryScope::Window | QueryScope::Snapshot => Anchor::TimestampNanos(10),
+    };
+
+    let capture_selection = authority::capture::Selection::new(
+        id("trigger:refund-request"),
+        capture_anchor,
+        records
+            .iter()
+            .enumerate()
+            .map(|(index, record)| {
+                authority::capture::Binding::new(
+                    id(format!("capture:refund:{index}").as_str()),
+                    id("binding:refund"),
+                    record.identity.clone(),
+                )
+            })
+            .collect(),
+    );
+    let capture =
+        authority::capture::derive(context, &capture_selection, limits).expect("query capture");
+    let capture_view =
+        authority::capture::read(capture.bytes(), context, &capture_selection, limits)
+            .expect("query capture view");
+    let progress_selection = authority::progress::Selection::new(
+        authority::clock::Selection::new(id("clock:event-time"), id("1")),
+        vec![id("source:payments")],
+        query_boundary(scope, progress_state),
+        progress_state,
+        id("trigger:refund-request"),
+        cutoff(scope_end + 10),
+        id("restoration:O1"),
+    );
+    let progress =
+        authority::progress::derive(context, &progress_selection, limits).expect("query progress");
+    let progress_view =
+        authority::progress::read(progress.bytes(), context, &progress_selection, limits)
+            .expect("query progress view");
+    let closure_selection = authority::closure::Selection::new(
+        id("clock:event-time"),
+        id("1"),
+        vec![id("source:payments")],
+        query_boundary(scope, closure_state),
+        closure_state,
+    );
+    let closure =
+        authority::closure::derive(context, &closure_selection, limits).expect("query closure");
+    let closure_view =
+        authority::closure::read(closure.bytes(), context, &closure_selection, limits)
+            .expect("query closure view");
+    let completeness_selection = authority::completeness::Selection::new(
+        id("boundary:O1"),
+        required_indices
+            .iter()
+            .map(|index| {
+                authority::completeness::Fact::new(
+                    id(format!("member:refund:{index}").as_str()),
+                    (fact_status != authority::completeness::FactStatus::Incomplete)
+                        .then(|| records[*index].identity.clone()),
+                    fact_status,
+                )
+            })
+            .collect(),
+    );
+    let completeness = authority::completeness::derive(context, &completeness_selection, limits)
+        .expect("query completeness");
+    let completeness_view = authority::completeness::read(
+        completeness.bytes(),
+        context,
+        &completeness_selection,
+        limits,
+    )
+    .expect("query completeness view");
+    let proofs = authority::activation::AuthorityProofs::new(
+        &capture_view,
+        Some(&progress_view),
+        Some(&closure_view),
+        Some(&completeness_view),
+    )
+    .expect("query activation proofs");
+    let progress_frontier = if progress_state == OpenClosed::Closed {
+        scope_end
+    } else {
+        scope_end - 10
+    };
+    let activation_selection = authority::activation::Selection::new(
+        authority::activation::ActivationSelection::new(
+            id("obligation:refund"),
+            records[0].identity.clone(),
+            activation_interval(8, 12),
+            records
+                .iter()
+                .enumerate()
+                .map(|(index, record)| {
+                    let ValueState::Present {
+                        value_type,
+                        canonical_value,
+                    } = &record.value
+                    else {
+                        panic!("query record value must be present");
+                    };
+                    authority::activation::Capture::new(
+                        id(format!("capture:refund:{index}").as_str()),
+                        record.identity.clone(),
+                        value_type.clone(),
+                        canonical_value.clone(),
+                        id("source:payments"),
+                    )
+                })
+                .collect(),
+            if !effects.is_empty()
+                && effects
+                    .iter()
+                    .all(|(identity, _, _)| identity.starts_with("receipt:"))
+            {
+                authority::activation::ActivationState::Inactive
+            } else {
+                authority::activation::ActivationState::Active
+            },
+        ),
+        authority::activation::ProgressSelection::new(
+            activation_interval(query_range(scope).0, scope_end - 1),
+            activation_interval(progress_frontier, progress_frontier),
+        ),
+        activation_interval(8, 12),
+        activation_interval(10, 20),
+        proofs,
+    );
+    let activation = authority::activation::derive(context, &activation_selection, limits)
+        .expect("query activation");
+    let position = authority::position::derive(
+        context,
+        &authority::position::Selection::new(
+            id("ledger:query"),
+            id("clock:event-time"),
+            id("1"),
+            exposure_order
+                .iter()
+                .enumerate()
+                .map(|(position, index)| {
+                    authority::position::Position::new(
+                        u64::try_from(position).expect("query position"),
+                        records[*index].identity.clone(),
+                    )
+                })
+                .collect(),
+        ),
+        limits,
+    )
+    .expect("query position");
+    let population = authority::population::derive(context, limits).expect("query population");
+    let clock = authority::clock::derive(
+        context,
+        &authority::clock::Selection::new(id("clock:event-time"), id("1")),
+        limits,
+    )
+    .expect("query clock");
+    let partial = authority::partial::derive(context, &partial_selection(&records[0]), limits)
+        .expect("query partial");
+    let availability = authority::availability::derive(
+        context,
+        &authority::availability::Selection::new(
+            vec![id("result:query")],
+            vec![id("result:query")],
+            authority::availability::DependencyState::Available,
+            authority::availability::DependencyState::Available,
+        ),
+        limits,
+    )
+    .expect("query availability");
+    let mut components = vec![
+        (ComponentRole::Population, &population),
+        (ComponentRole::Position, &position),
+        (ComponentRole::Clock, &clock),
+        (ComponentRole::Partial, &partial),
+        (ComponentRole::Capture, &capture),
+        (ComponentRole::Progress, &progress),
+        (ComponentRole::Activation, &activation),
+        (ComponentRole::Closure, &closure),
+        (ComponentRole::Completeness, &completeness),
+        (ComponentRole::Availability, &availability),
+    ]
+    .into_iter()
+    .map(|(role, document)| {
+        Component::from_document(role, document).expect("query singleton component")
+    })
+    .collect::<Vec<_>>();
+    for record in records {
+        let observation = authority::observation::derive(
+            context,
+            &authority::observation::Selection::new(
+                record.identity.clone(),
+                cutoff(scope_end + 10),
+            ),
+            limits,
+        )
+        .expect("query observation");
+        components.push(
+            Component::from_document(ComponentRole::Observation, &observation)
+                .expect("query observation component"),
+        );
+    }
+    let selection = if let Some(kind) = conflict {
+        let conflict = Conflict::new(
+            kind,
+            components
+                .last()
+                .expect("relationship-bearing observation component"),
+        );
+        Selection::with_conflicts(components.clone(), vec![], vec![conflict])
+    } else {
+        Selection::new(components.clone(), vec![])
+    };
+    let publication =
+        authority::bundle::publish(context, &selection, None, limits).expect("query bundle");
+    if !known_successor {
+        return authority::bundle::LineageView::from_views(publication.view(), &[], limits)
+            .expect("query lineage");
+    }
+    let revised_availability = authority::availability::derive(
+        Context::new(history, &owner, &subject, 2, Some(&availability)),
+        &authority::availability::Selection::new(
+            vec![id("result:query")],
+            vec![],
+            authority::availability::DependencyState::Unavailable,
+            authority::availability::DependencyState::Available,
+        ),
+        limits,
+    )
+    .expect("query successor availability");
+    let successor_component =
+        Component::from_document(ComponentRole::Availability, &revised_availability)
+            .expect("query successor component");
+    let index = components
+        .iter()
+        .position(|component| component.role() == ComponentRole::Availability)
+        .expect("query availability component");
+    let replacement = Replacement::new(&components[index], &successor_component)
+        .expect("query availability replacement");
+    components[index] = successor_component;
+    let successor = authority::bundle::publish(
+        Context::new(history, &owner, &subject, 2, Some(publication.document())),
+        &Selection::new(components, vec![replacement]),
+        Some(publication.lineage()),
+        limits,
+    )
+    .expect("query successor bundle");
+    authority::bundle::LineageView::from_views(
+        publication.view(),
+        std::slice::from_ref(successor.view()),
+        limits,
+    )
+    .expect("stale query lineage")
+}
+
+fn with_empty_v2_fixture<T>(
+    test: impl FnOnce(Context<'_>, &authority::bundle::Selection, authority::bundle::Publication) -> T,
+) -> T {
+    use authority::bundle::{Component, ComponentRole, Selection};
+
+    let qualified = query_qualified(&[], &[]);
+    let owner = owner();
+    let subject = subject(&qualified);
+    let context = Context::new(History::batch(&qualified), &owner, &subject, 1, None);
+    let limits = Limits::owner_max();
+    let population = authority::population::derive(context, limits).expect("empty population");
+    let position = authority::position::derive(
+        context,
+        &authority::position::Selection::new(
+            id("ledger:query-empty"),
+            id("clock:event-time"),
+            id("1"),
+            vec![],
+        ),
+        limits,
+    )
+    .expect("empty position ledger");
+    let clock = authority::clock::derive(
+        context,
+        &authority::clock::Selection::new(id("clock:event-time"), id("1")),
+        limits,
+    )
+    .expect("empty clock authority");
+    let progress = authority::progress::derive(
+        context,
+        &authority::progress::Selection::new(
+            authority::clock::Selection::new(id("clock:event-time"), id("1")),
+            vec![id("source:payments")],
+            boundary(OpenClosed::Closed),
+            OpenClosed::Closed,
+            id("trigger:refund-request"),
+            cutoff(40),
+            id("restoration:O1"),
+        ),
+        limits,
+    )
+    .expect("empty progress authority");
+    let closure = authority::closure::derive(
+        context,
+        &authority::closure::Selection::new(
+            id("clock:event-time"),
+            id("1"),
+            vec![id("source:payments")],
+            boundary(OpenClosed::Closed),
+            OpenClosed::Closed,
+        ),
+        limits,
+    )
+    .expect("empty closure authority");
+    let completeness = authority::completeness::derive(
+        context,
+        &authority::completeness::Selection::new(id("boundary:O1"), vec![]),
+        limits,
+    )
+    .expect("empty completeness authority");
+    let availability = authority::availability::derive(
+        context,
+        &authority::availability::Selection::new(
+            vec![],
+            vec![],
+            authority::availability::DependencyState::Available,
+            authority::availability::DependencyState::Available,
+        ),
+        limits,
+    )
+    .expect("empty availability authority");
+    let components = [
+        (ComponentRole::Population, &population),
+        (ComponentRole::Position, &position),
+        (ComponentRole::Clock, &clock),
+        (ComponentRole::Progress, &progress),
+        (ComponentRole::Closure, &closure),
+        (ComponentRole::Completeness, &completeness),
+        (ComponentRole::Availability, &availability),
+    ]
+    .into_iter()
+    .map(|(role, document)| Component::from_document(role, document).expect("empty v2 component"))
+    .collect();
+    let selection = Selection::new(components, vec![]);
+    let publication =
+        authority::bundle::publish_v2(context, &selection, None, limits).expect("empty v2 bundle");
+    test(context, &selection, publication)
+}
+
+fn empty_v2_lineage() -> authority::bundle::LineageView {
+    with_empty_v2_fixture(|_, _, publication| publication.lineage().clone())
+}
+
+fn query_selection(
+    lineage: &authority::bundle::LineageView,
+    policy: authority::query::DuplicatePolicy,
+    plan: authority::query::QueryPlan,
+) -> authority::query::Selection {
+    query_selection_with_axes(
+        lineage,
+        policy,
+        plan,
+        ORDER_SHIPMENT,
+        ORDER_KIND.as_bytes(),
+        b"order:O1",
+        SHIPMENT_KIND.as_bytes(),
+        "signal:refund",
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn query_selection_with_axes(
+    lineage: &authority::bundle::LineageView,
+    policy: authority::query::DuplicatePolicy,
+    plan: authority::query::QueryPlan,
+    relationship: &str,
+    root_kind: &[u8],
+    grouping_key: &[u8],
+    effect_kind: &[u8],
+    effect_signal: &str,
+) -> authority::query::Selection {
+    query_selection_with_overrides(
+        lineage,
+        policy,
+        plan,
+        relationship,
+        root_kind,
+        grouping_key,
+        effect_kind,
+        effect_signal,
+        &QueryAuthorityOverrides::default(),
+    )
+}
+
+#[derive(Default)]
+struct QueryAuthorityOverrides {
+    lineage_identity: Option<Identity>,
+    bundle_identity: Option<Identity>,
+    bundle_revision: Option<u64>,
+    component: Option<(authority::bundle::ComponentRole, Identity)>,
+    population_identity: Option<Identity>,
+    scope_identity: Option<Identity>,
+    membership_rule_identity: Option<Identity>,
+}
+
+// The test helper deliberately spells out every independently foreign authority
+// axis so TC-011 can prove that none is silently inferred or ignored.
+#[allow(clippy::too_many_arguments)]
+fn query_selection_with_overrides(
+    lineage: &authority::bundle::LineageView,
+    policy: authority::query::DuplicatePolicy,
+    plan: authority::query::QueryPlan,
+    relationship: &str,
+    root_kind: &[u8],
+    grouping_key: &[u8],
+    effect_kind: &[u8],
+    effect_signal: &str,
+    overrides: &QueryAuthorityOverrides,
+) -> authority::query::Selection {
+    use authority::bundle::{ComponentRole, EmbeddedPayloadRef};
+
+    let head = lineage.head();
+    let component = |role| {
+        overrides
+            .component
+            .as_ref()
+            .filter(|(overridden, _)| *overridden == role)
+            .map_or_else(
+                || {
+                    id(head
+                        .payload()
+                        .components()
+                        .find(|component| component.role() == role)
+                        .expect("query component")
+                        .identity())
+                },
+                |(_, identity)| identity.clone(),
+            )
+    };
+    let optional_component = |role| {
+        overrides
+            .component
+            .as_ref()
+            .filter(|(overridden, _)| *overridden == role)
+            .map(|(_, identity)| identity.clone())
+            .or_else(|| {
+                head.payload()
+                    .components()
+                    .find(|component| component.role() == role)
+                    .map(|component| id(component.identity()))
+            })
+    };
+    let population = head
+        .payload()
+        .populations()
+        .find_map(|fact| match fact.payload() {
+            EmbeddedPayloadRef::Population(value) => Some(value),
+            _ => None,
+        })
+        .expect("query population payload");
+    authority::query::Selection::new(
+        overrides
+            .lineage_identity
+            .clone()
+            .unwrap_or_else(|| lineage.document().identity().clone()),
+        overrides
+            .bundle_identity
+            .clone()
+            .unwrap_or_else(|| head.identity().clone()),
+        overrides.bundle_revision.unwrap_or_else(|| head.revision()),
+        component(ComponentRole::Population),
+        component(ComponentRole::Position),
+        component(ComponentRole::Progress),
+        component(ComponentRole::Closure),
+        component(ComponentRole::Completeness),
+        optional_component(ComponentRole::Capture),
+        optional_component(ComponentRole::Activation),
+        overrides
+            .population_identity
+            .clone()
+            .unwrap_or_else(|| id(population.population_identity())),
+        overrides
+            .scope_identity
+            .clone()
+            .unwrap_or_else(|| head.subject().scope_identity.clone()),
+        overrides
+            .membership_rule_identity
+            .clone()
+            .unwrap_or_else(|| id(population.membership_rule_identity())),
+        id(relationship),
+        authority::query::RootEndpoint::Source,
+        root_kind.to_vec(),
+        grouping_key.to_vec(),
+        effect_kind.to_vec(),
+        id(effect_signal),
+        policy,
+        plan,
+    )
+}
+
+fn count_plan() -> authority::query::QueryPlan {
+    authority::query::QueryPlan::Count {
+        identity: id("query:count-refunds"),
+        predicate: authority::query::Predicate::All,
+    }
+}
+
+fn sum_plan(minimum: i128, maximum: i128) -> authority::query::QueryPlan {
+    sum_plan_for(authority::query::Predicate::All, minimum, maximum)
+}
+
+fn sum_plan_for(
+    predicate: authority::query::Predicate,
+    minimum: i128,
+    maximum: i128,
+) -> authority::query::QueryPlan {
+    authority::query::QueryPlan::ExactSum {
+        identity: id("query:sum-refunds"),
+        predicate,
+        representation: authority::query::NumericRepresentation::SignedInteger,
+        value_type: id("signed-integer"),
+        unit: id("USD"),
+        zero_identity: id("zero:signed-integer:USD"),
+        zero: 0,
+        minimum,
+        maximum,
+    }
+}
+
+#[trace("TC-011", "FR-011-AC-1", "FR-011-AC-3", "FR-011-AC-4")]
+#[test]
+fn tc011_closed_population_obeys_duplicate_policy_and_exact_sum() {
+    use authority::bundle::EmbeddedPayloadRef;
+    use authority::query::{AggregateValue, DuplicatePolicy, Outcome};
+    use std::collections::BTreeMap;
+
+    let lineage = query_lineage(
+        &[("shipment:S1", "40", 5), ("shipment:S2", "60", 10)],
+        &[0, 1],
+        &[0, 1],
+    );
+    let deduplicating = authority::query::evaluate(
+        &lineage,
+        &query_selection(
+            &lineage,
+            DuplicatePolicy::EffectIdentityDeduplicating,
+            sum_plan(-1_000, 1_000),
+        ),
+        authority::query::Limits::owner_max(),
+    )
+    .expect("complete deduplicating sum");
+    let Outcome::Complete(result) = deduplicating.outcome() else {
+        panic!("closed authority must produce a complete sum");
+    };
+    let independently_captured_amount = lineage
+        .head()
+        .payload()
+        .records()
+        .find_map(|fact| match fact.payload() {
+            EmbeddedPayloadRef::Activation(value) => Some(
+                value
+                    .captures()
+                    .map(|capture| {
+                        capture
+                            .canonical_value
+                            .parse::<i128>()
+                            .expect("authority-qualified signed capture")
+                    })
+                    .try_fold(0_i128, i128::checked_add)
+                    .expect("authority-qualified captured total"),
+            ),
+            _ => None,
+        })
+        .expect("selected activation authority");
+    assert_eq!(
+        result.value(),
+        &AggregateValue::Sum(independently_captured_amount)
+    );
+    assert_eq!(
+        result.participation().filter(|row| row.included()).count(),
+        2
+    );
+    let exact_observations = lineage
+        .head()
+        .payload()
+        .populations()
+        .find_map(|fact| match fact.payload() {
+            EmbeddedPayloadRef::Completeness(value) => Some(
+                value
+                    .facts()
+                    .filter_map(|fact| {
+                        fact.observation_identity
+                            .map(|observation| (fact.member_identity, observation))
+                    })
+                    .collect::<BTreeMap<_, _>>(),
+            ),
+            _ => None,
+        })
+        .expect("query completeness authority");
+    for (index, row) in result.participation().enumerate() {
+        assert_eq!(
+            exact_observations.get(row.member_identity().as_str()),
+            Some(&row.observation_identity().as_str())
+        );
+        assert_eq!(
+            row.relationship_identity(),
+            format!("relationship:refund:{index}").as_bytes()
+        );
+    }
+
+    let preserving = authority::query::evaluate(
+        &lineage,
+        &query_selection(
+            &lineage,
+            DuplicatePolicy::OccurrencePreserving,
+            sum_plan(-1_000, 1_000),
+        ),
+        authority::query::Limits::owner_max(),
+    )
+    .expect("complete occurrence-preserving sum");
+    let Outcome::Complete(result) = preserving.outcome() else {
+        panic!("closed authority must preserve occurrences");
+    };
+    assert_eq!(result.value(), &AggregateValue::Sum(100));
+    assert_eq!(result.participation().len(), 2);
+    assert_ne!(deduplicating.bytes(), preserving.bytes());
+}
+
+#[trace("TC-011", "FR-011-AC-4")]
+#[test]
+fn tc011_replayed_receipts_never_create_business_effects() {
+    use authority::query::{AggregateValue, DuplicatePolicy, Outcome, RefusalReason};
+
+    let baseline = query_lineage(&[("shipment:S1", "4", 5)], &[0], &[0]);
+    let replayed_receipts = query_lineage(
+        &[("receipt:ack", "4", 6), ("receipt:ack", "4", 7)],
+        &[0, 1],
+        &[0, 1],
+    );
+    for policy in [
+        DuplicatePolicy::EffectIdentityDeduplicating,
+        DuplicatePolicy::OccurrencePreserving,
+    ] {
+        let baseline_evaluation = authority::query::evaluate(
+            &baseline,
+            &query_selection(&baseline, policy, sum_plan(-100, 100)),
+            authority::query::Limits::owner_max(),
+        )
+        .expect("business-effect baseline");
+        assert!(matches!(
+            baseline_evaluation.outcome(),
+            Outcome::Complete(value) if value.value() == &AggregateValue::Sum(4)
+        ));
+        let receipt_evaluation = authority::query::evaluate(
+            &replayed_receipts,
+            &query_selection_with_axes(
+                &replayed_receipts,
+                policy,
+                count_plan(),
+                ORDER_SHIPMENT,
+                ORDER_KIND.as_bytes(),
+                b"order:O1",
+                SHIPMENT_KIND.as_bytes(),
+                "signal:receipt",
+            ),
+            authority::query::Limits::owner_max(),
+        )
+        .expect("receipt-as-effect refusal");
+        assert!(matches!(
+            receipt_evaluation.outcome(),
+            Outcome::Refused(value) if value.reason() == RefusalReason::ReceiptAsEffect
+        ));
+    }
+}
+
+#[trace("TC-011", "FR-011-AC-1", "FR-011-AC-2")]
+#[test]
+fn tc011_empty_filter_and_half_open_population_use_declared_membership_only() {
+    use authority::query::{
+        AggregateValue, DuplicatePolicy, FilterQuantifier, Outcome, Predicate, QueryPlan,
+    };
+
+    let empty = empty_v2_lineage();
+    let empty_plan = QueryPlan::Count {
+        identity: id("query:count-nonmatching"),
+        predicate: Predicate::Signal(id("signal:nonmatching")),
+    };
+    let empty_result = authority::query::evaluate(
+        &empty,
+        &query_selection(&empty, DuplicatePolicy::OccurrencePreserving, empty_plan),
+        authority::query::Limits::owner_max(),
+    )
+    .expect("complete empty population");
+    let Outcome::Complete(result) = empty_result.outcome() else {
+        panic!("empty closed population is definitive");
+    };
+    assert_eq!(result.value(), &AggregateValue::Count(0));
+    assert_eq!(result.participation().len(), 0);
+
+    let universal = authority::query::evaluate(
+        &empty,
+        &query_selection(
+            &empty,
+            DuplicatePolicy::OccurrencePreserving,
+            QueryPlan::Filter {
+                identity: id("query:all-empty"),
+                predicate: Predicate::All,
+                quantifier: FilterQuantifier::All,
+            },
+        ),
+        authority::query::Limits::owner_max(),
+    )
+    .expect("complete empty universal filter");
+    assert!(matches!(
+        universal.outcome(),
+        Outcome::Complete(value) if value.value() == &AggregateValue::Boolean(true)
+    ));
+
+    let boundary = query_lineage(&[("shipment:start", "1", 0)], &[0], &[0]);
+    let boundary_result = authority::query::evaluate(
+        &boundary,
+        &query_selection(
+            &boundary,
+            DuplicatePolicy::OccurrencePreserving,
+            count_plan(),
+        ),
+        authority::query::Limits::owner_max(),
+    )
+    .expect("half-open declared population");
+    let Outcome::Complete(result) = boundary_result.outcome() else {
+        panic!("closed boundary population is definitive");
+    };
+    assert_eq!(result.value(), &AggregateValue::Count(1));
+    assert_eq!(result.participation().len(), 1);
+}
+
+#[trace("TC-011", "FR-011-AC-2")]
+#[test]
+fn tc011_adjacent_windows_count_the_shared_boundary_exactly_once() {
+    use authority::query::{AggregateValue, DuplicatePolicy, Outcome};
+
+    let first = query_lineage(
+        &[("shipment:start", "1", 0), ("shipment:last", "1", 29)],
+        &[0, 1],
+        &[0, 1],
+    );
+    let second = query_adjacent_lineage(&[("shipment:boundary", "1", 30)], &[0], &[0]);
+    let count = |lineage: &authority::bundle::LineageView| {
+        let evaluation = authority::query::evaluate(
+            lineage,
+            &query_selection(lineage, DuplicatePolicy::OccurrencePreserving, count_plan()),
+            authority::query::Limits::owner_max(),
+        )
+        .expect("adjacent-window count");
+        let Outcome::Complete(result) = evaluation.outcome() else {
+            panic!("adjacent closed window must be complete");
+        };
+        let AggregateValue::Count(value) = result.value() else {
+            panic!("count plan must return a count");
+        };
+        *value
+    };
+    assert_eq!(count(&first), 2);
+    assert_eq!(count(&second), 1);
+}
+
+#[trace("TC-011", "FR-011-AC-1")]
+#[test]
+fn tc011_closed_snapshot_uses_only_its_explicit_member_population() {
+    use authority::query::{AggregateValue, DuplicatePolicy, Outcome};
+
+    let snapshot = query_snapshot_lineage(
+        &[("shipment:S1", "4", -100), ("shipment:S2", "6", 100)],
+        &[0, 1],
+        &[1, 0],
+    );
+    let evaluation = authority::query::evaluate(
+        &snapshot,
+        &query_selection(
+            &snapshot,
+            DuplicatePolicy::OccurrencePreserving,
+            count_plan(),
+        ),
+        authority::query::Limits::owner_max(),
+    )
+    .expect("complete snapshot count");
+    let Outcome::Complete(result) = evaluation.outcome() else {
+        panic!("closed snapshot must be definitive");
+    };
+    assert_eq!(result.value(), &AggregateValue::Count(2));
+    assert_eq!(
+        result
+            .participation()
+            .map(|row| row.effect_identity())
+            .collect::<Vec<_>>(),
+        vec![b"shipment:S2".as_slice(), b"shipment:S1".as_slice()]
+    );
+}
+
+#[trace("TC-011", "FR-011-AC-1", "FR-011-AC-5")]
+#[test]
+fn tc011_ambient_nonmembers_and_missing_relationships_never_participate() {
+    use authority::query::{DuplicatePolicy, Outcome, RefusalReason};
+
+    let ambient_nonmember = admit(query_request(
+        &[("shipment:member", "4", 5), ("shipment:ambient", "6", 10)],
+        &[0],
+    ));
+    assert!(matches!(
+        ambient_nonmember,
+        AdmissionOutcome::Incomplete { reasons }
+            if reasons == [quire_observation::IncompleteReason::MissingMembership]
+    ));
+
+    let missing_relationship = query_missing_relationship_lineage();
+    let evaluation = authority::query::evaluate(
+        &missing_relationship,
+        &query_selection(
+            &missing_relationship,
+            DuplicatePolicy::OccurrencePreserving,
+            count_plan(),
+        ),
+        authority::query::Limits::owner_max(),
+    )
+    .expect("missing relationship refusal is typed");
+    assert!(matches!(
+        evaluation.outcome(),
+        Outcome::Refused(value) if value.reason() == RefusalReason::ForeignRelationship
+    ));
+}
+
+#[trace("TC-011", "FR-011-AC-1", "FR-011-AC-4")]
+#[test]
+fn tc011_filter_and_count_are_canonical_in_position_order() {
+    use authority::query::{
+        AggregateValue, DuplicatePolicy, FilterQuantifier, Outcome, Predicate, QueryPlan,
+    };
+
+    let lineage = query_lineage(
+        &[("shipment:S1", "4", 5), ("shipment:S2", "6", 10)],
+        &[0, 1],
+        &[1, 0],
+    );
+    let predicate = Predicate::EffectIdentity(b"shipment:S1".to_vec());
+    let filter_plan = QueryPlan::Filter {
+        identity: id("query:any-first-shipment"),
+        predicate: predicate.clone(),
+        quantifier: FilterQuantifier::Any,
+    };
+    let first = authority::query::evaluate(
+        &lineage,
+        &query_selection(
+            &lineage,
+            DuplicatePolicy::OccurrencePreserving,
+            filter_plan.clone(),
+        ),
+        authority::query::Limits::owner_max(),
+    )
+    .expect("filter evaluation");
+    let second = authority::query::evaluate(
+        &lineage,
+        &query_selection(&lineage, DuplicatePolicy::OccurrencePreserving, filter_plan),
+        authority::query::Limits::owner_max(),
+    )
+    .expect("repeat filter evaluation");
+    assert_eq!(first.bytes(), second.bytes());
+    let Outcome::Complete(result) = first.outcome() else {
+        panic!("filter must be complete");
+    };
+    assert_eq!(result.value(), &AggregateValue::Boolean(true));
+    assert_eq!(
+        result
+            .participation()
+            .map(|row| (row.position(), row.predicate_matches()))
+            .collect::<Vec<_>>(),
+        vec![(0, false), (1, true)]
+    );
+
+    for (plan, expected) in [
+        (
+            QueryPlan::Filter {
+                identity: id("query:all-first-shipment"),
+                predicate: predicate.clone(),
+                quantifier: FilterQuantifier::All,
+            },
+            AggregateValue::Boolean(false),
+        ),
+        (
+            QueryPlan::Count {
+                identity: id("query:count-first-shipment"),
+                predicate: predicate.clone(),
+            },
+            AggregateValue::Count(1),
+        ),
+        (sum_plan_for(predicate, -100, 100), AggregateValue::Sum(4)),
+    ] {
+        let evaluation = authority::query::evaluate(
+            &lineage,
+            &query_selection(&lineage, DuplicatePolicy::OccurrencePreserving, plan),
+            authority::query::Limits::owner_max(),
+        )
+        .expect("mixed-predicate evaluation");
+        assert!(matches!(
+            evaluation.outcome(),
+            Outcome::Complete(value) if value.value() == &expected
+        ));
+    }
+}
+
+#[trace("TC-011", "FR-011-AC-5", "FR-011-AC-6")]
+#[test]
+fn tc011_invalid_prefix_and_wrong_unit_emit_no_aggregate() {
+    use authority::query::{DuplicatePolicy, Outcome, RefusalReason};
+
+    let lineage = query_lineage(
+        &[
+            ("shipment:S1", "10", 5),
+            ("shipment:S2", "5", 10),
+            ("shipment:S3", "-5", 15),
+        ],
+        &[0, 1, 2],
+        &[0, 1, 2],
+    );
+    let invalid_prefix = authority::query::evaluate(
+        &lineage,
+        &query_selection(
+            &lineage,
+            DuplicatePolicy::OccurrencePreserving,
+            sum_plan(-10, 10),
+        ),
+        authority::query::Limits::owner_max(),
+    )
+    .expect("invalid prefix is a typed outcome");
+    assert!(matches!(
+        invalid_prefix.outcome(),
+        Outcome::Refused(value) if value.reason() == RefusalReason::InvalidPrefix
+    ));
+
+    let wrong_unit_plan = authority::query::QueryPlan::ExactSum {
+        identity: id("query:sum-refunds"),
+        predicate: authority::query::Predicate::All,
+        representation: authority::query::NumericRepresentation::SignedInteger,
+        value_type: id("signed-integer"),
+        unit: id("EUR"),
+        zero_identity: id("zero:signed-integer:EUR"),
+        zero: 0,
+        minimum: -100,
+        maximum: 100,
+    };
+    let wrong_unit = authority::query::evaluate(
+        &lineage,
+        &query_selection(
+            &lineage,
+            DuplicatePolicy::OccurrencePreserving,
+            wrong_unit_plan,
+        ),
+        authority::query::Limits::owner_max(),
+    )
+    .expect("wrong unit is a typed outcome");
+    assert!(matches!(
+        wrong_unit.outcome(),
+        Outcome::Refused(value) if value.reason() == RefusalReason::WrongUnit
+    ));
+}
+
+#[trace("TC-011", "FR-011-AC-2", "FR-011-AC-5")]
+#[test]
+fn tc011_window_end_and_foreign_semantic_axes_never_aggregate() {
+    use authority::query::{DuplicatePolicy, Outcome, RefusalReason};
+
+    let end = query_lineage(&[("shipment:end", "1", 30)], &[0], &[0]);
+    let end_evaluation = authority::query::evaluate(
+        &end,
+        &query_selection(&end, DuplicatePolicy::OccurrencePreserving, count_plan()),
+        authority::query::Limits::owner_max(),
+    )
+    .expect("exclusive-end refusal is typed");
+    assert!(matches!(
+        end_evaluation.outcome(),
+        Outcome::Refused(value) if value.reason() == RefusalReason::OutsideWindow
+    ));
+
+    let lineage = query_lineage(&[("shipment:S1", "1", 0)], &[0], &[0]);
+    for selection in [
+        query_selection_with_axes(
+            &lineage,
+            DuplicatePolicy::OccurrencePreserving,
+            count_plan(),
+            ORDER_SUCCESSOR,
+            ORDER_KIND.as_bytes(),
+            b"order:O1",
+            SHIPMENT_KIND.as_bytes(),
+            "signal:refund",
+        ),
+        query_selection_with_axes(
+            &lineage,
+            DuplicatePolicy::OccurrencePreserving,
+            count_plan(),
+            ORDER_SHIPMENT,
+            b"foreign-kind",
+            b"order:O1",
+            SHIPMENT_KIND.as_bytes(),
+            "signal:refund",
+        ),
+        query_selection_with_axes(
+            &lineage,
+            DuplicatePolicy::OccurrencePreserving,
+            count_plan(),
+            ORDER_SHIPMENT,
+            ORDER_KIND.as_bytes(),
+            b"order:X1",
+            SHIPMENT_KIND.as_bytes(),
+            "signal:refund",
+        ),
+        query_selection_with_axes(
+            &lineage,
+            DuplicatePolicy::OccurrencePreserving,
+            count_plan(),
+            ORDER_SHIPMENT,
+            ORDER_KIND.as_bytes(),
+            b"order:O1",
+            b"foreign-effect-kind",
+            "signal:refund",
+        ),
+    ] {
+        let evaluation =
+            authority::query::evaluate(&lineage, &selection, authority::query::Limits::owner_max())
+                .expect("foreign semantic axis is typed");
+        assert!(matches!(evaluation.outcome(), Outcome::Refused(_)));
+    }
+    let receipt = authority::query::evaluate(
+        &lineage,
+        &query_selection_with_axes(
+            &lineage,
+            DuplicatePolicy::OccurrencePreserving,
+            count_plan(),
+            ORDER_SHIPMENT,
+            ORDER_KIND.as_bytes(),
+            b"order:O1",
+            SHIPMENT_KIND.as_bytes(),
+            "signal:receipt",
+        ),
+        authority::query::Limits::owner_max(),
+    )
+    .expect("receipt substitution is typed");
+    assert!(matches!(
+        receipt.outcome(),
+        Outcome::Refused(value) if value.reason() == RefusalReason::ReceiptAsEffect
+    ));
+}
+
+#[trace("TC-011", "FR-011-AC-5")]
+#[test]
+fn tc011_stale_and_each_foreign_authority_axis_emit_no_aggregate() {
+    use authority::bundle::ComponentRole;
+    use authority::query::{DuplicatePolicy, IncompleteReason, Outcome, RefusalReason};
+
+    let stale = query_stale_lineage();
+    let stale_evaluation = authority::query::evaluate(
+        &stale,
+        &query_selection(&stale, DuplicatePolicy::OccurrencePreserving, count_plan()),
+        authority::query::Limits::owner_max(),
+    )
+    .expect("stale revision is typed");
+    assert!(matches!(
+        stale_evaluation.outcome(),
+        Outcome::Incomplete(value) if value.reasons() == [IncompleteReason::StaleRevision]
+    ));
+
+    let lineage = query_lineage(&[("shipment:S1", "1", 10)], &[0], &[0]);
+    let mut foreign = vec![
+        QueryAuthorityOverrides {
+            lineage_identity: Some(id(
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            )),
+            ..QueryAuthorityOverrides::default()
+        },
+        QueryAuthorityOverrides {
+            bundle_identity: Some(id(
+                "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            )),
+            ..QueryAuthorityOverrides::default()
+        },
+        QueryAuthorityOverrides {
+            bundle_revision: Some(lineage.head().revision() + 1),
+            ..QueryAuthorityOverrides::default()
+        },
+        QueryAuthorityOverrides {
+            population_identity: Some(id("population:foreign")),
+            ..QueryAuthorityOverrides::default()
+        },
+        QueryAuthorityOverrides {
+            scope_identity: Some(id("scope:foreign")),
+            ..QueryAuthorityOverrides::default()
+        },
+        QueryAuthorityOverrides {
+            membership_rule_identity: Some(id("membership:foreign")),
+            ..QueryAuthorityOverrides::default()
+        },
+    ];
+    for role in [
+        ComponentRole::Population,
+        ComponentRole::Position,
+        ComponentRole::Progress,
+        ComponentRole::Closure,
+        ComponentRole::Completeness,
+        ComponentRole::Capture,
+        ComponentRole::Activation,
+    ] {
+        foreign.push(QueryAuthorityOverrides {
+            component: Some((
+                role,
+                id("sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
+            )),
+            ..QueryAuthorityOverrides::default()
+        });
+    }
+    for overrides in foreign {
+        let selection = query_selection_with_overrides(
+            &lineage,
+            DuplicatePolicy::OccurrencePreserving,
+            count_plan(),
+            ORDER_SHIPMENT,
+            ORDER_KIND.as_bytes(),
+            b"order:O1",
+            SHIPMENT_KIND.as_bytes(),
+            "signal:refund",
+            &overrides,
+        );
+        let evaluation =
+            authority::query::evaluate(&lineage, &selection, authority::query::Limits::owner_max())
+                .expect("foreign authority axis is typed");
+        assert!(matches!(
+            evaluation.outcome(),
+            Outcome::Refused(value) if value.reason() == RefusalReason::ForeignAuthority
+        ));
+    }
+}
+
+#[trace("TC-011", "FR-011-AC-5")]
+#[test]
+fn tc011_open_and_incomplete_authority_has_no_aggregate_variant() {
+    use authority::query::{DuplicatePolicy, IncompleteReason, Outcome};
+
+    for (progress, closure, fact, reason) in [
+        (
+            OpenClosed::Open,
+            OpenClosed::Closed,
+            authority::completeness::FactStatus::Available,
+            IncompleteReason::OpenProgress,
+        ),
+        (
+            OpenClosed::Closed,
+            OpenClosed::Open,
+            authority::completeness::FactStatus::Available,
+            IncompleteReason::OpenClosure,
+        ),
+        (
+            OpenClosed::Closed,
+            OpenClosed::Closed,
+            authority::completeness::FactStatus::Incomplete,
+            IncompleteReason::IncompleteFacts,
+        ),
+        (
+            OpenClosed::Closed,
+            OpenClosed::Closed,
+            authority::completeness::FactStatus::Contradicted,
+            IncompleteReason::ContradictedFacts,
+        ),
+    ] {
+        let lineage = query_lineage_with_authority(
+            &[("shipment:S1", "1", 10)],
+            &[0],
+            &[0],
+            progress,
+            closure,
+            fact,
+        );
+        let selection = query_selection(
+            &lineage,
+            DuplicatePolicy::OccurrencePreserving,
+            count_plan(),
+        );
+        let evaluation =
+            authority::query::evaluate(&lineage, &selection, authority::query::Limits::owner_max())
+                .expect("incomplete authority is a typed evaluation");
+        let Outcome::Incomplete(incomplete) = evaluation.outcome() else {
+            panic!(
+                "incomplete authority cannot carry an aggregate: {:?}",
+                evaluation.outcome()
+            );
+        };
+        assert!(incomplete.reasons().contains(&reason));
+    }
+}
+
+#[trace("TC-011", "FR-011-AC-5")]
+#[test]
+fn tc011_explicit_bundle_conflicts_are_typed_incomplete_without_aggregate() {
+    use authority::bundle::ConflictKind;
+    use authority::query::{DuplicatePolicy, IncompleteReason, Outcome};
+
+    for (kind, reason) in [
+        (
+            ConflictKind::Duplicate,
+            IncompleteReason::AmbiguousAuthority,
+        ),
+        (
+            ConflictKind::Contradiction,
+            IncompleteReason::ContradictedFacts,
+        ),
+        (
+            ConflictKind::UnresolvedCorrelation,
+            IncompleteReason::UnresolvedCorrelation,
+        ),
+    ] {
+        let lineage = query_lineage_with_conflict(
+            &[("shipment:S1", "1", 10)],
+            &[0],
+            &[0],
+            OpenClosed::Closed,
+            OpenClosed::Closed,
+            authority::completeness::FactStatus::Available,
+            Some(kind),
+        );
+        let selection = query_selection(
+            &lineage,
+            DuplicatePolicy::OccurrencePreserving,
+            count_plan(),
+        );
+        let evaluation =
+            authority::query::evaluate(&lineage, &selection, authority::query::Limits::owner_max())
+                .expect("explicit conflict is a typed query outcome");
+        assert!(matches!(
+            evaluation.outcome(),
+            Outcome::Incomplete(value) if value.reasons() == [reason]
+        ));
+        assert_eq!(
+            authority::query::evaluate(
+                &lineage,
+                &selection,
+                authority::query::Limits {
+                    max_state_bytes: 0,
+                    ..authority::query::Limits::owner_max()
+                },
+            )
+            .expect_err("incomplete reasons must obey the state-byte bound")
+            .code(),
+            authority::ErrorCode::ResourceIncomplete
+        );
+    }
+}
+
+#[trace("TC-011", "FR-011-AC-6")]
+#[test]
+fn tc011_exact_sum_rejects_noncanonical_and_overflowing_values() {
+    use authority::query::{DuplicatePolicy, Outcome, RefusalReason};
+
+    for (values, expected) in [
+        (
+            vec![("shipment:S1", "01", 5)],
+            RefusalReason::InvalidRepresentation,
+        ),
+        (
+            vec![
+                ("shipment:S1", "170141183460469231731687303715884105727", 5),
+                ("shipment:S2", "1", 10),
+            ],
+            RefusalReason::ArithmeticOverflow,
+        ),
+    ] {
+        let required = (0..values.len()).collect::<Vec<_>>();
+        let lineage = query_lineage(&values, &required, &required);
+        let evaluation = authority::query::evaluate(
+            &lineage,
+            &query_selection(
+                &lineage,
+                DuplicatePolicy::OccurrencePreserving,
+                sum_plan(i128::MIN, i128::MAX),
+            ),
+            authority::query::Limits::owner_max(),
+        )
+        .expect("numeric refusal is typed");
+        assert!(matches!(
+            evaluation.outcome(),
+            Outcome::Refused(value) if value.reason() == expected
+        ));
+    }
+}
+
+#[trace("TC-011", "FR-011-AC-3", "FR-011-AC-6")]
+#[test]
+fn tc011_exact_sum_accepts_empty_zero_and_inclusive_domain_boundaries() {
+    use authority::query::{AggregateValue, DuplicatePolicy, Outcome};
+
+    let empty = empty_v2_lineage();
+    let empty_sum = authority::query::evaluate(
+        &empty,
+        &query_selection(
+            &empty,
+            DuplicatePolicy::OccurrencePreserving,
+            sum_plan(0, 0),
+        ),
+        authority::query::Limits::owner_max(),
+    )
+    .expect("empty exact sum");
+    assert!(matches!(
+        empty_sum.outcome(),
+        Outcome::Complete(value) if value.value() == &AggregateValue::Sum(0)
+    ));
+
+    let boundaries = query_lineage(
+        &[("shipment:min", "-10", 5), ("shipment:max", "20", 10)],
+        &[0, 1],
+        &[0, 1],
+    );
+    let evaluation = authority::query::evaluate(
+        &boundaries,
+        &query_selection(
+            &boundaries,
+            DuplicatePolicy::OccurrencePreserving,
+            sum_plan(-10, 10),
+        ),
+        authority::query::Limits::owner_max(),
+    )
+    .expect("inclusive result-domain boundaries");
+    assert!(matches!(
+        evaluation.outcome(),
+        Outcome::Complete(value) if value.value() == &AggregateValue::Sum(10)
+    ));
+}
+
+#[trace("TC-011", "FR-011-AC-5", "TC-012", "NFR-003-AC-2")]
+#[test]
+fn tc011_each_query_limit_admits_exact_and_refuses_one_over() {
+    let lineage = query_lineage(
+        &[("shipment:S1", "40", 5), ("shipment:S2", "60", 10)],
+        &[0, 1],
+        &[0, 1],
+    );
+    let selection = query_selection(
+        &lineage,
+        authority::query::DuplicatePolicy::OccurrencePreserving,
+        sum_plan(-1_000, 1_000),
+    );
+    let baseline =
+        authority::query::evaluate(&lineage, &selection, authority::query::Limits::owner_max())
+            .expect("query usage baseline");
+    let usage = baseline.usage();
+    assert_eq!(
+        usage,
+        authority::query::Usage {
+            input_bytes: 47_968,
+            members: 2,
+            occurrences: 2,
+            arithmetic_steps: 2,
+            work: 101,
+            state_bytes: 1_160,
+            output_bytes: 2_885,
+        }
+    );
+    assert_eq!(usage.members, 2);
+    assert_eq!(usage.occurrences, 2);
+    assert_eq!(usage.arithmetic_steps, 2);
+    assert_eq!(
+        usage.input_bytes,
+        lineage.document().bytes().len() + lineage.head().bytes().len() + 1_055
+    );
+    assert_eq!(usage.output_bytes, baseline.bytes().len());
+    let exact = authority::query::Limits {
+        max_input_bytes: usage.input_bytes,
+        max_members: usage.members,
+        max_arithmetic_steps: usage.arithmetic_steps,
+        max_work: usage.work,
+        max_state_bytes: usage.state_bytes,
+        max_output_bytes: usage.output_bytes,
+    };
+    assert!(authority::query::evaluate(&lineage, &selection, exact).is_ok());
+    for lower in [
+        authority::query::Limits {
+            max_input_bytes: usage.input_bytes - 1,
+            ..exact
+        },
+        authority::query::Limits {
+            max_members: usage.members - 1,
+            ..exact
+        },
+        authority::query::Limits {
+            max_arithmetic_steps: usage.arithmetic_steps - 1,
+            ..exact
+        },
+        authority::query::Limits {
+            max_work: usage.work - 1,
+            ..exact
+        },
+        authority::query::Limits {
+            max_state_bytes: usage.state_bytes - 1,
+            ..exact
+        },
+        authority::query::Limits {
+            max_output_bytes: usage.output_bytes - 1,
+            ..exact
+        },
+    ] {
+        assert_eq!(
+            authority::query::evaluate(&lineage, &selection, lower)
+                .expect_err("one-over query limit")
+                .code(),
+            authority::ErrorCode::ResourceIncomplete
+        );
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[trace("TC-011", "FR-011-AC-2")]
+    #[test]
+    fn tc011_generated_window_membership_matches_half_open_reference(
+        instant in prop_oneof![Just(-1i128), Just(0i128), Just(29i128), Just(30i128), -4i128..35],
+    ) {
+        use authority::query::{AggregateValue, DuplicatePolicy, Outcome, RefusalReason};
+
+        let lineage = query_lineage(&[("shipment:generated", "1", instant)], &[0], &[0]);
+        let evaluation = authority::query::evaluate(
+            &lineage,
+            &query_selection(&lineage, DuplicatePolicy::OccurrencePreserving, count_plan()),
+            authority::query::Limits::owner_max(),
+        )
+        .expect("generated half-open membership outcome");
+        if (0..30).contains(&instant) {
+            prop_assert!(matches!(
+                evaluation.outcome(),
+                Outcome::Complete(value) if value.value() == &AggregateValue::Count(1)
+            ));
+        } else {
+            prop_assert!(matches!(
+                evaluation.outcome(),
+                Outcome::Refused(value) if value.reason() == RefusalReason::OutsideWindow
+            ));
+        }
+    }
+
+    #[trace("TC-011", "FR-011-AC-1", "FR-011-AC-4", "TC-012", "NFR-003-AC-2")]
+    #[test]
+    fn tc011_generated_effect_policies_match_an_independent_ordered_fold(
+        cases in prop::collection::vec((0u8..3, -20i16..21), 1..6),
+        rotation in 0usize..6,
+    ) {
+        use authority::query::{AggregateValue, DuplicatePolicy, Outcome};
+        use std::collections::BTreeSet;
+
+        let owned = cases
+            .iter()
+            .enumerate()
+            .map(|(index, (effect, value))| {
+                (
+                    format!("shipment:S{effect}"),
+                    value.to_string(),
+                    i128::try_from(index).expect("bounded generated index") + 1,
+                )
+            })
+            .collect::<Vec<_>>();
+        let effects = owned
+            .iter()
+            .map(|(effect, value, instant)| (effect.as_str(), value.as_str(), *instant))
+            .collect::<Vec<_>>();
+        let required = (0..effects.len()).collect::<Vec<_>>();
+        let mut exposure = required.clone();
+        let exposure_len = exposure.len();
+        exposure.rotate_left(rotation % exposure_len);
+        let lineage = query_lineage(&effects, &required, &exposure);
+
+        for policy in [
+            DuplicatePolicy::EffectIdentityDeduplicating,
+            DuplicatePolicy::OccurrencePreserving,
+        ] {
+            let evaluation = authority::query::evaluate(
+                &lineage,
+                &query_selection(&lineage, policy, sum_plan(-1_000, 1_000)),
+                authority::query::Limits::owner_max(),
+            )
+            .expect("generated complete sum");
+            let Outcome::Complete(result) = evaluation.outcome() else {
+                prop_assert!(false, "generated closed authority must be complete");
+                unreachable!();
+            };
+
+            let mut seen = BTreeSet::new();
+            let mut expected_sum = 0i128;
+            let mut expected_included = Vec::with_capacity(exposure.len());
+            for index in &exposure {
+                let include = policy == DuplicatePolicy::OccurrencePreserving
+                    || seen.insert(owned[*index].0.clone());
+                expected_included.push(include);
+                if include {
+                    expected_sum += i128::from(cases[*index].1);
+                }
+            }
+            prop_assert_eq!(result.value(), &AggregateValue::Sum(expected_sum));
+            prop_assert_eq!(
+                result
+                    .participation()
+                    .map(|row| row.effect_identity().to_vec())
+                    .collect::<Vec<_>>(),
+                exposure
+                    .iter()
+                    .map(|index| owned[*index].0.as_bytes().to_vec())
+                    .collect::<Vec<_>>()
+            );
+            prop_assert_eq!(
+                result
+                    .participation()
+                    .map(|row| row.included())
+                    .collect::<Vec<_>>(),
+                expected_included
+            );
+        }
+    }
 }
 
 fn coordinator_selection_with_profile(

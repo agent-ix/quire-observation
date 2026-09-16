@@ -35,6 +35,7 @@ protocol conformance interpretation, or evidence-store ownership.
 | `authority::completeness` | `quire.observation.completeness-assertion/v1` | `b7c3c48d5f907cfb5bd7b4450e009b6c95f7d558095ece8b81d2ae1d5821bcf0` | `completeness::read` |
 | `authority::availability` | `quire.observation.result-availability/v1` | `2e6c00d6dc94a00b0859b346dc12a14c7142735a565e35d15b85895d311e8416` | `availability::read` |
 | `authority::bundle` | `quire.observation-authority/v1` | `6b6f4e3b08a4b16476b55ae6cdfdff4440b8c053f056ffd7b9bdcde47e200296` | `bundle::read` / `bundle::read_revision` |
+| `authority::bundle` | `quire.observation-authority/v2` | `f92335c5e5e1e3434f1c2484557ca1f512c22b496eb97319c94fcac3491f116a` | `bundle::read_v2` / `bundle::read_revision_v2` |
 | `authority::bundle` | `quire.observation-authority-lineage/v1` | `d58c70516e53bde40ab2d276df143fffb05740348b98d09a71e89857a82a22ef` | `bundle::read_lineage` |
 
 Population admission additionally strict-reads
@@ -46,6 +47,9 @@ The immutable record/population v1 schema files remain committed at their
 original digests (`2922c6ad…` and `493b4c10…`). Their active qualified owner
 documents are v2 because FR-287 adds authority, revision, digest-domain and
 opaque-byte members that v1 cannot represent without an in-place schema break.
+The authority-bundle v1 schema likewise remains immutable. Its v2 successor is
+restricted to the exact seven-role structurally empty population profile; it
+does not manufacture record-dependent sentinel facts.
 
 ## Local checks
 

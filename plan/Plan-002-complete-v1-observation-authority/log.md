@@ -40,3 +40,11 @@ description: "Chronological log of changes to the Plan-002 bundle."
   and fail-closed exact/one-over coordinator limits. Independent semantic and Rust reviews are
   clean. Reconciled coverage is 77/88 backed rows with FR-010 at 6/6 and zero status lies;
   Plan-002 is 5/9 complete.
+* **2026-09-15** — Completed Task-021 with a bounded closed-population query evaluator for
+  canonical filter, count and exact ordered sum; explicit occurrence/effect duplicate policies;
+  authority-typed receipt exclusion; deterministic member accounting; half-open window and
+  snapshot selection; and typed non-success outcomes without partial aggregates. Added the
+  immutable standalone FR-009 v2 seven-role empty-population profile while preserving v1 bytes,
+  API and fixtures. Independent semantic and Rust reviews are clean. Reconciled fallback
+  coverage is 87/89 backed rows with zero status lies; only NFR-003-AC-1 and TC-013 remain
+  unbacked, and Plan-002 is 6/9 complete.

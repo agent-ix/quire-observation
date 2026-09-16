@@ -26,10 +26,18 @@ revision lineage across the complete component set.
 4. Replay identical bundles and then reuse the same authority/scope/revision key
    with one semantic byte changed.
 5. Omit, duplicate, cross-wire, and exceed the bound for each component family.
+6. Derive a complete empty population and publish the exact seven-role v2
+   profile. Omit or add each role, add a sentinel observation, select v1 for the
+   empty profile, select v2 for a nonempty profile, substitute the contract at
+   strict read, and attempt a mixed-version lineage. Pin the existing v1 schema
+   bytes, digest, and canonical fixture bytes unchanged.
 
 ## Expected Results
 
 Equal complete inputs produce one canonical identity. Valid replacements retain
 old/new facts and direct lineage without rewriting prior bytes. Every invalid
 supplied lineage, identity contradiction, component mutation, or one-over input
-refuses before a bundle, successor lineage, or validated view exists.
+refuses before a bundle, successor lineage, or validated view exists. A complete
+empty population round-trips only through the exact v2 empty profile and exposes
+zero observations, positions, completeness facts, and required/available
+results; the v1 contract remains byte-for-byte unchanged.

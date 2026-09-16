@@ -22,6 +22,7 @@ pub mod partial;
 pub mod population;
 pub mod position;
 pub mod progress;
+pub mod query;
 pub mod repair;
 
 pub use common::{

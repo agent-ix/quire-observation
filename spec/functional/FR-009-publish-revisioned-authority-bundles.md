@@ -19,13 +19,17 @@ relationships:
 ## Description
 
 When the selected observation authority is exported, the library SHALL publish
-one canonical immutable `quire.observation-authority/v1` bundle keyed by its
-authority, scope, and positive revision with explicit predecessor/supersession
-relations.
+one canonical immutable bundle keyed by its authority, scope, positive revision,
+and exact `quire.observation-authority/v1` or
+`quire.observation-authority/v2` contract with explicit
+predecessor/supersession relations. The library SHALL select v1 for a nonempty
+population and v2 only for a structurally empty population.
 
 ## Inputs
 
 - Exact selected authority and scope identities.
+- The exact bundle contract version; v1 requires a nonempty population, while
+  v2 requires an empty required-member population.
 - Canonical records, populations, positions, clock/progress, activation,
   completeness, lateness, conflict, and availability facts from FR-004 and
   [FR-007](./FR-007-preserve-partial-values-and-clock-intervals.md) through
@@ -50,6 +54,15 @@ relations.
 
 - The library SHALL include every selected I07 component exactly once or in its
   declared canonical set.
+- For v1, the library SHALL preserve the existing complete eleven-role profile
+  and its immutable schema bytes.
+- For v2, the library SHALL require an empty required-member population and
+  exactly the `population`, `position`, `clock`, `progress`, `closure`,
+  `completeness`, and `availability` roles.
+- For v2, the library SHALL require zero positions, zero completeness facts with
+  complete state, and zero required and available results with available state.
+- For v2, the library SHALL forbid the record-dependent `observation`, `partial`,
+  `capture`, and `activation` roles rather than manufacturing a sentinel record.
 - The library SHALL derive the bundle identity from the contract version,
   authority, scope, revision, predecessor, replacements, and exact component
   identities and digests.
@@ -79,6 +92,7 @@ relations.
 | FR-009-AC-3 | Missing, stale, cross-authority, cross-role, self-referential, or already-branched supplied lineage refuses without a bundle. | unit-testing (TC-009) |
 | FR-009-AC-4 | Exact replay is idempotent; reusing one authority/scope/revision key for unequal bytes is an identity contradiction. | property-based-testing (TC-009) |
 | FR-009-AC-5 | Omitting, duplicating, cross-wiring, or exceeding a component bound refuses before a validated view exists. | unit-testing (TC-009) |
+| FR-009-AC-6 | A complete empty population publishes and strict-reads only as the exact seven-role v2 profile; v1 bytes and schema digest remain unchanged, while a v1 empty profile, a nonempty v2 profile, a sentinel record, an added/omitted role, or contract substitution refuses before a validated view exists. | unit-testing (TC-009) |
 
 ## Error Conditions
 
@@ -87,7 +101,9 @@ head, known sibling successor, self-link, cross-authority/scope/role replacement
 same-key unequal replay, malformed component, or one-over bound returns a typed
 refusal without bundle or successor-lineage output. Concurrent publication needs
 an external compare-and-swap store; this pure library validates only the exact
-lineage view supplied to the call.
+lineage view supplied to the call. A v1/v2 lineage transition is refused; an
+empty and nonempty population have different exact population subjects and do
+not form one revision lineage.
 
 ## Dependencies
 
