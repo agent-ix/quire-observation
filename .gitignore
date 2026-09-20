@@ -1,2 +1,6 @@
-/target/
 /target-codex-backends/
+
+target/
+*-target/
+target-*/
+.worktrees/
