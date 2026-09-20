@@ -11,7 +11,7 @@ before editing. This is the implementation for creation ticket
   defaults from ambient state.
 - New production and test code is Rust. Hosted workflows must be
   `workflow_dispatch` only; do not dispatch one without explicit direction.
-- Run `cargo fmt --check`, `cargo clippy -- -D warnings`,
+- Run `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`,
   `cargo test --locked`, and
   `RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps` before requesting
   review.
