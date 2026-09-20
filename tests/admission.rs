@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Agent-IX
 
+//! TC-001 and TC-005: admission-request validation and relationship
+//! correlation.
+
 mod support;
 
 use ix_trace_rs::trace;
