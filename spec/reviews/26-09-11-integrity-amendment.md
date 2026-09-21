@@ -42,5 +42,5 @@ them.
 
 - `git show 18e8f67` supplied the reviewed diff; no document outside the amended
   set was assessed.
-- `quire validate --scope /home/peter/dev/quire-observation "spec/**/*.md"
+- `quire validate --scope . "spec/**/*.md"
   --summary` was run after authoring this review.

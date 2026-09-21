@@ -97,16 +97,14 @@ exposes those artifacts through strict owner readers and never emits a canonical
 protocol result. `quire-protocol` and `tl-mltl` own their results, and
 `quire-contract-ir` joins only validated owner views.
 
-The complete-V1 extension adopts QSpec AD-002 and AD-008. I07 is the authority
-boundary implemented here. I06 temporal and I09 protocol evaluators consume I07
-and retain their own result semantics. I10 composition belongs to
-`quire-integration`; this crate supplies versioned inputs and repair lineage to
-that facade without becoming the facade.
+This library implements the observation-authority boundary and nothing above
+it. It supplies versioned inputs and repair lineage to its consumers, which
+retain their own result semantics; composing those consumers is their concern,
+and this library does not become that composition.
 
 ## References
 
 - `agent-ix/quire-research#44`, `#45`, and `#46` under OBSERVATION #37.
-- Accepted `quire-specification` FR-090 through FR-095, FR-110 through FR-116,
-  FR-153, FR-160, FR-180, AD-002, AD-008, I06, I07, I10, TC-198, TC-199,
-  TC-209, and IT-072 at reviewed revision `8d0fbad`.
+- The accepted shared `quire-specification` requirements this library
+  implements, at the revision its own review recorded.
 - Producer interface 1.2.0 selected by the shared Quire specification.

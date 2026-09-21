@@ -29,7 +29,7 @@ and coverage validation.
 - `cargo fmt --check` passed.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` passed.
 - `cargo test --locked` passed: 21 integration tests, 0 failures.
-- `quire coverage --scope /home/peter/dev/quire-observation` reported 18/18
+- `quire coverage --scope .` reported 18/18
   rows backed and 21/21 Rust evidence symbols bound.
-- `quire validate --scope /home/peter/dev/quire-observation "spec/**/*.md"
+- `quire validate --scope . "spec/**/*.md"
   --summary` reported 14/14 documents grammar-clean.

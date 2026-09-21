@@ -34,8 +34,8 @@ work as complete.
 - `cargo fmt --check` — passed.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` — passed.
 - `cargo test --locked` — passed: 18 integration tests, 0 failures.
-- `quire validate --scope /home/peter/dev/quire-observation "spec/**/*.md" --summary` — passed: 13/13 grammar-clean; catalog duplicate-archetype warnings remain external to this repository.
-- `quire coverage --scope /home/peter/dev/quire-observation --json` — failed evidence completeness: 2/14 backed rows; 10/10 functional acceptance criteria unbacked.
+- `quire validate --scope . "spec/**/*.md" --summary` — passed: 13/13 grammar-clean; catalog duplicate-archetype warnings remain external to this repository.
+- `quire coverage --scope . --json` — failed evidence completeness: 2/14 backed rows; 10/10 functional acceptance criteria unbacked.
 
 ## Gap-analysis Boundary
 
