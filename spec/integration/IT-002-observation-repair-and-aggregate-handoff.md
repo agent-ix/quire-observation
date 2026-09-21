@@ -26,10 +26,10 @@ population aggregation without losing uncertainty or lineage.
 
 ## Target Integration
 
-The integration links the `quire-observation` Rust crate to exact pinned QSL/TL,
-Protocol, and composed-runtime Rust consumer revisions through I06, I07, I09, and
-I10. It invokes the real local Rust APIs and canonical wire readers. No semantic
-consumer, file I/O, or clock behavior is mocked.
+The integration links the `quire-observation` Rust crate to exact pinned
+consumer revisions across the interfaces this library publishes. It invokes the
+real local Rust APIs and canonical wire readers. No semantic consumer, file I/O,
+or clock behavior is mocked.
 
 ## Preconditions
 
