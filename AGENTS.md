@@ -18,7 +18,7 @@ version they ran.
 
 - Keep the semantic core transport independent. FCD and telemetry adapters are
   not part of OB01.
-- Preserve exact selected identities, digests, incomplete causes, and typed
+- Preserve exact selected identities, incomplete causes, and typed
   refusals. Do not infer relationships, completeness, values, clocks, or
   defaults from ambient state.
 - New production and test code is Rust. Hosted workflows must be
