@@ -15,18 +15,22 @@ relationships:
 ## Description
 
 When admitting a runtime subject or relationship, the library SHALL retain the
-exact FCD Producer interface 1.2 authority, producer-local discriminator and
+exact Producer interface 1.2 authority, producer-local discriminator and
 opaque runtime identities, or SHALL refuse the input with a typed cause.
 
 ## Producer authority subsystem
 
-- The request SHALL consume an `AdmittedStaticBundle` from the pinned
-  `agent-ix-baseline-producer` Rust boundary at revision `4042882`; it SHALL NOT
-  accept a locally restated producer-selection record.
+- The request SHALL consume an `AdmittedStaticBundle` from this library's own
+  local Producer interface 1.2 admission code (`crate::producer`), decoupled
+  from `agent-ix/filament-core-data`; it SHALL NOT accept a locally restated
+  producer-selection record.
 - The exact `AdmittedBundleKey` (`bundle_identity`, namespaced `bundle_revision`,
-  and four-member `DigestSelection`) SHALL qualify every runtime subject and
-  relationship. The digest algorithm, domain, domain version and value all
-  participate in equality and ordering.
+  and two-member `ProducerDigest`) SHALL qualify every runtime subject and
+  relationship. `ProducerDigest` folds a static-bundle digest declaration's
+  `domain` and `version` into one `label` joined as `"{domain}/{version}"`;
+  `algorithm` is not retained, since this library's only digest algorithm is
+  SHA-256, hardcoded on the wire. The digest label and value both participate
+  in equality and ordering.
 - The Producer interface version SHALL be the version carried by the admitted
   bundle and SHALL equal `1.2.0`. An unadmitted bundle or a different version is
   unrepresentable at this boundary rather than approximated.
@@ -52,10 +56,10 @@ opaque runtime identities, or SHALL refuse the input with a typed cause.
 ## Relationship subsystem
 
 - A runtime relationship SHALL retain its exact producer authority, exact
-  producer-supplied runtime relationship identity, exact FCD relationship
+  producer-supplied runtime relationship identity, exact Producer relationship
   declaration identity, and authored source and target qualified subjects.
-- The declaration SHALL exist in the retained admitted bundle. Its ordered FCD
-  source and target type identities SHALL equal the subjects' producer-local
+- The declaration SHALL exist in the retained admitted bundle. Its ordered
+  declared source and target type identities SHALL equal the subjects' producer-local
   kind discriminators byte-for-byte. The library SHALL refuse unknown,
   reversed, wrong-kind, or foreign-authority endpoints and SHALL NOT sort them.
 - Workflow, role-instance, channel, node, message, send, receive, delivery,
@@ -103,10 +107,10 @@ remain at v1.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-005-AC-1 | Admission consumes and retains the pinned FCD `AdmittedStaticBundle`; no local producer-selection shadow remains. | Test (TC-005) |
-| FR-005-AC-2 | Independently mutating authority identity, revision namespace/value, digest algorithm/domain/version/value, kind, or object bytes changes the qualified-subject key; missing/empty runtime members refuse. | Test (TC-005) |
+| FR-005-AC-1 | Admission consumes and retains this library's own `AdmittedStaticBundle`; no local producer-selection shadow remains. | Test (TC-005) |
+| FR-005-AC-2 | Independently mutating authority identity, revision namespace/value, digest label/value, kind, or object bytes changes the qualified-subject key; missing/empty runtime members refuse. | Test (TC-005) |
 | FR-005-AC-3 | Semantic comparison across authority or kind refuses, while presentation, trace, timestamp, arrival and transport changes cannot affect a subject key. | Test (TC-005) |
-| FR-005-AC-4 | A relationship resolves only against its exact FCD declaration and authored endpoint order; unknown, reversed, wrong-kind and foreign endpoints refuse. | Test (TC-005) |
+| FR-005-AC-4 | A relationship resolves only against its exact declared relationship and authored endpoint order; unknown, reversed, wrong-kind and foreign endpoints refuse. | Test (TC-005) |
 | FR-005-AC-5 | Exact relationship replay is idempotent; same-identity incompatible rebinding refuses; multiple distinct values for one slot are ambiguous. | Test (TC-005) |
 | FR-005-AC-6 | Missing, conflicting and ambiguous are distinct non-success outcomes, and no heuristic input creates a relationship. | Test (TC-005) |
 | FR-005-AC-7 | Collection permutation produces one lexicographic key order without creating causal, delivery, retry or timestamp semantics. | Test (TC-005) |
@@ -115,9 +119,13 @@ remain at v1.
 
 ## Dependencies
 
-- `agent-ix/filament-core-data#95` / PR #99 at `4042882` owns and validates
-  Producer interface 1.2 static bundles, revisions, digest selections and
-  relationship declarations.
+- This library's own local admission code (`crate::producer`) owns and
+  validates Producer interface 1.2 static bundles, revisions, digests and
+  relationship declarations. It is a decoupled replacement for the surface
+  this library previously consumed from `agent-ix/filament-core-data`, not a
+  redesign; see PLAT ticket follow-up recommending a separate evaluation of
+  whether this library's admission model should move toward Semantic IR
+  documents (`agent-ix/filament-core-data#144`).
 - `agent-ix/quire-specification` FR-287 defines the runtime subject key and
   FR-262 defines relationship identity, endpoint and correlation semantics.
 - [FR-001](FR-001-qualify-observation-admission.md) owns the encompassing

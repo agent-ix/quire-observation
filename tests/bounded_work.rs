@@ -58,7 +58,7 @@ const SOURCES: &[Source] = &[
         id: SourceId::Bundle,
         path: "src/authority/bundle.rs",
         text: include_str!("../src/authority/bundle.rs"),
-        sha256: "752c833a4103edca25f9e3ed029dce9fcaf1a98e5b701a12ab9c8e71067f0d2e",
+        sha256: "2ae6aa861ae8484a8a9ed20426129f1a9d6fe2f0a49c0eb40b8dc04fc495fcf1",
     },
     Source {
         id: SourceId::Repair,
@@ -82,13 +82,13 @@ const SOURCES: &[Source] = &[
         id: SourceId::Admission,
         path: "src/lib.rs",
         text: include_str!("../src/lib.rs"),
-        sha256: "6cc12016ce41d8da69e9816e2972ed91464119ed7ac2a8125948b793251e5ff2",
+        sha256: "f6f16eb0c8f80f57a4325e8c628a8488a9359def671386ea8f8ef76b019fe500",
     },
     Source {
         id: SourceId::AuthorityEvidence,
         path: "tests/authority.rs",
         text: include_str!("authority.rs"),
-        sha256: "5ceab5286f5e138d81d9bc617bb62ba779d833fc9fe033ab7cdd4f2223315edc",
+        sha256: "03c56d4453c9c5c672e82bfa8c2f78b95d28a729bae7a20d05d683ba97803c16",
     },
     Source {
         id: SourceId::PartialEvidence,

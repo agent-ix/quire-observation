@@ -3,8 +3,9 @@
 
 #![allow(dead_code)]
 
-use agent_ix_baseline_producer::{AdmittedStaticBundle, StaticProducerBundle};
-use quire_observation::{QualifiedSubject, SubjectIdentity, SubjectKind};
+use quire_observation::{
+    AdmittedStaticBundle, QualifiedSubject, StaticProducerBundle, SubjectIdentity, SubjectKind,
+};
 
 pub const ORDER_KIND: &str = "ix://agent-ix/commerce/type/Order";
 pub const SHIPMENT_KIND: &str = "ix://agent-ix/commerce/type/Shipment";

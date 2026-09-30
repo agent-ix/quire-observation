@@ -19,7 +19,7 @@ incomplete outcome.
 ## Inputs
 
 - A `native-linked-package/1` identity, revision, and digest.
-- An FCD-admitted Producer interface 1.2.0 static-bundle capability.
+- An admitted Producer interface 1.2.0 static-bundle capability.
 - One binding, bounded related-subject relationship set, strict-read
   `quire.observation.explicit-members/v1` selection, finite scope, record set,
   and explicit record, member, relationship, and required-relationship limits.
@@ -89,6 +89,7 @@ typed refusal conditions.
   FR-263/FR-264 population and explicit-members canonical identities and verifies
   them through its strict readers. Closure authority is also owned here;
   `quire-protocol` owns only protocol-result canonicalization.
-- Producer interface 1.2.0 is consumed from the pinned FCD Rust crate as defined
-  by [FR-005](FR-005-adopt-authority-qualified-runtime-references.md). The
+- Producer interface 1.2.0 is admitted by this library's own local admission
+  code (`crate::producer`), as defined by
+  [FR-005](FR-005-adopt-authority-qualified-runtime-references.md). The
   selected `native-linked-package/1` artifact remains caller-provided.

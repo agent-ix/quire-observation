@@ -14,9 +14,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 pub mod authority;
+mod producer;
 mod runtime_reference;
 
-pub use agent_ix_baseline_producer::{AdmittedBundleKey, AdmittedStaticBundle};
+pub use producer::{
+    AdmittedBundleKey, AdmittedStaticBundle, ProducerConfiguration, ProducerDigest, Refusal,
+    RelationshipDeclaration, RelationshipEndpointDeclaration, Revision, StaticProducerBundle,
+};
 pub use runtime_reference::{
     EndpointSide, QualifiedSubject, ReferenceComponent, ReferenceRefusal, Relationship,
     RelationshipIdentity, RequiredRelationship, SubjectIdentity, SubjectKind,
@@ -25,7 +29,7 @@ pub use runtime_reference::{
 /// Required linked-package descriptor format.
 pub const NATIVE_LINKED_PACKAGE_FORMAT: &str = "native-linked-package/1";
 /// Required Producer interface version.
-pub const PRODUCER_INTERFACE_VERSION: &str = agent_ix_baseline_producer::INTERFACE_VERSION;
+pub const PRODUCER_INTERFACE_VERSION: &str = producer::PRODUCER_INTERFACE_VERSION;
 
 /// Opaque exact identity; admission validates non-empty values at their boundary.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

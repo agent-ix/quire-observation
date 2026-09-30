@@ -22,7 +22,7 @@ pub const CONTRACT: &str = "quire.observation-authority/v1";
 pub const SCHEMA_BYTES: &[u8] =
     include_bytes!("../../schemas/observation-authority-v1.schema.json");
 /// Lowercase SHA-256 digest of [`SCHEMA_BYTES`].
-pub const SCHEMA_SHA256: &str = "9614d8077bd1e667507b2107eab08e0f7934337115ce3e10c8c55b5d5538cdab";
+pub const SCHEMA_SHA256: &str = "636a695900643067596ececb5177a8b7d446e977727a6eee7aeff494e18e336b";
 /// Immutable structurally empty bundle-contract label.
 pub const V2_CONTRACT: &str = "quire.observation-authority/v2";
 /// Pinned JSON Schema bytes for [`V2_CONTRACT`].
@@ -30,7 +30,7 @@ pub const V2_SCHEMA_BYTES: &[u8] =
     include_bytes!("../../schemas/observation-authority-v2.schema.json");
 /// Lowercase SHA-256 digest of [`V2_SCHEMA_BYTES`].
 pub const V2_SCHEMA_SHA256: &str =
-    "f92335c5e5e1e3434f1c2484557ca1f512c22b496eb97319c94fcac3491f116a";
+    "728cb5d0954440a094a16d05020d4db53be693579cae170d0bb2ce76b5226f31";
 /// Immutable lineage-view contract label.
 pub const LINEAGE_CONTRACT: &str = "quire.observation-authority-lineage/v1";
 /// Pinned JSON Schema bytes for [`LINEAGE_CONTRACT`].
