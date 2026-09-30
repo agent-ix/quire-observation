@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use agent_ix_baseline_producer::{AdmittedBundleKey, DigestSelection, Revision};
+use crate::producer::{AdmittedBundleKey, ProducerDigest, Revision};
 
 use super::common::{self, build_document, read_exact, Validated};
 use super::{Context, Document, Error, ErrorCode, Result, Usage};
@@ -18,7 +18,7 @@ pub const CONTRACT: &str = "quire.observation.record/v2";
 /// Pinned JSON Schema bytes for [`CONTRACT`].
 pub const SCHEMA_BYTES: &[u8] = include_bytes!("../../schemas/observation-record-v2.schema.json");
 /// Lowercase SHA-256 digest of [`SCHEMA_BYTES`].
-pub const SCHEMA_SHA256: &str = "8737683a5971aabcb39bbc5f0842fa1d7c1db5c8f283b8b2544c6364c682f882";
+pub const SCHEMA_SHA256: &str = "f113c4157c25608b6c61dc085dc0533120d0049d8a54946b966c00e0b82b1ffa";
 
 /// Closed FR-294 timing classification.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -162,7 +162,7 @@ pub struct ProducerAuthorityRef<'a> {
     /// Exact namespaced producer revision.
     pub revision: &'a Revision,
     /// Exact four-member digest selection.
-    pub digest: &'a DigestSelection,
+    pub digest: &'a ProducerDigest,
 }
 
 /// Borrowed FR-287 subject key exposed by a validated record.
@@ -420,7 +420,7 @@ struct RelationshipWire {
 struct ProducerAuthorityWire {
     bundle_identity: String,
     bundle_revision: Revision,
-    digest: DigestSelection,
+    digest: ProducerDigest,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -755,9 +755,7 @@ fn usage(payload: &RecordView) -> Usage {
         .max(payload.subject.authority.bundle_identity.len())
         .max(payload.subject.authority.bundle_revision.namespace.len())
         .max(payload.subject.authority.bundle_revision.value.len())
-        .max(payload.subject.authority.digest.algorithm.len())
-        .max(payload.subject.authority.digest.domain.len())
-        .max(payload.subject.authority.digest.version.len())
+        .max(payload.subject.authority.digest.label.len())
         .max(payload.subject.authority.digest.value.len())
         .max(payload.subject.kind.len())
         .max(payload.subject.identity.len());

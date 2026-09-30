@@ -1934,19 +1934,11 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "algorithm",
-            "domain",
-            "version",
+            "label",
             "value"
           ],
           "properties": {
-            "algorithm": {
-              "const": "sha256"
-            },
-            "domain": {
-              "$ref": "#/$defs/text"
-            },
-            "version": {
+            "label": {
               "$ref": "#/$defs/text"
             },
             "value": {

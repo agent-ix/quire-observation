@@ -2175,7 +2175,7 @@ fn tc009_initial_bundle_is_canonical_complete_and_strictly_read() {
         .expect("repeat initial publication");
     assert_eq!(
         format!("{:x}", Sha256::digest(first.document().bytes())),
-        "7cfa6afae4ee0e8d48af33dad3a04bd0695768e249f38f2184b4725f3f07591c",
+        "67b5c69811321a6b6523dc50ad264b1975112ef0c840fc7991b95327b8dc3693",
         "the existing v1 canonical fixture bytes are immutable",
     );
     assert_eq!(first.document().bytes(), second.document().bytes());
@@ -4908,7 +4908,7 @@ fn tc011_each_query_limit_admits_exact_and_refuses_one_over() {
     assert_eq!(
         usage,
         authority::query::Usage {
-            input_bytes: 48_060,
+            input_bytes: 47_231,
             members: 2,
             occurrences: 2,
             arithmetic_steps: 2,

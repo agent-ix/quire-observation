@@ -3,8 +3,9 @@
 
 //! `quire.observation.population/v2` owner artifact and FR-263/FR-264 identities.
 
-use agent_ix_baseline_producer::{DigestSelection, Revision};
 use serde::{Deserialize, Serialize};
+
+use crate::producer::{ProducerDigest, Revision};
 
 use super::common::{
     self, build_document, digest_hex, ensure_sorted_unique, preflight, read_exact, to_bounded_json,
@@ -41,7 +42,7 @@ pub struct ProducerRef<'a> {
     /// Exact namespaced producer-bundle revision.
     pub revision: &'a Revision,
     /// Exact four-member producer-bundle digest selection.
-    pub digest: &'a DigestSelection,
+    pub digest: &'a ProducerDigest,
 }
 
 /// Borrowed immutable definition selection in a validated population.
@@ -59,7 +60,7 @@ pub struct ConfigurationRef<'a> {
     /// Exact configuration identity.
     pub identity: &'a str,
     /// Exact four-member configuration digest selection.
-    pub digest: &'a DigestSelection,
+    pub digest: &'a ProducerDigest,
 }
 
 /// Borrowed mutually exclusive scope selection in a validated population.
@@ -203,14 +204,14 @@ struct ProducerWire {
 struct ProducerAuthorityWire {
     bundle_identity: String,
     bundle_revision: Revision,
-    digest: DigestSelection,
+    digest: ProducerDigest,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ConfigurationWire {
     identity: String,
-    digest: DigestSelection,
+    digest: ProducerDigest,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

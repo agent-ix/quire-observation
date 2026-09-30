@@ -116,10 +116,9 @@
     },
     "producerDigest": {
       "type": "object", "additionalProperties": false,
-      "required": ["algorithm", "domain", "version", "value"],
+      "required": ["label", "value"],
       "properties": {
-        "algorithm": {"const": "sha256"}, "domain": {"$ref": "#/$defs/text"},
-        "version": {"$ref": "#/$defs/text"}, "value": {"$ref": "#/$defs/identity"}
+        "label": {"$ref": "#/$defs/text"}, "value": {"$ref": "#/$defs/identity"}
       }
     },
     "producerAuthority": {

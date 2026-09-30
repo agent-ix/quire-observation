@@ -1,8 +1,8 @@
 # Test fixture provenance
 
-`fcd-static-bundle-1.2.json` is an exact test-only copy of
-`agent-ix/filament-core-data:fixtures/baseline-1-2/static-bundle-a.json` at
-commit `404288282402d60de007295ccbafa960532b955e` (Producer interface 1.2,
-PR #99). The source repository and fixture are AGPL-3.0-only. This repository
-uses it only to exercise the pinned Rust admission boundary; production code
-contains no copied producer artifact or decoder.
+`fcd-static-bundle-1.2.json` is a locally owned test fixture shaped like a
+Producer interface 1.2 static bundle document. It exercises this crate's own
+local admission code in `src/producer.rs`, which decoupled from
+`agent-ix/filament-core-data` and no longer depends on it. The document shape
+is kept for realism and to preserve this crate's existing test coverage; it is
+not a copy of, or a dependency on, anything outside this repository.

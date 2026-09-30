@@ -3,13 +3,12 @@
 
 //! Authority-qualified runtime subject and relationship values.
 //!
-//! FCD owns static Producer interface admission and relationship declarations.
-//! This module consumes that constructor-private capability and owns only the
-//! exact runtime identities and comparisons required by FR-287 and FR-262.
+//! `crate::producer` owns static Producer interface admission and
+//! relationship declarations. This module consumes that constructor-private
+//! capability and owns only the exact runtime identities and comparisons
+//! required by FR-287 and FR-262.
 
-use agent_ix_baseline_producer::{
-    AdmittedBundleKey, AdmittedStaticBundle, RelationshipDeclaration,
-};
+use crate::producer::{AdmittedBundleKey, AdmittedStaticBundle, RelationshipDeclaration};
 
 /// The component of a runtime reference that was absent.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -20,11 +19,11 @@ pub enum ReferenceComponent {
     SubjectIdentity,
     /// Producer-supplied runtime relationship identity.
     RelationshipIdentity,
-    /// FCD relationship declaration identity.
+    /// Producer relationship declaration identity.
     RelationshipDeclaration,
 }
 
-/// The authored endpoint whose kind is incompatible with its FCD declaration.
+/// The authored endpoint whose kind is incompatible with its declared Producer relationship type.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EndpointSide {
     /// Authored source endpoint.
@@ -120,7 +119,7 @@ impl QualifiedSubject {
         }
     }
 
-    /// Returns the exact FCD authority key.
+    /// Returns the exact Producer authority key.
     #[must_use]
     pub const fn authority(&self) -> &AdmittedBundleKey {
         &self.authority
@@ -210,7 +209,7 @@ impl Relationship {
         })
     }
 
-    /// Returns the selected FCD relationship declaration identity.
+    /// Returns the selected Producer relationship declaration identity.
     #[must_use]
     pub fn declaration_identity(&self) -> &str {
         &self.declaration_identity
@@ -284,7 +283,7 @@ impl RequiredRelationship {
         })
     }
 
-    /// Returns the selected FCD relationship declaration identity.
+    /// Returns the selected Producer relationship declaration identity.
     #[must_use]
     pub fn declaration_identity(&self) -> &str {
         &self.declaration_identity
@@ -378,7 +377,7 @@ fn validate_endpoints(
 
 #[cfg(test)]
 mod tests {
-    use agent_ix_baseline_producer::{DigestSelection, Revision};
+    use crate::producer::{ProducerDigest, Revision};
 
     use super::*;
 
@@ -386,7 +385,10 @@ mod tests {
         AdmittedBundleKey {
             bundle_identity: "producer:a".into(),
             bundle_revision: Revision::producer("1"),
-            digest: DigestSelection::canonical(format!("sha256:{}", "1".repeat(64))),
+            digest: ProducerDigest {
+                label: "filament-canonical-json-1/1".into(),
+                value: format!("sha256:{}", "1".repeat(64)),
+            },
         }
     }
 
@@ -417,15 +419,7 @@ mod tests {
         mutations.push(subject(value));
 
         let mut value = authority();
-        value.digest.algorithm = "other".into();
-        mutations.push(subject(value));
-
-        let mut value = authority();
-        value.digest.domain = "digest:other".into();
-        mutations.push(subject(value));
-
-        let mut value = authority();
-        value.digest.version = "2".into();
+        value.digest.label = "digest:other/2".into();
         mutations.push(subject(value));
 
         let mut value = authority();
@@ -446,7 +440,7 @@ mod tests {
         assert!(mutations.iter().all(|mutation| mutation != &base));
         assert!(mutations
             .iter()
-            .take(7)
+            .take(5)
             .all(|mutation| base.same_object(mutation) == Err(ReferenceRefusal::ForeignAuthority)));
     }
 

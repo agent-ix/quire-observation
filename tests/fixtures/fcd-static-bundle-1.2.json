@@ -702,7 +702,7 @@
   "digest": {
     "algorithm": "sha256",
     "domain": "filament-canonical-json-1",
-    "value": "sha256:e63d3f2c7c8743f479fb4745a19b87edb80497a1e1e84b2557bcb8e88f352ed0",
+    "value": "sha256:f5d75b678d3dc81b3b50661aa658e59b98dc1b516c0355ae8fbe3bd8b9ebe799",
     "version": "1"
   },
   "endpoints": [
