@@ -1,6 +1,6 @@
 # quire-observation
 
-[![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/6qsdhSPE)
+[![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/k8DVhuYBR2)
 
 Private Rust implementation of qualified observation bindings and
 transport-independent valuations for Quire (OB01).
