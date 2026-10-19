@@ -99,9 +99,10 @@ validated by this crate's own code, and a test fixture of that shape lives in
 
 quire-observation is a foundation. It depends on
 [quire-canonical](https://github.com/agent-ix/quire-canonical) for canonical JSON
-and on no other Quire repository. Later temporal and protocol checks are its
-intended consumers; they take an `Available` observation as the data a rule is
-evaluated over, and this crate does not depend on them.
+and on no other Quire repository. Temporal and protocol checks build on it:
+[quire-mltl](https://github.com/agent-ix/quire-mltl) and quire-protocol
+(private) both depend on this crate and take an `Available` observation as the
+data a rule is evaluated over.
 
 ## Building and testing
 
