@@ -2,61 +2,127 @@
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/k8DVhuYBR2)
 
-Private Rust implementation of qualified observation bindings and
-transport-independent valuations for Quire (OB01).
+A rule about a running system, such as *every order that ships was paid for
+first*, is only as good as the data it is checked against. A raw signal says
+that something was seen; it does not say which source saw it, under which schema,
+about which object, on which clock, inside which window, or whether the list of
+things you were supposed to see is complete. quire-observation is a Rust library
+that turns a raw signal into a **qualified observation** by checking every one of
+those selections, and it does so independent of how the signal travelled.
 
-The library admits records only when their selected package, producer,
-binding, source/schema, subject, relationship, population/window, clock range,
-and resource limits are explicit and compatible. It returns `Available`,
-`Incomplete`, or `Refused`; it never treats absent evidence as Boolean false.
-It also publishes thirteen canonical bounded owner contracts for activation,
-observation, population, position, clock, partial values, capture, progress,
-closure, completeness, result availability, revisioned bundles, and bounded
-lineage. Consumers receive only strict-read validated views.
+It exists so the layer above never has to guess. A checker that reads an absent
+value as "false" reports violations that never happened. Here, a missing value, a
+missing population member or a missing relationship comes back as `Incomplete`
+and names what is missing. A selection that does not match, such as the wrong
+unit, a foreign clock or an exceeded limit, comes back as `Refused` with a typed
+cause. Only a fully qualified set comes back as `Available`.
 
-It accepts a selected `native-linked-package/1` descriptor and consumes the
-constructor-private `AdmittedStaticBundle` from the FCD Producer interface 1.2
-Rust crate pinned at `404288282402d60de007295ccbafa960532b955e`. It deliberately
-has no compiler dependency, FCD decoder, telemetry adapter, temporal evaluator,
-or protocol-result mapper. It does not claim production monitor execution,
-protocol conformance interpretation, or evidence-store ownership.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.svg">
+  <img alt="A raw record arrives with the package, binding, subject, scope and limits the caller selected. admit() checks every selection. The result is a qualified observation that rules can be evaluated over, an incomplete answer naming what is missing, or a typed refusal. A missing value is never read as false." src="docs/images/hero-light.svg">
+</picture>
+
+> **Status: public prerelease.** The API is still changing and the crate is not
+> published (`publish = false`). Expect breaking changes.
+
+## What a record carries
+
+Each candidate record names everything it depends on, and admission compares each
+name with the selection the caller made. Event time and ingestion time are kept
+apart, and a timestamp never stands in for a causal relationship: relationships
+must be supplied explicitly.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/record-dark.svg">
+  <img alt="An admitted record carries the signal, trigger, unit and schema; the source and typed subject; its clock position with event time and ingestion time kept separate; the clock and its uncertainty; whether it is internal or external; and a valuation that is either present with a type or explicitly missing." src="docs/images/record-light.svg">
+</picture>
+
+## A first admission
+
+`admit` takes one `AdmissionRequest` (the package, producer bundle, binding,
+expected subject, relationships, scope, records and resource limits) and returns
+an `AdmissionOutcome`. These two tests from
+[`tests/admission.rs`](tests/admission.rs) show the first two outcomes; the
+`request()` helper in that file builds a complete, valid request.
+
+```rust
+// A valid record is admitted and every selected premise is retained.
+let outcome = admit(request());
+assert!(matches!(outcome, AdmissionOutcome::Available { observation }
+    if observation.records()[0].visibility == Visibility::External
+        && observation.package().identity == id("package:checkout")
+        && observation.limits().max_records == 2));
+
+// The same request with no value is incomplete, not false.
+let mut input = request();
+input.records[0].value = ValueState::Missing;
+assert!(matches!(admit(input), AdmissionOutcome::Incomplete { reasons }
+    if matches!(reasons.as_slice(), [IncompleteReason::MissingValuation { .. }])));
+```
+
+## Outcomes
+
+No outcome is a Boolean truth value.
+
+| Outcome | Meaning |
+| --- | --- |
+| `Available` | Every required premise was admitted. The `QualifiedObservation` keeps the package, producer, binding, subject, relationships, scope, records and limits exactly as selected. |
+| `Incomplete` | A required premise is absent: `MissingValuation`, `MissingMembership`, `MissingRelationship` or `MissingClosure`. |
+| `Refused` | A selection is invalid or does not match. `RefusalCause` says which: a binding, subject or clock mismatch, an invalid window, an exceeded limit, a duplicate record or member, an ambiguous or conflicting relationship, or an identity that differs from the one derived by the owner contract. |
 
 ## Owner contracts
 
-| Module | Contract | Schema SHA-256 | Public reader |
-| --- | --- | --- | --- |
-| `authority::activation` | `quire.observation.activation-scope-authority/v1` | `c17ad8b3ec10c48e535bc3a762738b979206c01af20c31775d8a9a9e0a97fab6` | `activation::read` |
-| `authority::observation` | `quire.observation.record/v2` | `8737683a5971aabcb39bbc5f0842fa1d7c1db5c8f283b8b2544c6364c682f882` | `observation::read` |
-| `authority::population` | `quire.observation.population/v2` | `bceba1a2a69d150af05a7f7bea52769560849fd24a8582cb35b0937eee263c01` | `population::read` |
-| `authority::position` | `quire.observation.position-ledger/v1` | `aac2fd7fc1b129e24afec397900647f3fe8977341b9907662a3852ac5430211a` | `position::read` |
-| `authority::clock` | `quire.observation.clock-binding/v1` | `c9a7b154a2c2d775ba71ba001842e6f0595e123c07b23a2bb37215c1f05de38d` | `clock::read` |
-| `authority::partial` | `quire.observation.partial-fact/v1` | `9dc068376a7db5a7509810910c36e2efff6b9c3701d83c474701ec572f13f23c` | `partial::read` |
-| `authority::capture` | `quire.observation.capture-environment/v1` | `6d9260d3c4de65b5c3304debdb9baa7816aaea55949839924182d1db4c24c516` | `capture::read` |
-| `authority::progress` | `quire.observation.progress-assertion/v1` | `91223fb982b68d4fb7c66b3737370429bd4841321f5b561ebc6c1e9691bd7f1c` | `progress::read` |
-| `authority::closure` | `quire.observation.closure-assertion/v1` | `8638fb9f4dd5a26d44ae9975388fc734670992914422e23c27eaae82149245f4` | `closure::read` |
-| `authority::completeness` | `quire.observation.completeness-assertion/v1` | `b7c3c48d5f907cfb5bd7b4450e009b6c95f7d558095ece8b81d2ae1d5821bcf0` | `completeness::read` |
-| `authority::availability` | `quire.observation.result-availability/v1` | `2e6c00d6dc94a00b0859b346dc12a14c7142735a565e35d15b85895d311e8416` | `availability::read` |
-| `authority::bundle` | `quire.observation-authority/v1` | `9614d8077bd1e667507b2107eab08e0f7934337115ce3e10c8c55b5d5538cdab` | `bundle::read` / `bundle::read_revision` |
-| `authority::bundle` | `quire.observation-authority/v2` | `f92335c5e5e1e3434f1c2484557ca1f512c22b496eb97319c94fcac3491f116a` | `bundle::read_v2` / `bundle::read_revision_v2` |
-| `authority::bundle` | `quire.observation-authority-lineage/v1` | `d58c70516e53bde40ab2d276df143fffb05740348b98d09a71e89857a82a22ef` | `bundle::read_lineage` |
+Beyond admission, the crate publishes fourteen canonical, bounded owner
+contracts for activation scope, observation records, populations, position
+ledgers, clocks, partial facts, capture environments, progress, closure,
+completeness, result availability, revisioned bundles and bounded lineage. Each
+has a JSON Schema in [`schemas/`](schemas/) and a module under `authority::`
+whose reader returns only a strict-read, validated view. The full table of
+contract names, schema digests and readers is in
+[docs/owner-contracts.md](docs/owner-contracts.md).
 
-Population admission additionally strict-reads
-`quire.observation.explicit-members/v1` through
-`population::read_membership`; its schema digest is
-`408c9d2908c3660d657cea574f52d8531e9ab749ec78c8d058fe5f163df23cce`.
+## What it does not do
 
-The immutable record/population v1 schema files remain committed at their
-original digests (`2922c6ad…` and `493b4c10…`). Their active qualified owner
-documents are v2 because FR-287 adds authority, revision, digest-domain and
-opaque-byte members that v1 cannot represent without an in-place schema break.
-The authority-bundle v1 schema likewise remains immutable. Its v2 successor is
-restricted to the exact seven-role structurally empty population profile; it
-does not manufacture record-dependent sentinel facts.
+The library has no telemetry adapter, temporal evaluator or protocol-result
+mapper. It does not execute production monitors, interpret protocol conformance
+or own an evidence store. The Producer interface 1.2 static bundle it admits
+(`StaticProducerBundle`, `AdmittedStaticBundle` in `src/producer.rs`) is
+validated by this crate's own code, and a test fixture of that shape lives in
+[`tests/fixtures/`](tests/fixtures/).
 
-## Local checks
+## The Quire ecosystem
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/ecosystem-dark.svg">
+  <img alt="The Quire repositories. The main chain runs from the standard, quire-specification, to the compiler, quire-spec-language, then quire-contract-ir, quire-contract-codegen and quire-contract-runtime. quire-spec-language also feeds quire-protocol, and quire-contract-ir feeds quire-analyze. quire-observation feeds quire-protocol and quire-mltl. Above the chain, quire-driver runs it, quire-integration tests it and quire-verification plans verification. Below it, shared libraries used throughout: quire-exact, quire-semantic-value, quire-walk, quire-canonical and quire-verification-contracts." src="docs/images/ecosystem-light.svg">
+</picture>
+
+quire-observation is a foundation. It depends on
+[quire-canonical](https://github.com/agent-ix/quire-canonical) for canonical JSON
+and on no other Quire repository. Temporal and protocol checks build on it:
+[quire-mltl](https://github.com/agent-ix/quire-mltl) and quire-protocol
+(private) both depend on this crate and take an `Available` observation as the
+data a rule is evaluated over.
+
+## Building and testing
+
+The repository's own gate, from [AGENTS.md](AGENTS.md):
 
 ```sh
 cargo fmt --check
-cargo clippy -- -D warnings
+cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
+RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps
 ```
+
+Hosted CI runs only when dispatched by hand, so run the gate locally before
+opening a pull request. The requirements, test cases and reviews are Markdown
+files under [`spec/`](spec/) and [`reviews/`](reviews/); tests are tagged with
+the criteria they check.
+
+## Contributing and licence
+
+Contributions need the [CLA](CLA.md); see [CONTRIBUTING.md](CONTRIBUTING.md) and
+[AGENTS.md](AGENTS.md). Questions are welcome on
+[Discord](https://discord.gg/k8DVhuYBR2). Licensed under
+[AGPL-3.0-or-later](LICENSE); see [LICENSE-DECISION.md](LICENSE-DECISION.md).
