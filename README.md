@@ -3,7 +3,7 @@
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/k8DVhuYBR2)
 
 quire-observation is a Rust library that turns a raw signal from a running
-system into a qualified observation, independent of how the signal travelled.
+system into a qualified observation. The result does not depend on how the signal was transported.
 
 It checks the source, schema, subject, clock, window and population that the
 caller selected for each signal. The result is `Available` for a fully qualified
@@ -55,7 +55,7 @@ assert!(matches!(admit(input), AdmissionOutcome::Incomplete { reasons }
 
 ## Outcomes
 
-No outcome is a Boolean value.
+Each outcome is one of three variants.
 
 | Outcome | Meaning |
 | --- | --- |
@@ -92,10 +92,8 @@ validated by this crate's own code, and a test fixture of that shape lives in
 
 quire-observation depends on
 [quire-canonical](https://github.com/agent-ix/quire-canonical) for canonical JSON
-and on no other Quire repository. Temporal and protocol checks build on it:
-[quire-mltl](https://github.com/agent-ix/quire-mltl) and quire-protocol
-(private) both depend on this crate and take an `Available` observation as the
-data a rule is evaluated over.
+and on no other Quire repository. [quire-mltl](https://github.com/agent-ix/quire-mltl) and quire-protocol (private) depend on this crate.
+
 
 ## Building and testing
 
