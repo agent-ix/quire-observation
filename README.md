@@ -2,20 +2,14 @@
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/k8DVhuYBR2)
 
-A rule about a running system, such as *every order that ships was paid for
-first*, is only as good as the data it is checked against. A raw signal says
-that something was seen; it does not say which source saw it, under which schema,
-about which object, on which clock, inside which window, or whether the list of
-things you were supposed to see is complete. quire-observation is a Rust library
-that turns a raw signal into a **qualified observation** by checking every one of
-those selections, and it does so independent of how the signal travelled.
+quire-observation is a Rust library that turns a raw signal from a running
+system into a qualified observation, independent of how the signal travelled.
 
-It exists so the layer above never has to guess. A checker that reads an absent
-value as "false" reports violations that never happened. Here, a missing value, a
-missing population member or a missing relationship comes back as `Incomplete`
-and names what is missing. A selection that does not match, such as the wrong
-unit, a foreign clock or an exceeded limit, comes back as `Refused` with a typed
-cause. Only a fully qualified set comes back as `Available`.
+It checks the source, schema, subject, clock, window and population that the
+caller selected for each signal. The result is `Available` for a fully qualified
+set, `Incomplete` when a value, member or relationship is missing, or `Refused`
+with a typed cause when a selection does not match. Rule evaluators such as
+quire-mltl and quire-protocol use the `Available` observation as their data.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.svg">
@@ -25,19 +19,18 @@ cause. Only a fully qualified set comes back as `Available`.
 > **Status: public prerelease.** The API is still changing and the crate is not
 > published (`publish = false`). Expect breaking changes.
 
-## What a record carries
+## Records
 
 Each candidate record names everything it depends on, and admission compares each
 name with the selection the caller made. Event time and ingestion time are kept
-apart, and a timestamp never stands in for a causal relationship: relationships
-must be supplied explicitly.
+apart. Relationships must be supplied explicitly; a timestamp does not imply one.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/record-dark.svg">
   <img alt="An admitted record carries the signal, trigger, unit and schema; the source and typed subject; its clock position with event time and ingestion time kept separate; the clock and its uncertainty; whether it is internal or external; and a valuation that is either present with a type or explicitly missing." src="docs/images/record-light.svg">
 </picture>
 
-## A first admission
+## Usage
 
 `admit` takes one `AdmissionRequest` (the package, producer bundle, binding,
 expected subject, relationships, scope, records and resource limits) and returns
@@ -62,7 +55,7 @@ assert!(matches!(admit(input), AdmissionOutcome::Incomplete { reasons }
 
 ## Outcomes
 
-No outcome is a Boolean truth value.
+No outcome is a Boolean value.
 
 | Outcome | Meaning |
 | --- | --- |
@@ -72,7 +65,7 @@ No outcome is a Boolean truth value.
 
 ## Owner contracts
 
-Beyond admission, the crate publishes fourteen canonical, bounded owner
+The crate also publishes fourteen canonical, bounded owner
 contracts for activation scope, observation records, populations, position
 ledgers, clocks, partial facts, capture environments, progress, closure,
 completeness, result availability, revisioned bundles and bounded lineage. Each
@@ -81,7 +74,7 @@ whose reader returns only a strict-read, validated view. The full table of
 contract names, schema digests and readers is in
 [docs/owner-contracts.md](docs/owner-contracts.md).
 
-## What it does not do
+## Limitations
 
 The library has no telemetry adapter, temporal evaluator or protocol-result
 mapper. It does not execute production monitors, interpret protocol conformance
@@ -90,14 +83,14 @@ or own an evidence store. The Producer interface 1.2 static bundle it admits
 validated by this crate's own code, and a test fixture of that shape lives in
 [`tests/fixtures/`](tests/fixtures/).
 
-## The Quire ecosystem
+## Quire ecosystem
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/ecosystem-dark.svg">
   <img alt="The Quire repositories. The main chain runs from the standard, quire-specification, to the compiler, quire-spec-language, then quire-contract-ir, quire-contract-codegen and quire-contract-runtime. quire-spec-language also feeds quire-protocol, and quire-contract-ir feeds quire-analyze. quire-observation feeds quire-protocol and quire-mltl. Above the chain, quire-driver runs it, quire-integration tests it and quire-verification plans verification. Below it, shared libraries used throughout: quire-exact, quire-semantic-value, quire-walk, quire-canonical and quire-verification-contracts." src="docs/images/ecosystem-light.svg">
 </picture>
 
-quire-observation is a foundation. It depends on
+quire-observation depends on
 [quire-canonical](https://github.com/agent-ix/quire-canonical) for canonical JSON
 and on no other Quire repository. Temporal and protocol checks build on it:
 [quire-mltl](https://github.com/agent-ix/quire-mltl) and quire-protocol
@@ -106,7 +99,7 @@ data a rule is evaluated over.
 
 ## Building and testing
 
-The repository's own gate, from [AGENTS.md](AGENTS.md):
+The repository gate, from [AGENTS.md](AGENTS.md):
 
 ```sh
 cargo fmt --check
@@ -120,7 +113,7 @@ opening a pull request. The requirements, test cases and reviews are Markdown
 files under [`spec/`](spec/) and [`reviews/`](reviews/); tests are tagged with
 the criteria they check.
 
-## Contributing and licence
+## Contributing and license
 
 Contributions need the [CLA](CLA.md); see [CONTRIBUTING.md](CONTRIBUTING.md) and
 [AGENTS.md](AGENTS.md). Questions are welcome on
