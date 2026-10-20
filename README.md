@@ -13,7 +13,7 @@ quire-mltl and quire-protocol use the `Available` observation as their data.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.svg">
-  <img alt="A raw record arrives with the package, binding, subject, scope and limits the caller selected. admit() checks every selection. The result is a qualified observation that rules can be evaluated over, an incomplete answer naming what is missing, or a typed refusal. A missing value is never read as false." src="docs/images/hero-light.svg">
+  <img alt="A raw record arrives with the package, binding, subject, scope and limits the caller selected. admit() checks every selection. The result is a qualified observation that rules can be evaluated over, an incomplete answer naming what is missing, or a typed refusal." src="docs/images/hero-light.svg">
 </picture>
 
 > **Status: public prerelease.** The API is still changing and the crate is not

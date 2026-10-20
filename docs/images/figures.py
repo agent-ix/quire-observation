@@ -34,7 +34,7 @@ def hero():
         "A raw record arrives with the package, binding, subject, scope and limits the caller "
         "selected. admit() checks every selection. The result is a qualified observation that "
         "rules can be evaluated over, an incomplete answer naming what is missing, or a typed "
-        "refusal. A missing value is never read as false.",
+        "refusal.",
     )
     f.box(0, 10, 190, 56, "ink", "raw record", "signal · value · times")
     f.box(0, 82, 190, 56, "ink", "binding", "source · schema · unit")
