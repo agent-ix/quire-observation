@@ -117,3 +117,5 @@ Contributions need the [CLA](CLA.md); see [CONTRIBUTING.md](CONTRIBUTING.md) and
 [AGENTS.md](AGENTS.md). Questions are welcome on
 [Discord](https://discord.gg/k8DVhuYBR2). Licensed under
 [AGPL-3.0-or-later](LICENSE); see [LICENSE-DECISION.md](LICENSE-DECISION.md).
+
+<!-- STD-30 language-boundary canary: inert README change. -->
