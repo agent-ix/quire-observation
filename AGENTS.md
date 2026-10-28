@@ -1,6 +1,6 @@
 # Contributor guidance
 
-Read this file, `README.md`, `LICENSE-DECISION.md`, and the owning issues
+Read this file, `README.md`, and the owning issues
 before editing. This is the implementation for creation ticket
 `agent-ix/quire-research#32` and OB01 (`#44`) under OBSERVATION (`#37`).
 
