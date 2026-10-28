@@ -116,4 +116,4 @@ the criteria they check.
 Contributions need the [CLA](CLA.md); see [CONTRIBUTING.md](CONTRIBUTING.md) and
 [AGENTS.md](AGENTS.md). Questions are welcome on
 [Discord](https://discord.gg/k8DVhuYBR2). Licensed under
-[AGPL-3.0-or-later](LICENSE); see [LICENSE-DECISION.md](LICENSE-DECISION.md).
+[AGPL-3.0-or-later](LICENSE).
