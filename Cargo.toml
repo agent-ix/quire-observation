@@ -17,7 +17,7 @@ members = ["."]
 resolver = "2"
 
 [dependencies]
-quire-canonical = { version = "=0.3.0", git = "https://github.com/agent-ix/quire-canonical", tag = "quire-canonical-v0.3.0" }
+quire-canonical = { version = "=0.3.0", git = "https://github.com/agent-ix/quire-canonical", branch = "main", features = ["serde_json"] }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.151"
 sha2 = "=0.10.9"
