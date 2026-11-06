@@ -429,11 +429,7 @@ impl StaticProducerBundle {
         if let Some(object) = value.as_object_mut() {
             object.remove("digest");
         }
-        let limits = quire_canonical::Limits::new(
-            MAX_STATIC_DOCUMENT_BYTES as u64,
-            quire_canonical::Limits::MAX_DEPTH,
-        )
-        .expect("the static document byte and depth ceilings fit quire_canonical's bounds");
+        let limits = quire_canonical::Limits::new(MAX_STATIC_DOCUMENT_BYTES as u64);
         let digest = quire_canonical::sha256(&value, limits)
             .map_err(|error| Refusal::new(format!("bundle canonicalization failed: {error}")))?;
         Ok(ProducerDigest::canonical(
