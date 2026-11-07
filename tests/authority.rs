@@ -766,6 +766,123 @@ fn replace_once(bytes: &[u8], from: &[u8], to: &[u8]) -> Vec<u8> {
     mutated
 }
 
+fn progress_association_row() -> authority::progress::AssociationRow {
+    authority::progress::AssociationRow {
+        model: "model:checkout".to_owned(),
+        model_node: "1111111111111111111111111111111111111111111111111111111111111111".to_owned(),
+        claim: "claim:deadline".to_owned(),
+        source: authority::progress::TimeSource::Tick {
+            operation: "tick".to_owned(),
+            operation_node: "2222222222222222222222222222222222222222222222222222222222222222"
+                .to_owned(),
+            period_numerator: "1".to_owned(),
+            period_denominator: "2".to_owned(),
+        },
+        unit: "ms".to_owned(),
+        unit_node: "3333333333333333333333333333333333333333333333333333333333333333".to_owned(),
+        time_dimension: "4444444444444444444444444444444444444444444444444444444444444444"
+            .to_owned(),
+        observation_source: "source:payments".to_owned(),
+        observation_clock: "clock:event-time".to_owned(),
+        observation_revision: "1".to_owned(),
+    }
+}
+
+#[trace("TC-004", "FR-004-AC-7")]
+#[test]
+fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
+    let qualified = qualified();
+    let owner = owner();
+    let subject = subject(&qualified);
+    let context = Context::new(History::batch(&qualified), &owner, &subject, 1, None);
+    let limits = Limits::owner_max();
+    let base = progress_authority_selection();
+    let plain = authority::progress::derive(context, &base, limits).expect("plain progress");
+    let plain_view =
+        authority::progress::read(plain.bytes(), context, &base, limits).expect("plain read");
+    assert_eq!(
+        plain_view.payload().association().unwrap_err().code(),
+        authority::ErrorCode::MissingPremise
+    );
+
+    let row = progress_association_row();
+    let selected = base.clone().with_association(vec![row.clone()]);
+    let document =
+        authority::progress::derive(context, &selected, limits).expect("associated progress");
+    let view = authority::progress::read(document.bytes(), context, &selected, limits)
+        .expect("associated read");
+    assert_eq!(view.payload().association().expect("association"), &[row]);
+    let bytes = view
+        .payload()
+        .association_canonical_bytes(limits)
+        .expect("canonical value");
+    assert_eq!(bytes, br#"[{"claim":"claim:deadline","model":"model:checkout","model_node":"1111111111111111111111111111111111111111111111111111111111111111","observation_clock":"clock:event-time","observation_revision":"1","observation_source":"source:payments","source":{"kind":"tick","operation":"tick","operation_node":"2222222222222222222222222222222222222222222222222222222222222222","period_denominator":"2","period_numerator":"1"},"time_dimension":"4444444444444444444444444444444444444444444444444444444444444444","unit":"ms","unit_node":"3333333333333333333333333333333333333333333333333333333333333333"}]"#);
+    assert_eq!(
+        authority::progress::read(document.bytes(), context, &base, limits)
+            .unwrap_err()
+            .code(),
+        authority::ErrorCode::ExpectedMismatch
+    );
+    let mut wrong_claim = progress_association_row();
+    wrong_claim.claim = "claim:foreign".to_owned();
+    let wrong_selection = base.clone().with_association(vec![wrong_claim]);
+    assert_eq!(
+        authority::progress::read(document.bytes(), context, &wrong_selection, limits)
+            .unwrap_err()
+            .code(),
+        authority::ErrorCode::ExpectedMismatch
+    );
+
+    let mut foreign = progress_association_row();
+    foreign.observation_source = "source:foreign".to_owned();
+    let selected = base.clone().with_association(vec![foreign]);
+    assert_eq!(
+        authority::progress::derive(context, &selected, limits)
+            .unwrap_err()
+            .code(),
+        authority::ErrorCode::ExpectedMismatch
+    );
+    let mut foreign_clock = progress_association_row();
+    foreign_clock.observation_revision = "2".to_owned();
+    let selected = base.clone().with_association(vec![foreign_clock]);
+    assert_eq!(
+        authority::progress::derive(context, &selected, limits)
+            .unwrap_err()
+            .code(),
+        authority::ErrorCode::ExpectedMismatch
+    );
+    let mut invalid_period = progress_association_row();
+    if let authority::progress::TimeSource::Tick {
+        period_denominator, ..
+    } = &mut invalid_period.source
+    {
+        *period_denominator = "0".to_owned();
+    }
+    let selected = base.clone().with_association(vec![invalid_period]);
+    assert_eq!(
+        authority::progress::derive(context, &selected, limits)
+            .unwrap_err()
+            .code(),
+        authority::ErrorCode::InvalidSelection
+    );
+    let selected = base
+        .clone()
+        .with_association(vec![progress_association_row(), progress_association_row()]);
+    assert_eq!(
+        authority::progress::derive(context, &selected, limits)
+            .unwrap_err()
+            .code(),
+        authority::ErrorCode::InvalidSelection
+    );
+    let selected = base.with_association(vec![]);
+    assert_eq!(
+        authority::progress::derive(context, &selected, limits)
+            .unwrap_err()
+            .code(),
+        authority::ErrorCode::MissingPremise
+    );
+}
+
 #[trace("TC-004", "FR-004-AC-1")]
 #[test]
 fn tc004_all_eleven_owner_contracts_derive_canonical_documents() {

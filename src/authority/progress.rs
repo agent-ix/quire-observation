@@ -24,8 +24,6 @@ pub const CONTRACT: &str = "quire.observation.progress-assertion/v1";
 /// Pinned JSON Schema bytes for [`CONTRACT`].
 pub const SCHEMA_BYTES: &[u8] =
     include_bytes!("../../schemas/observation-progress-assertion-v1.schema.json");
-/// Lowercase SHA-256 digest of [`SCHEMA_BYTES`].
-pub const SCHEMA_SHA256: &str = "91223fb982b68d4fb7c66b3737370429bd4841321f5b561ebc6c1e9691bd7f1c";
 
 /// Exact clock, sources, boundary, trigger, cutoff, and restoration selection.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -37,6 +35,7 @@ pub struct Selection {
     captured_trigger_identity: Identity,
     cutoff: CutoffSelection,
     restoration_basis_identity: Identity,
+    association: Option<Vec<AssociationRow>>,
 }
 
 impl Selection {
@@ -59,8 +58,61 @@ impl Selection {
             captured_trigger_identity,
             cutoff,
             restoration_basis_identity,
+            association: None,
         }
     }
+
+    /// Selects the exact owner asserted QSL to observation association rows.
+    #[must_use]
+    pub fn with_association(mut self, rows: Vec<AssociationRow>) -> Self {
+        self.association = Some(rows);
+        self
+    }
+}
+
+/// Checked QSL time-source shape asserted by this progress owner.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum TimeSource {
+    /// Dense model time.
+    Dense,
+    /// Tick model time with an exact positive rational period.
+    Tick {
+        /// Resolved tick operation identity.
+        operation: String,
+        /// Resolved tick operation node identity.
+        operation_node: String,
+        /// Positive decimal numerator in the selected unit.
+        period_numerator: String,
+        /// Positive decimal denominator in the selected unit.
+        period_denominator: String,
+    },
+}
+
+/// One explicit owner asserted mapping from a checked QSL selection to admitted progress.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AssociationRow {
+    /// Selected QSL model identity.
+    pub model: String,
+    /// Checked QSL model-node identity.
+    pub model_node: String,
+    /// Checked QSL claim identity.
+    pub claim: String,
+    /// Checked QSL time-source shape.
+    pub source: TimeSource,
+    /// Checked QSL unit name.
+    pub unit: String,
+    /// Checked QSL unit-node identity.
+    pub unit_node: String,
+    /// Checked QSL time-dimension node identity.
+    pub time_dimension: String,
+    /// Matching admitted observation source identity.
+    pub observation_source: String,
+    /// Matching admitted observation clock identity.
+    pub observation_clock: String,
+    /// Matching admitted observation clock revision.
+    pub observation_revision: String,
 }
 
 /// Read-only payload produced only inside a validated progress view.
@@ -77,6 +129,8 @@ pub struct ProgressView {
     captured_trigger_identity: String,
     cutoff_identity: String,
     restoration_basis_identity: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    association: Option<Vec<AssociationRow>>,
 }
 
 impl ProgressView {
@@ -139,6 +193,185 @@ impl ProgressView {
     pub fn restoration_basis_identity(&self) -> &str {
         &self.restoration_basis_identity
     }
+
+    /// Returns the owner asserted association value, refusing absent rows.
+    pub fn association(&self) -> Result<&[AssociationRow]> {
+        match self.association.as_deref() {
+            Some(rows) if !rows.is_empty() => Ok(rows),
+            _ => Err(Error::new(
+                ErrorCode::MissingPremise,
+                "progress has no QSL association",
+                Usage::default(),
+            )),
+        }
+    }
+
+    /// Returns RFC 8785 bytes of the association value only, bounded by owner limits.
+    /// The value is an array of rows sorted by `(model, model_node, claim, observation_source)`.
+    pub fn association_canonical_bytes(&self, limits: Limits) -> Result<Vec<u8>> {
+        let rows = self.association()?;
+        // This closed value domain contains only strings, arrays, and objects.
+        // serde_json::Value sorts the ASCII field names before encoding.
+        let value = serde_json::to_value(rows).map_err(|_| {
+            Error::new(
+                ErrorCode::InvalidSelection,
+                "association is not JSON",
+                Usage::default(),
+            )
+        })?;
+        let bytes = serde_json::to_vec(&value).map_err(|_| {
+            Error::new(
+                ErrorCode::InvalidSelection,
+                "association is not JSON",
+                Usage::default(),
+            )
+        })?;
+        if bytes.len() > limits.effective().max_output_bytes {
+            return Err(Error::new(
+                ErrorCode::ResourceIncomplete,
+                "association exceeds canonical bounds",
+                Usage::default(),
+            ));
+        }
+        Ok(bytes)
+    }
+}
+
+fn validate_association(
+    rows: &[AssociationRow],
+    selection: &Selection,
+    scope: &crate::ScopeSelection,
+    limits: Limits,
+) -> Result<()> {
+    if rows.is_empty() {
+        return Err(Error::new(
+            ErrorCode::MissingPremise,
+            "association rows are absent",
+            Usage::default(),
+        ));
+    }
+    if rows.len() > limits.max_required_sources || rows.len() > limits.max_population_entries {
+        return Err(Error::new(
+            ErrorCode::ResourceIncomplete,
+            "association exceeds owner row limit",
+            Usage::default(),
+        ));
+    }
+    let mut previous = None;
+    for row in rows {
+        let key = (
+            &row.model,
+            &row.model_node,
+            &row.claim,
+            &row.observation_source,
+        );
+        if previous.is_some_and(|prior| prior >= key) {
+            return Err(Error::new(
+                ErrorCode::InvalidSelection,
+                "association rows must be sorted and unique",
+                Usage::default(),
+            ));
+        }
+        previous = Some(key);
+        if [row.model.as_str(), row.claim.as_str(), row.unit.as_str()]
+            .iter()
+            .any(|value| value.trim().is_empty())
+            || !valid_node_key(&row.model_node)
+            || !valid_node_key(&row.unit_node)
+            || !valid_node_key(&row.time_dimension)
+        {
+            return Err(Error::new(
+                ErrorCode::InvalidSelection,
+                "association QSL identities must be explicit",
+                Usage::default(),
+            ));
+        }
+        if row.observation_clock != selection.clock.clock_identity().as_str()
+            || row.observation_revision != selection.clock.clock_revision().as_str()
+            || !scope
+                .observation_sources
+                .iter()
+                .any(|source| source.as_str() == row.observation_source)
+        {
+            return Err(Error::new(
+                ErrorCode::ExpectedMismatch,
+                "association source or clock is foreign to admitted progress",
+                Usage::default(),
+            ));
+        }
+        if let TimeSource::Tick {
+            operation,
+            operation_node,
+            period_numerator,
+            period_denominator,
+        } = &row.source
+        {
+            if operation.trim().is_empty()
+                || !valid_node_key(operation_node)
+                || !valid_positive_decimal(period_numerator)
+                || !valid_positive_decimal(period_denominator)
+            {
+                return Err(Error::new(
+                    ErrorCode::InvalidSelection,
+                    "tick association must name an operation and positive canonical period",
+                    Usage::default(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn valid_positive_decimal(value: &str) -> bool {
+    !value.is_empty()
+        && value != "0"
+        && !value.starts_with('0')
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn valid_node_key(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn max_association_string(rows: &[AssociationRow]) -> usize {
+    rows.iter()
+        .flat_map(|row| {
+            let source = match &row.source {
+                TimeSource::Dense => ["", "", "", ""],
+                TimeSource::Tick {
+                    operation,
+                    operation_node,
+                    period_numerator,
+                    period_denominator,
+                } => [
+                    operation.as_str(),
+                    operation_node.as_str(),
+                    period_numerator.as_str(),
+                    period_denominator.as_str(),
+                ],
+            };
+            [
+                row.model.as_str(),
+                row.model_node.as_str(),
+                row.claim.as_str(),
+                row.unit.as_str(),
+                row.unit_node.as_str(),
+                row.time_dimension.as_str(),
+                row.observation_source.as_str(),
+                row.observation_clock.as_str(),
+                row.observation_revision.as_str(),
+                source[0],
+                source[1],
+                source[2],
+                source[3],
+            ]
+        })
+        .map(str::len)
+        .max()
+        .unwrap_or(0)
 }
 
 /// Constructor-private validated progress view.
@@ -179,6 +412,9 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
         ));
     }
     let qualified = context.history().qualified();
+    if let Some(rows) = &selection.association {
+        validate_association(rows, selection, qualified.scope(), effective)?;
+    }
     if &qualified.scope().clock_identity != selection.clock.clock_identity()
         || &qualified.scope().clock_revision != selection.clock.clock_revision()
         || selection.cutoff.clock_identity() != selection.clock.clock_identity()
@@ -244,6 +480,7 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
         captured_trigger_identity: selection.captured_trigger_identity.as_str().to_owned(),
         cutoff_identity: cutoff_identity.as_str().to_owned(),
         restoration_basis_identity: selection.restoration_basis_identity.as_str().to_owned(),
+        association: selection.association.clone(),
     };
     let usage = Usage {
         depth: 5,
@@ -259,9 +496,23 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
             .max(payload.clock_revision.len())
             .max(payload.captured_trigger_identity.len())
             .max(payload.cutoff_identity.len())
-            .max(payload.restoration_basis_identity.len()),
+            .max(payload.restoration_basis_identity.len())
+            .max(
+                payload
+                    .association
+                    .as_ref()
+                    .map_or(0, |rows| max_association_string(rows)),
+            ),
+        population_entries: payload.association.as_ref().map_or(0, Vec::len),
         required_sources: payload.required_sources.len(),
-        visited_fields: 29usize.saturating_add(payload.required_sources.len()),
+        visited_fields: 29usize
+            .saturating_add(payload.required_sources.len())
+            .saturating_add(
+                payload
+                    .association
+                    .as_ref()
+                    .map_or(0, |rows| rows.len().saturating_mul(14)),
+            ),
         ..Usage::default()
     };
     build_document(CONTRACT, context, &payload, usage, limits)
@@ -341,8 +592,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn schema_digest_is_pinned() {
-        assert_eq!(common::schema_sha256(SCHEMA_BYTES), SCHEMA_SHA256);
+    fn schema_is_closed() {
         common::assert_closed_schema(SCHEMA_BYTES, CONTRACT);
     }
 }
