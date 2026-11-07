@@ -17,7 +17,9 @@ members = ["."]
 resolver = "2"
 
 [dependencies]
+qsl-foundation = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
 quire-canonical = { version = "=0.3.0", git = "https://github.com/agent-ix/quire-canonical", branch = "main", features = ["serde_json"] }
+quire-exact = { git = "https://github.com/agent-ix/quire-exact", branch = "main" }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.151"
 sha2 = "=0.10.9"

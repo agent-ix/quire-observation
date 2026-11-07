@@ -32,6 +32,12 @@ qualified admission and owner derivation without adding an evaluator.
 5. Compare progress and closure boundary views with their independently
    selected scope and clock. Review the public surface for absence of
    traversal, replay, settlement and truth APIs.
+6. Construct real structural NodeKeys for the association's model, claim
+   clause, tick operation, unit and dimension. Derive and strict-read progress,
+   then assert the canonical value retains each package/path/ordinal and the
+   claim's role and ordinal. Refuse malformed package, path, segment and
+   ordinal components, alternate node text, and one-under node-byte limits;
+   admit the exact limit.
 
 ## Expected Results
 

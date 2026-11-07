@@ -7,6 +7,7 @@ mod support;
 
 use ix_trace_rs::trace;
 use proptest::prelude::*;
+use quire_exact::{NodeKey, Origin, PathSegment, Role};
 use quire_observation::authority::{
     self, AuthoritySelection, Context, History, IncrementalHistory, Limits, OpenClosed,
     SubjectSelection, TemporalBoundary,
@@ -766,29 +767,37 @@ fn replace_once(bytes: &[u8], from: &[u8], to: &[u8]) -> Vec<u8> {
     mutated
 }
 
+fn association_node(label: &str) -> authority::progress::NodeIdentity {
+    let key = NodeKey::new("Checkout", vec![PathSegment::Text(label.to_owned())], 0)
+        .expect("real structural NodeKey");
+    authority::progress::NodeIdentity::from_key(key, Limits::owner_max())
+        .expect("bounded structural node")
+}
+
 fn progress_association_row() -> authority::progress::AssociationRow {
     authority::progress::AssociationRow {
         model: "model:checkout".to_owned(),
-        model_node: "1111111111111111111111111111111111111111111111111111111111111111".to_owned(),
-        claim: "claim:deadline".to_owned(),
+        model_node: association_node("model"),
+        claim: authority::progress::ClaimOccurrence::new(
+            association_node("clause"),
+            &Origin::new(Role::new("claim"), 2),
+        ),
         source: authority::progress::TimeSource::Tick {
             operation: "tick".to_owned(),
-            operation_node: "2222222222222222222222222222222222222222222222222222222222222222"
-                .to_owned(),
+            operation_node: association_node("tick"),
             period_numerator: "1".to_owned(),
             period_denominator: "2".to_owned(),
         },
         unit: "ms".to_owned(),
-        unit_node: "3333333333333333333333333333333333333333333333333333333333333333".to_owned(),
-        time_dimension: "4444444444444444444444444444444444444444444444444444444444444444"
-            .to_owned(),
+        unit_node: association_node("unit"),
+        time_dimension: association_node("dimension"),
         observation_source: "source:payments".to_owned(),
         observation_clock: "clock:event-time".to_owned(),
         observation_revision: "1".to_owned(),
     }
 }
 
-#[trace("TC-004", "FR-004-AC-7", "FR-006-AC-8")]
+#[trace("TC-004", "TC-006", "FR-004-AC-7", "FR-006-AC-8", "FR-006-AC-9")]
 #[test]
 fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
     let qualified = qualified();
@@ -834,15 +843,85 @@ fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
     let bytes = view
         .association_canonical_bytes(limits)
         .expect("canonical value");
-    let expected_rows = br#"[{"claim":"claim:deadline","model":"model:checkout","model_node":"1111111111111111111111111111111111111111111111111111111111111111","observation_clock":"clock:event-time","observation_revision":"1","observation_source":"source:payments","source":{"kind":"tick","operation":"tick","operation_node":"2222222222222222222222222222222222222222222222222222222222222222","period_denominator":"2","period_numerator":"1"},"time_dimension":"4444444444444444444444444444444444444444444444444444444444444444","unit":"ms","unit_node":"3333333333333333333333333333333333333333333333333333333333333333"}]"#;
+    let encoded = |label: &str| {
+        let structural = format!(r#"{{"ordinal":0,"package":"Checkout","path":["{label}"]}}"#);
+        serde_json::to_string(&structural).expect("encode structural fixture")
+    };
+    let row_text = |source: &str| {
+        format!(
+            r#"[{{"claim":{{"clause_node":{},"ordinal":"2","role":"claim"}},"model":"model:checkout","model_node":{},"observation_clock":"clock:event-time","observation_revision":"1","observation_source":"source:payments","source":{},"time_dimension":{},"unit":"ms","unit_node":{}}}]"#,
+            encoded("clause"),
+            encoded("model"),
+            source,
+            encoded("dimension"),
+            encoded("unit"),
+        )
+    };
+    let tick_source = format!(
+        r#"{{"kind":"tick","operation":"tick","operation_node":{},"period_denominator":"2","period_numerator":"1"}}"#,
+        encoded("tick"),
+    );
+    let expected_rows = row_text(&tick_source);
     let expected = format!(
         r#"{{"clock_identity":"clock:event-time","clock_revision":"1","population_identity":"{}","progress_authority_identity":"{}","progress_document_identity":"{}","rows":{},"scope_identity":"window:O1"}}"#,
         subject.population_identity.as_str(),
         view.payload().authority_identity(),
         document.identity().as_str(),
-        std::str::from_utf8(expected_rows).expect("ASCII fixture"),
+        expected_rows,
     );
     assert_eq!(bytes, expected.as_bytes());
+    let model_node = association.rows()[0].model_node.as_str();
+    assert_eq!(
+        model_node,
+        r#"{"ordinal":0,"package":"Checkout","path":["model"]}"#
+    );
+    assert_eq!(association.rows()[0].claim.role(), "claim");
+    assert_eq!(association.rows()[0].claim.ordinal(), "2");
+    assert_eq!(
+        association.rows()[0].claim.clause_node().as_str(),
+        r#"{"ordinal":0,"package":"Checkout","path":["clause"]}"#
+    );
+    let mut node_limit = limits;
+    let encoded_node_bytes = serde_json::to_string(model_node)
+        .expect("structural node JSON string")
+        .len()
+        - 2;
+    node_limit.max_string_bytes = encoded_node_bytes - 1;
+    assert_eq!(
+        authority::progress::NodeIdentity::from_text(model_node, node_limit)
+            .unwrap_err()
+            .code(),
+        authority::ErrorCode::ResourceIncomplete
+    );
+    node_limit.max_string_bytes = encoded_node_bytes;
+    assert_eq!(
+        authority::progress::NodeIdentity::from_text(model_node, node_limit)
+            .expect("exact structural node byte bound"),
+        association.rows()[0].model_node
+    );
+    for malformed in [
+        r#"{"ordinal":0,"package":"","path":["model"]}"#,
+        r#"{"ordinal":0,"package":"Checkout","path":[]}"#,
+        r#"{"ordinal":9007199254740992,"package":"Checkout","path":["model"]}"#,
+        r#"{"ordinal":0,"package":"Checkout","path":[false]}"#,
+    ] {
+        assert_eq!(
+            authority::progress::NodeIdentity::from_text(malformed, limits)
+                .unwrap_err()
+                .code(),
+            authority::ErrorCode::InvalidSelection,
+            "malformed structural node: {malformed}"
+        );
+    }
+    assert_eq!(
+        authority::progress::NodeIdentity::from_text(
+            r#"{"package":"Checkout","path":["model"],"ordinal":0}"#,
+            limits,
+        )
+        .unwrap_err()
+        .code(),
+        authority::ErrorCode::NonCanonical
+    );
     let mut tight = limits;
     tight.max_output_bytes = bytes.len() - 1;
     assert_eq!(
@@ -869,12 +948,7 @@ fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
         dense_view.association().expect("dense association").rows(),
         &[dense_row]
     );
-    let dense_rows = std::str::from_utf8(expected_rows)
-        .expect("ASCII fixture")
-        .replace(
-            r#""source":{"kind":"tick","operation":"tick","operation_node":"2222222222222222222222222222222222222222222222222222222222222222","period_denominator":"2","period_numerator":"1"}"#,
-            r#""source":{"kind":"dense"}"#,
-        );
+    let dense_rows = row_text(r#"{"kind":"dense"}"#);
     let dense_expected = format!(
         r#"{{"clock_identity":"clock:event-time","clock_revision":"1","population_identity":"{}","progress_authority_identity":"{}","progress_document_identity":"{}","rows":{},"scope_identity":"window:O1"}}"#,
         subject.population_identity.as_str(),
@@ -895,7 +969,10 @@ fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
         authority::ErrorCode::ExpectedMismatch
     );
     let mut wrong_claim = progress_association_row();
-    wrong_claim.claim = "claim:foreign".to_owned();
+    wrong_claim.claim = authority::progress::ClaimOccurrence::new(
+        association_node("foreign-clause"),
+        &Origin::new(Role::new("claim"), 2),
+    );
     let wrong_selection = base.clone().with_association(vec![wrong_claim]);
     assert_eq!(
         authority::progress::read(document.bytes(), context, &wrong_selection, limits)
@@ -930,6 +1007,32 @@ fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
         *period_denominator = "0".to_owned();
     }
     let selected = base.clone().with_association(vec![invalid_period]);
+    assert_eq!(
+        authority::progress::derive(context, &selected, limits)
+            .unwrap_err()
+            .code(),
+        authority::ErrorCode::InvalidSelection
+    );
+    let mut noncanonical_claim = progress_association_row();
+    noncanonical_claim.claim = serde_json::from_value(serde_json::json!({
+        "clause_node": association_node("clause").as_str(),
+        "role": "claim",
+        "ordinal": "02",
+    }))
+    .expect("claim wire shape");
+    let selected = base.clone().with_association(vec![noncanonical_claim]);
+    assert_eq!(
+        authority::progress::derive(context, &selected, limits)
+            .unwrap_err()
+            .code(),
+        authority::ErrorCode::InvalidSelection
+    );
+    let mut invalid_claim = progress_association_row();
+    invalid_claim.claim = authority::progress::ClaimOccurrence::new(
+        association_node("clause"),
+        &Origin::new(Role::new(""), 2),
+    );
+    let selected = base.clone().with_association(vec![invalid_claim]);
     assert_eq!(
         authority::progress::derive(context, &selected, limits)
             .unwrap_err()

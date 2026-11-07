@@ -3,7 +3,8 @@
 
 //! `quire.observation.progress-assertion/v1` owner artifact.
 
-use serde::{Deserialize, Serialize};
+use quire_exact::{NodeKey, Origin};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[cfg(test)]
 use super::common;
@@ -38,6 +39,150 @@ pub struct Selection {
     association: Option<Vec<AssociationRow>>,
 }
 
+/// A structural node identity encoded as the QSL node-wire codec's canonical
+/// `{"ordinal":n,"package":"...","path":[...]}` text. Shape validation does
+/// not establish membership in a QSL checked package.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct NodeIdentity {
+    key: NodeKey,
+    text: String,
+}
+
+impl NodeIdentity {
+    /// Encodes a real structural node key under owner byte limits.
+    pub fn from_key(key: NodeKey, limits: Limits) -> Result<Self> {
+        let text = qsl_foundation::node_wire::node_key_to_text(&key).map_err(|_| {
+            Error::new(
+                ErrorCode::InvalidSelection,
+                "node identity cannot be encoded",
+                Usage::default(),
+            )
+        })?;
+        Self::check_size(&text, limits)?;
+        Ok(Self { key, text })
+    }
+
+    /// Reads canonical structural node text, refusing malformed and noncanonical forms.
+    pub fn from_text(text: &str, limits: Limits) -> Result<Self> {
+        Self::check_size(text, limits)?;
+        let key = qsl_foundation::node_wire::node_key_from_text(text).map_err(|_| {
+            Error::new(
+                ErrorCode::InvalidSelection,
+                "node identity has invalid structural components",
+                Usage::default(),
+            )
+        })?;
+        let canonical = qsl_foundation::node_wire::node_key_to_text(&key).map_err(|_| {
+            Error::new(
+                ErrorCode::InvalidSelection,
+                "node identity cannot be encoded",
+                Usage::default(),
+            )
+        })?;
+        if canonical != text {
+            return Err(Error::new(
+                ErrorCode::NonCanonical,
+                "node identity text is not canonical",
+                Usage::default(),
+            ));
+        }
+        Ok(Self {
+            key,
+            text: canonical,
+        })
+    }
+
+    fn check_size(text: &str, limits: Limits) -> Result<()> {
+        let effective = limits.effective();
+        if text.len() > effective.max_string_bytes || text.len() > effective.max_output_bytes {
+            return Err(Error::new(
+                ErrorCode::ResourceIncomplete,
+                "node identity exceeds owner byte limit",
+                Usage::default(),
+            ));
+        }
+        let escaped = serde_json::to_string(text).map_err(|_| {
+            Error::new(
+                ErrorCode::InvalidSelection,
+                "node identity cannot be JSON encoded",
+                Usage::default(),
+            )
+        })?;
+        if escaped.len().saturating_sub(2) > effective.max_string_bytes {
+            return Err(Error::new(
+                ErrorCode::ResourceIncomplete,
+                "node identity exceeds encoded string limit",
+                Usage::default(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Returns the exact structural node key.
+    #[must_use]
+    pub const fn key(&self) -> &NodeKey {
+        &self.key
+    }
+
+    /// Returns the canonical structural node text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.text
+    }
+}
+
+impl Serialize for NodeIdentity {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.text)
+    }
+}
+
+impl<'de> Deserialize<'de> for NodeIdentity {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Self::from_text(&text, Limits::owner_max()).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Selected temporal claim's clause node and exact occurrence key.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClaimOccurrence {
+    clause_node: NodeIdentity,
+    role: String,
+    ordinal: String,
+}
+
+impl ClaimOccurrence {
+    /// Retains the clause node and selected occurrence without interpreting the role.
+    #[must_use]
+    pub fn new(clause_node: NodeIdentity, occurrence: &Origin) -> Self {
+        Self {
+            clause_node,
+            role: occurrence.role().as_str().to_owned(),
+            ordinal: occurrence.ordinal().to_string(),
+        }
+    }
+
+    /// Returns the selected structural clause node identity.
+    #[must_use]
+    pub const fn clause_node(&self) -> &NodeIdentity {
+        &self.clause_node
+    }
+
+    /// Returns the exact occurrence role.
+    #[must_use]
+    pub fn role(&self) -> &str {
+        &self.role
+    }
+
+    /// Returns the canonical decimal occurrence ordinal.
+    #[must_use]
+    pub fn ordinal(&self) -> &str {
+        &self.ordinal
+    }
+}
+
 impl Selection {
     /// Constructs a complete progress-authority selection.
     #[must_use]
@@ -70,7 +215,7 @@ impl Selection {
     }
 }
 
-/// Checked QSL time-source shape asserted by this progress owner.
+/// Selected QSL time-source shape asserted by this progress owner.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum TimeSource {
@@ -81,7 +226,7 @@ pub enum TimeSource {
         /// Resolved tick operation identity.
         operation: String,
         /// Resolved tick operation node identity.
-        operation_node: String,
+        operation_node: NodeIdentity,
         /// Positive decimal numerator in the selected unit.
         period_numerator: String,
         /// Positive decimal denominator in the selected unit.
@@ -95,18 +240,18 @@ pub enum TimeSource {
 pub struct AssociationRow {
     /// Selected QSL model identity.
     pub model: String,
-    /// Checked QSL model-node identity.
-    pub model_node: String,
-    /// Checked QSL claim identity.
-    pub claim: String,
-    /// Checked QSL time-source shape.
+    /// Selected structural QSL model-node identity.
+    pub model_node: NodeIdentity,
+    /// Selected clause node and occurrence for the QSL claim.
+    pub claim: ClaimOccurrence,
+    /// Selected QSL time-source shape.
     pub source: TimeSource,
-    /// Checked QSL unit name.
+    /// Selected QSL unit name.
     pub unit: String,
-    /// Checked QSL unit-node identity.
-    pub unit_node: String,
-    /// Checked QSL time-dimension node identity.
-    pub time_dimension: String,
+    /// Selected structural QSL unit-node identity.
+    pub unit_node: NodeIdentity,
+    /// Selected structural QSL time-dimension node identity.
+    pub time_dimension: NodeIdentity,
     /// Matching admitted observation source identity.
     pub observation_source: String,
     /// Matching admitted observation clock identity.
@@ -325,7 +470,30 @@ fn validate_association(
         ));
     }
     let mut previous = None;
+    let mut association_bytes = 0usize;
     for row in rows {
+        for value in [
+            row.model.as_str(),
+            row.model_node.as_str(),
+            row.claim.clause_node().as_str(),
+            row.claim.role(),
+            row.claim.ordinal(),
+            row.unit.as_str(),
+            row.unit_node.as_str(),
+            row.time_dimension.as_str(),
+            row.observation_source.as_str(),
+            row.observation_clock.as_str(),
+            row.observation_revision.as_str(),
+        ] {
+            association_bytes = association_bytes.saturating_add(value.len());
+            if association_bytes > limits.max_output_bytes {
+                return Err(Error::new(
+                    ErrorCode::ResourceIncomplete,
+                    "association exceeds owner byte limit",
+                    Usage::default(),
+                ));
+            }
+        }
         let key = (
             &row.model,
             &row.model_node,
@@ -340,18 +508,24 @@ fn validate_association(
             ));
         }
         previous = Some(key);
-        if [row.model.as_str(), row.claim.as_str(), row.unit.as_str()]
+        if [row.model.as_str(), row.claim.role(), row.unit.as_str()]
             .iter()
             .any(|value| value.trim().is_empty())
-            || !valid_node_key(&row.model_node)
-            || !valid_node_key(&row.unit_node)
-            || !valid_node_key(&row.time_dimension)
+            || !valid_natural_decimal(row.claim.ordinal())
         {
             return Err(Error::new(
                 ErrorCode::InvalidSelection,
                 "association QSL identities must be explicit",
                 Usage::default(),
             ));
+        }
+        for node in [
+            &row.model_node,
+            row.claim.clause_node(),
+            &row.unit_node,
+            &row.time_dimension,
+        ] {
+            NodeIdentity::check_size(node.as_str(), limits)?;
         }
         if row.observation_clock != selection.clock.clock_identity().as_str()
             || row.observation_revision != selection.clock.clock_revision().as_str()
@@ -373,8 +547,23 @@ fn validate_association(
             period_denominator,
         } = &row.source
         {
+            for value in [
+                operation.as_str(),
+                operation_node.as_str(),
+                period_numerator.as_str(),
+                period_denominator.as_str(),
+            ] {
+                association_bytes = association_bytes.saturating_add(value.len());
+                if association_bytes > limits.max_output_bytes {
+                    return Err(Error::new(
+                        ErrorCode::ResourceIncomplete,
+                        "association exceeds owner byte limit",
+                        Usage::default(),
+                    ));
+                }
+            }
+            NodeIdentity::check_size(operation_node.as_str(), limits)?;
             if operation.trim().is_empty()
-                || !valid_node_key(operation_node)
                 || !valid_positive_decimal(period_numerator)
                 || !valid_positive_decimal(period_denominator)
             {
@@ -396,11 +585,11 @@ fn valid_positive_decimal(value: &str) -> bool {
         && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-fn valid_node_key(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+fn valid_natural_decimal(value: &str) -> bool {
+    !value.is_empty()
+        && (value == "0" || !value.starts_with('0'))
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+        && value.parse::<u64>().is_ok()
 }
 
 fn max_association_string(rows: &[AssociationRow]) -> usize {
@@ -423,7 +612,9 @@ fn max_association_string(rows: &[AssociationRow]) -> usize {
             [
                 row.model.as_str(),
                 row.model_node.as_str(),
-                row.claim.as_str(),
+                row.claim.clause_node().as_str(),
+                row.claim.role(),
+                row.claim.ordinal(),
                 row.unit.as_str(),
                 row.unit_node.as_str(),
                 row.time_dimension.as_str(),
@@ -436,7 +627,11 @@ fn max_association_string(rows: &[AssociationRow]) -> usize {
                 source[3],
             ]
         })
-        .map(str::len)
+        .map(|text| {
+            serde_json::to_string(text)
+                .map(|encoded| encoded.len().saturating_sub(2))
+                .unwrap_or(usize::MAX)
+        })
         .max()
         .unwrap_or(0)
 }
@@ -578,7 +773,7 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
                 payload
                     .association
                     .as_ref()
-                    .map_or(0, |rows| rows.len().saturating_mul(14)),
+                    .map_or(0, |rows| rows.len().saturating_mul(18)),
             ),
         ..Usage::default()
     };

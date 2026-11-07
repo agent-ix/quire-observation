@@ -32,6 +32,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "arrayvec"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -263,6 +269,11 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 name = "ix-trace-rs"
 version = "0.1.0"
 source = "git+https://github.com/agent-ix/ix-trace-rs?tag=v0.1.1#2ce4ebf47f726b9d76388220545cd0abda8a5cfb"
+
+[[package]]
+name = "ix-trace-rs"
+version = "0.1.2"
+source = "git+https://github.com/agent-ix/ix-trace-rs?branch=main#e29cc07f70394ff018884d12406c1e150bded5f4"
 
 [[package]]
 name = "js-sys"
@@ -517,6 +528,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "qsl-foundation"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-spec-language?branch=main#afe0d304d964f95639259bcabee6052daa3a357b"
+dependencies = [
+ "hashbrown",
+ "ix-trace-rs 0.1.2",
+ "quire-exact",
+ "quire-semantic-value",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -546,16 +571,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "quire-exact"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-exact?branch=main#9ded73f61ad3b00ed18350b0309c5ee1fbe65c08"
+dependencies = [
+ "allocator-api2",
+ "arrayvec",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "once_cell",
+ "spin",
+ "thiserror",
+ "triomphe",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "quire-observation"
 version = "0.1.0"
 dependencies = [
- "ix-trace-rs",
+ "ix-trace-rs 0.1.0",
  "jsonschema",
  "proptest",
+ "qsl-foundation",
  "quire-canonical",
+ "quire-exact",
  "serde",
  "serde_json",
  "sha2",
+ "thiserror",
+]
+
+[[package]]
+name = "quire-semantic-value"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#a16416bf014df3c067f8b1640f224c2e3c4bb5e1"
+dependencies = [
+ "quire-canonical",
+ "quire-exact",
  "thiserror",
 ]
 
@@ -797,6 +851,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
 
 [[package]]
+name = "spin"
+version = "0.9.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e"
+
+[[package]]
 name = "strum"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -873,6 +933,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tinyvec"
+version = "1.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
+
+[[package]]
+name = "triomphe"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d15f4f5898bcfc5d8a8e45ed30b2f108d710c1a2e5489dbf80e078f707181bc"
+
+[[package]]
 name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -895,6 +967,15 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
+dependencies = [
+ "tinyvec",
+]
 
 [[package]]
 name = "uuid-simd"

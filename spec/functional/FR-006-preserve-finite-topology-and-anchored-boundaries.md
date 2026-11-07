@@ -76,7 +76,13 @@ association to progress v1 because this prerelease contract has no external
 progress v1 consumer. The association SHALL preserve the exact FR-289 boundary
 mapping and SHALL NOT add a replay/evaluation API, traversal API, or the
 superseded result model. Exact admission and owner-derivation tests cover the
-boundary behavior.
+boundary behavior. Its model, clause, operation, unit and dimension nodes SHALL
+retain the checked structural `{package, path, ordinal}` identity, and its
+claim SHALL retain the clause's exact occurrence role and ordinal. A node
+spelling SHALL be canonical QSL node-wire text under owner byte bounds; a
+malformed component or noncanonical spelling SHALL refuse before authority is
+issued. This structural value does not prove that a node exists in a QSL
+package; QSL compares it with the checked package selection.
 
 ## Acceptance Criteria
 
@@ -90,6 +96,7 @@ boundary behavior.
 | FR-006-AC-6 | Exact clock identity/revision and scope identity are retained; independently cross-wiring any one prevents progress/closure derivation. | Test (TC-006) |
 | FR-006-AC-7 | A point interval admits with a valid greater carrier end; watermark equality cannot close it, while a strictly greater watermark can. | Test (TC-006) |
 | FR-006-AC-8 | The prerelease progress v1 contract includes FR-004's owner-issued association because no external progress v1 consumer exists; its exact FR-289 boundary mapping remains intact, closure v1 retains its boundary mapping, and neither publishes a traversal, replay, settlement or truth API. | Test (TC-004, TC-006) |
+| FR-006-AC-9 | Association model, clause, tick-operation, unit and dimension nodes round-trip as real structural NodeKeys with canonical package/path/ordinal text; the claim retains its exact role and ordinal. Empty package/path, malformed segment or out-of-range ordinal refuses with `InvalidSelection`, an alternate spelling with `NonCanonical`, and one-under node-byte bounds with `ResourceIncomplete`; an exact byte bound admits. | Test (TC-004, TC-006) |
 
 ## Dependencies
 
