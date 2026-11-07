@@ -145,12 +145,10 @@ impl<'de> Deserialize<'de> for NodeIdentity {
 }
 
 /// Selected temporal claim's clause node and exact occurrence key.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ClaimOccurrence {
     clause_node: NodeIdentity,
-    role: String,
-    ordinal: String,
+    occurrence: Origin,
 }
 
 impl ClaimOccurrence {
@@ -159,8 +157,7 @@ impl ClaimOccurrence {
     pub fn new(clause_node: NodeIdentity, occurrence: &Origin) -> Self {
         Self {
             clause_node,
-            role: occurrence.role().as_str().to_owned(),
-            ordinal: occurrence.ordinal().to_string(),
+            occurrence: occurrence.clone(),
         }
     }
 
@@ -173,13 +170,52 @@ impl ClaimOccurrence {
     /// Returns the exact occurrence role.
     #[must_use]
     pub fn role(&self) -> &str {
-        &self.role
+        self.occurrence.role().as_str()
     }
 
-    /// Returns the canonical decimal occurrence ordinal.
+    /// Returns the exact selected occurrence.
     #[must_use]
-    pub fn ordinal(&self) -> &str {
-        &self.ordinal
+    pub const fn occurrence(&self) -> &Origin {
+        &self.occurrence
+    }
+
+    /// Returns the occurrence ordinal.
+    #[must_use]
+    pub fn ordinal(&self) -> u64 {
+        self.occurrence.ordinal()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ClaimOccurrenceWire {
+    clause_node: NodeIdentity,
+    role: String,
+    ordinal: String,
+}
+
+impl Serialize for ClaimOccurrence {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        ClaimOccurrenceWire {
+            clause_node: self.clause_node.clone(),
+            role: self.role().to_owned(),
+            ordinal: self.ordinal().to_string(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ClaimOccurrence {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        let wire = ClaimOccurrenceWire::deserialize(deserializer)?;
+        if wire.role.trim().is_empty() || !valid_natural_decimal(&wire.ordinal) {
+            return Err(serde::de::Error::custom("invalid claim occurrence"));
+        }
+        let ordinal = wire.ordinal.parse().map_err(serde::de::Error::custom)?;
+        Ok(Self::new(
+            wire.clause_node,
+            &Origin::new(quire_exact::Role::new(wire.role), ordinal),
+        ))
     }
 }
 
@@ -472,12 +508,12 @@ fn validate_association(
     let mut previous = None;
     let mut association_bytes = 0usize;
     for row in rows {
+        association_bytes = association_bytes.saturating_add(row.claim.ordinal().to_string().len());
         for value in [
             row.model.as_str(),
             row.model_node.as_str(),
             row.claim.clause_node().as_str(),
             row.claim.role(),
-            row.claim.ordinal(),
             row.unit.as_str(),
             row.unit_node.as_str(),
             row.time_dimension.as_str(),
@@ -511,7 +547,6 @@ fn validate_association(
         if [row.model.as_str(), row.claim.role(), row.unit.as_str()]
             .iter()
             .any(|value| value.trim().is_empty())
-            || !valid_natural_decimal(row.claim.ordinal())
         {
             return Err(Error::new(
                 ErrorCode::InvalidSelection,
@@ -614,7 +649,6 @@ fn max_association_string(rows: &[AssociationRow]) -> usize {
                 row.model_node.as_str(),
                 row.claim.clause_node().as_str(),
                 row.claim.role(),
-                row.claim.ordinal(),
                 row.unit.as_str(),
                 row.unit_node.as_str(),
                 row.time_dimension.as_str(),
@@ -634,6 +668,12 @@ fn max_association_string(rows: &[AssociationRow]) -> usize {
         })
         .max()
         .unwrap_or(0)
+        .max(
+            rows.iter()
+                .map(|row| row.claim.ordinal().to_string().len())
+                .max()
+                .unwrap_or(0),
+        )
 }
 
 /// Constructor-private validated progress view.

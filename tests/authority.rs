@@ -876,7 +876,11 @@ fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
         r#"{"ordinal":0,"package":"Checkout","path":["model"]}"#
     );
     assert_eq!(association.rows()[0].claim.role(), "claim");
-    assert_eq!(association.rows()[0].claim.ordinal(), "2");
+    assert_eq!(association.rows()[0].claim.ordinal(), 2);
+    assert_eq!(
+        association.rows()[0].claim.occurrence(),
+        &Origin::new(Role::new("claim"), 2)
+    );
     assert_eq!(
         association.rows()[0].claim.clause_node().as_str(),
         r#"{"ordinal":0,"package":"Checkout","path":["clause"]}"#
@@ -1013,20 +1017,13 @@ fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
             .code(),
         authority::ErrorCode::InvalidSelection
     );
-    let mut noncanonical_claim = progress_association_row();
-    noncanonical_claim.claim = serde_json::from_value(serde_json::json!({
-        "clause_node": association_node("clause").as_str(),
-        "role": "claim",
-        "ordinal": "02",
-    }))
-    .expect("claim wire shape");
-    let selected = base.clone().with_association(vec![noncanonical_claim]);
-    assert_eq!(
-        authority::progress::derive(context, &selected, limits)
-            .unwrap_err()
-            .code(),
-        authority::ErrorCode::InvalidSelection
-    );
+    let noncanonical_claim: std::result::Result<authority::progress::ClaimOccurrence, _> =
+        serde_json::from_value(serde_json::json!({
+            "clause_node": association_node("clause").as_str(),
+            "role": "claim",
+            "ordinal": "02",
+        }));
+    assert!(noncanonical_claim.is_err());
     let mut invalid_claim = progress_association_row();
     invalid_claim.claim = authority::progress::ClaimOccurrence::new(
         association_node("clause"),
