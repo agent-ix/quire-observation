@@ -71,10 +71,12 @@ without evaluating reachability, settlement, conformance, or truth.
 ## Existing contract continuity
 
 The accepted `TemporalBoundary` representation and the progress/closure v1
-owner schemas already carry the complete FR-289 mapping. This requirement SHALL
-NOT change their schema bytes, add a replay/evaluation API, add a traversal API,
-or reintroduce the superseded result model. It closes the residual policy and
-executable-evidence gap with exact admission and owner-derivation tests.
+owner schemas carry the complete FR-289 mapping. FR-004 adds the owner-issued
+association to progress v1 because this prerelease contract has no external
+progress v1 consumer. The association SHALL preserve the exact FR-289 boundary
+mapping and SHALL NOT add a replay/evaluation API, traversal API, or the
+superseded result model. Exact admission and owner-derivation tests cover the
+boundary behavior.
 
 ## Acceptance Criteria
 
@@ -87,7 +89,7 @@ executable-evidence gap with exact admission and owner-derivation tests.
 | FR-006-AC-5 | Event-position and fixed-sample intervals require checked `b+1`; a reversed interval, overflow, wrong start/end or wrong clock family refuses. | Test (TC-006) |
 | FR-006-AC-6 | Exact clock identity/revision and scope identity are retained; independently cross-wiring any one prevents progress/closure derivation. | Test (TC-006) |
 | FR-006-AC-7 | A point interval admits with a valid greater carrier end; watermark equality cannot close it, while a strictly greater watermark can. | Test (TC-006) |
-| FR-006-AC-8 | Progress/closure v1 schemas remain byte-identical and no public traversal, replay, settlement or truth API is introduced. | Test (TC-006) |
+| FR-006-AC-8 | The prerelease progress v1 contract includes FR-004's owner-issued association because no external progress v1 consumer exists; its exact FR-289 boundary mapping remains intact, closure v1 retains its boundary mapping, and neither publishes a traversal, replay, settlement or truth API. | Test (TC-004, TC-006) |
 
 ## Dependencies
 

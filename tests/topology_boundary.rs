@@ -18,7 +18,6 @@ use quire_observation::{
     RelationshipIdentity, ResourceKind, ResourceLimits, ScopeKind, ScopeSelection, ValueState,
     Visibility, NATIVE_LINKED_PACKAGE_FORMAT,
 };
-use sha2::{Digest as _, Sha256};
 use support::{order, producer, ORDER_SUCCESSOR};
 
 fn id(value: &str) -> Identity {
@@ -291,7 +290,7 @@ fn tc006_retains_loops_cycles_and_disconnected_components_without_inference() {
     ));
 }
 
-#[trace("TC-006", "FR-006-AC-4", "FR-006-AC-6", "FR-006-AC-7")]
+#[trace("TC-006", "FR-006-AC-4", "FR-006-AC-6", "FR-006-AC-7", "FR-006-AC-8")]
 #[test]
 fn tc006_timestamp_boundary_uses_exact_scope_clock_and_half_open_carrier() {
     let exact_boundary = TemporalBoundary::TimestampedEvent {
@@ -457,7 +456,7 @@ fn tc006_timestamp_boundary_uses_exact_scope_clock_and_half_open_carrier() {
     assert_eq!(error.code(), authority::ErrorCode::ExpectedMismatch);
 }
 
-#[trace("TC-006", "FR-006-AC-5", "FR-006-AC-7")]
+#[trace("TC-006", "FR-006-AC-5", "FR-006-AC-7", "FR-006-AC-8")]
 #[test]
 fn tc006_discrete_boundaries_require_checked_successor_and_admit_points() {
     let event = qualified(request_for(
@@ -603,28 +602,5 @@ fn tc006_discrete_boundaries_require_checked_successor_and_admit_points() {
             .expect_err("a reversed discrete interval must refuse")
             .code(),
         authority::ErrorCode::InvalidSelection
-    );
-}
-
-#[trace("TC-006", "FR-006-AC-8")]
-#[test]
-fn tc006_progress_and_closure_v1_schemas_remain_immutable() {
-    assert_eq!(
-        format!(
-            "{:x}",
-            Sha256::digest(include_bytes!(
-                "../schemas/observation-progress-assertion-v1.schema.json"
-            ))
-        ),
-        "91223fb982b68d4fb7c66b3737370429bd4841321f5b561ebc6c1e9691bd7f1c"
-    );
-    assert_eq!(
-        format!(
-            "{:x}",
-            Sha256::digest(include_bytes!(
-                "../schemas/observation-closure-assertion-v1.schema.json"
-            ))
-        ),
-        "8638fb9f4dd5a26d44ae9975388fc734670992914422e23c27eaae82149245f4"
     );
 }

@@ -15,7 +15,7 @@ qualified admission and owner derivation without adding an evaluator.
 
 ## Test Procedure
 
-1. Admit the pinned FCD fixture and use its existing `Order-successor`
+1. Admit the FCD fixture and use its existing `Order-successor`
    same-kind relationship declaration to construct an isolated subject, a
    self-loop, a two-subject directed cycle and a disconnected component. Verify
    exact retention, replay idempotence and the absence of a synthesized edge or
@@ -29,8 +29,9 @@ qualified admission and owner derivation without adding an evaluator.
 4. Independently mutate scope identity, clock identity, clock revision, family,
    carrier start and carrier end and require typed refusal before a document or
    view exists.
-5. Pin the progress/closure v1 schema digests and review the public surface for
-   absence of traversal, replay, settlement and truth APIs.
+5. Compare progress and closure boundary views with their independently
+   selected scope and clock. Review the public surface for absence of
+   traversal, replay, settlement and truth APIs.
 
 ## Expected Results
 

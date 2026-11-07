@@ -26,7 +26,7 @@ views through strict public readers.
 
 The implementation SHALL be organized as
 `authority::{observation,population,position,clock,capture,progress,closure,completeness,availability}`.
-Each module SHALL publish `CONTRACT`, `SCHEMA_BYTES`, `SCHEMA_SHA256`, `Limits`,
+Each module SHALL publish `CONTRACT`, `SCHEMA_BYTES`, `Limits`,
 an owner derivation function and `read(bytes, expected, limits)`. The closed v1
 contracts are:
 
@@ -55,6 +55,20 @@ Availability admits exactly `available`, `not-yet-observed`,
 `producer-unavailable`, and `contract-unavailable`. Progress and closure admit
 only `open` and `closed`. Completeness admits only `complete`, `incomplete`, and
 `contradicted`. These vocabularies are independent and never cross-coerced.
+
+The progress payload MAY include an `association` array. The array is a
+nonempty, strictly ordered set of owner assertions keyed by model, model node,
+claim, and observation source. Node identities use the checked NodeKey's 64
+lowercase hexadecimal digits. A row retains the QSL time source as `dense` or
+`tick`; a tick retains its operation identity and node and positive canonical
+decimal numerator and denominator. Each row also retains its QSL unit name,
+unit node, time dimension node, and the matching admitted observation source,
+clock identity, and revision. The progress reader compares the rows against its
+independent selection and the admitted source and clock context. The public
+association value includes the strict-read progress document identity, progress
+authority identity, selected scope and population, clock identity and revision,
+and the rows. It is encoded as RFC 8785 JSON with ASCII member names in lexical
+order. The full progress document is not the association value.
 
 ## Common envelope and identity
 
@@ -117,12 +131,13 @@ adapter, callback, protocol-result vocabulary or Boolean coercion is admitted.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-004-AC-1 | Each of the nine exact contracts publishes immutable schema bytes/digest, deterministic canonical bytes/identity and a public strict reader returning only its constructor-private view. | Test (TC-004) |
+| FR-004-AC-1 | Each of the nine exact contracts publishes immutable schema bytes, deterministic canonical bytes/identity and a public strict reader returning only its constructor-private view. | Test (TC-004) |
 | FR-004-AC-2 | Batch and incremental derivation produce byte-identical documents for equal qualified history and selections; every semantic mutation changes only the applicable identity. | Test (TC-004) |
 | FR-004-AC-3 | Every required field is independently omitted, duplicated, reordered and cross-wired; unknown fields/labels/contracts, trailing/noncanonical bytes and same identity on unequal bytes refuse without partial authority. | Test (TC-004) |
 | FR-004-AC-4 | Exact and one-over byte/depth/string/population/position/capture/source/work bounds admit or resource-refuse before excess retention. | Test (TC-004) |
 | FR-004-AC-5 | All combinations of independent progress, closure, completeness and availability values remain representable; no combination yields a truth, settlement or Boolean value. | Test (TC-004) |
 | FR-004-AC-6 | Corrections preserve predecessor bytes/direct lineage; late data, restoration and timestamp ordering cannot rewrite authority or manufacture origin/causality. | Test (TC-004) |
+| FR-004-AC-7 | A progress view exposes owner asserted QSL association rows as a canonical value when present. Each row names the checked model, model node, claim, time source kind, tick operation and exact positive period when applicable, unit and dimension nodes, and an observation source and clock/revision admitted in the same progress context. Missing rows refuse with `MissingPremise`; foreign source/clock refuse with `ExpectedMismatch`; malformed or duplicate rows refuse with `InvalidSelection`. Strict reading compares the exact selected rows. The observation owner asserts these links; QSL checks its own semantic selections independently against the rows. | Test (TC-004) |
 
 ## Dependencies
 

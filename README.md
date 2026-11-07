@@ -71,7 +71,7 @@ ledgers, clocks, partial facts, capture environments, progress, closure,
 completeness, result availability, revisioned bundles and bounded lineage. Each
 has a JSON Schema in [`schemas/`](schemas/) and a module under `authority::`
 whose reader returns only a strict-read, validated view. The full table of
-contract names, schema digests and readers is in
+contract names and readers is in
 [docs/owner-contracts.md](docs/owner-contracts.md).
 
 ## Limitations
