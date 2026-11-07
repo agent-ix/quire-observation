@@ -28,3 +28,9 @@ Ticket: IR-1385. The FR-006 continuity amendment correctly limits progress v1's 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | high | TC-006 step 5 requires progress/closure schema-digest pins although FR-006-AC-8 now admits a progress v1 schema change; remove the pin instruction and retain structural boundary/public-surface checks. | TC-006; FR-006-AC-8 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | TC-006 step 5 now compares progress and closure boundary views with independently selected scope and clock, and still checks the public surface. The schema-digest pin instruction is gone. |
