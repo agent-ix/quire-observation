@@ -38,3 +38,11 @@ Wire contract: the reorder changes the bytes and identities of progress document
   ]
 }
 ```
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Commit bccf80ac labels the public `tight` read at tests/authority.rs:939-940 as a document-bound refusal: "The document always carries the value, so this one-under ceiling is refused by the document bound; the value-encoder bound has its own unit test." The unit test `encoding_admits_the_exact_ceiling_and_refuses_one_byte_over` remains the evidence for the value boundary. |
+| FND-002 | fixed | Commit bccf80ac adds the allocation-counter 0.8.1 dev-dependency (Cargo.toml and Cargo.lock) and wraps the getter in `allocation_counter::measure`, asserting `count_total == 0` (tests/authority.rs:844-851). Mutation check: with one `Vec::with_capacity(1)` added to the getter, the test fails at tests/authority.rs:848, so the assertion catches an allocating getter. |
+| FND-003 | fixed | Commit bccf80ac replaces the derived equality with a manual `PartialEq`/`Eq` that covers all 11 wire fields and excludes `association_value` (progress.rs:448-466). The new test `equality_ignores_the_retained_association_value` checks that a strict view equals its decoded copy and that changing `state` makes them unequal. |

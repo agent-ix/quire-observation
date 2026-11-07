@@ -34,3 +34,10 @@ Ticket: IR-1397. Scoped gap analysis of the PR diff against the ticket ACs and F
   ]
 }
 ```
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Commit bccf80ac rewords FR-004-AC-7. The value is encoded once into a sink bounded by the owner output ceiling and never retains bytes past it. The document ceiling always covers the value and strict reading enforces it first. The encoder boundary (exact ceiling admitted, one byte over refused) is verified at the encoder. The clause no longer promises a public-path state that cannot occur. |
+| FND-002 | fixed | Commit bccf80ac changes the FR-004 and TC-004 rows in spec/tests.md (lines 40 and 64) to read FR-004-AC-1..FR-004-AC-7, and adds an association step to the TC-004 procedure covering the byte comparison, the no-allocation getter and the encoder exact/one-over check. |
