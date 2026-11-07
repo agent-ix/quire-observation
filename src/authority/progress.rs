@@ -193,10 +193,12 @@ impl ProgressView {
     pub fn restoration_basis_identity(&self) -> &str {
         &self.restoration_basis_identity
     }
+}
 
+impl Validated<ProgressView> {
     /// Returns the owner asserted association value, refusing absent rows.
     pub fn association(&self) -> Result<&[AssociationRow]> {
-        match self.association.as_deref() {
+        match self.payload().association.as_deref() {
             Some(rows) if !rows.is_empty() => Ok(rows),
             _ => Err(Error::new(
                 ErrorCode::MissingPremise,

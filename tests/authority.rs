@@ -801,7 +801,7 @@ fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
     let plain_view =
         authority::progress::read(plain.bytes(), context, &base, limits).expect("plain read");
     assert_eq!(
-        plain_view.payload().association().unwrap_err().code(),
+        plain_view.association().unwrap_err().code(),
         authority::ErrorCode::MissingPremise
     );
 
@@ -811,9 +811,8 @@ fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
         authority::progress::derive(context, &selected, limits).expect("associated progress");
     let view = authority::progress::read(document.bytes(), context, &selected, limits)
         .expect("associated read");
-    assert_eq!(view.payload().association().expect("association"), &[row]);
+    assert_eq!(view.association().expect("association"), &[row]);
     let bytes = view
-        .payload()
         .association_canonical_bytes(limits)
         .expect("canonical value");
     assert_eq!(bytes, br#"[{"claim":"claim:deadline","model":"model:checkout","model_node":"1111111111111111111111111111111111111111111111111111111111111111","observation_clock":"clock:event-time","observation_revision":"1","observation_source":"source:payments","source":{"kind":"tick","operation":"tick","operation_node":"2222222222222222222222222222222222222222222222222222222222222222","period_denominator":"2","period_numerator":"1"},"time_dimension":"4444444444444444444444444444444444444444444444444444444444444444","unit":"ms","unit_node":"3333333333333333333333333333333333333333333333333333333333333333"}]"#);
