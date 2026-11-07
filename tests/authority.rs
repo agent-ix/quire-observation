@@ -841,9 +841,13 @@ fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
     assert_eq!(association.clock_identity(), "clock:event-time");
     assert_eq!(association.clock_revision(), "1");
     let bytes = view.association_canonical_bytes().expect("canonical value");
-    assert!(
-        std::ptr::eq(bytes, view.association_canonical_bytes().unwrap()),
-        "getter lends the retained bytes without copying"
+    let getter_allocations = allocation_counter::measure(|| {
+        let lent = view.association_canonical_bytes().expect("retained value");
+        assert_eq!(lent.len(), bytes.len());
+    });
+    assert_eq!(
+        getter_allocations.count_total, 0,
+        "the getter lends the retained bytes without allocating"
     );
     assert_eq!(
         plain_view.association_canonical_bytes().unwrap_err().code(),
@@ -932,6 +936,8 @@ fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
         .code(),
         authority::ErrorCode::NonCanonical
     );
+    // The document always carries the value, so this one-under ceiling is
+    // refused by the document bound; the value-encoder bound has its own unit test.
     let mut tight = limits;
     tight.max_output_bytes = bytes.len() - 1;
     assert_eq!(

@@ -425,7 +425,7 @@ impl<'a> AssociationRef<'a> {
 }
 
 /// Read-only payload produced only inside a validated progress view.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProgressView {
     authority_identity: String,
@@ -444,6 +444,26 @@ pub struct ProgressView {
     #[serde(skip)]
     association_value: Option<Box<[u8]>>,
 }
+
+/// Equality is over the wire fields; the retained association value is derived
+/// from them and so cannot distinguish two views of the same document.
+impl PartialEq for ProgressView {
+    fn eq(&self, other: &Self) -> bool {
+        self.authority_identity == other.authority_identity
+            && self.scope_identity == other.scope_identity
+            && self.clock_identity == other.clock_identity
+            && self.clock_revision == other.clock_revision
+            && self.required_sources == other.required_sources
+            && self.boundary == other.boundary
+            && self.state == other.state
+            && self.captured_trigger_identity == other.captured_trigger_identity
+            && self.cutoff_identity == other.cutoff_identity
+            && self.restoration_basis_identity == other.restoration_basis_identity
+            && self.association == other.association
+    }
+}
+
+impl Eq for ProgressView {}
 
 impl ProgressView {
     /// Returns the FR-268 derived progress-authority identity.
@@ -1063,6 +1083,35 @@ mod tests {
             let encoded = encode_association(&value, Limits::owner_max()).expect("encoded");
             assert_eq!(&*encoded, sorted.as_slice());
         }
+    }
+
+    #[test]
+    #[trace("TC-004", "FR-004-AC-7")]
+    fn equality_ignores_the_retained_association_value() {
+        let strict = ProgressView {
+            authority_identity: "sha256:a".to_owned(),
+            scope_identity: "window:O1".to_owned(),
+            clock_identity: "clock:event-time".to_owned(),
+            clock_revision: "1".to_owned(),
+            required_sources: vec!["source:payments".to_owned()],
+            boundary: boundary_wire(TemporalBoundary::EventPosition {
+                lower: 0,
+                upper_inclusive: 0,
+                carrier_end_exclusive: 1,
+                watermark: 0,
+            }),
+            state: OpenClosed::Open,
+            captured_trigger_identity: "trigger:t".to_owned(),
+            cutoff_identity: "sha256:c".to_owned(),
+            restoration_basis_identity: "basis:b".to_owned(),
+            association: Some(vec![row(TimeSource::Dense)]),
+            association_value: Some(Box::from(&b"{}"[..])),
+        };
+        let mut decoded = strict.clone();
+        decoded.association_value = None;
+        assert_eq!(strict, decoded);
+        decoded.state = OpenClosed::Closed;
+        assert_ne!(strict, decoded);
     }
 
     #[test]

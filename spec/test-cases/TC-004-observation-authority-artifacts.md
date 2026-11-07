@@ -17,7 +17,11 @@ Rust integration/property tests derive all nine contracts from the same real
 qualified admission through batch and incremental paths, read each against
 independent expected selections, recompute schema/content identities, enumerate
 every independent state combination and mutate every field, order, scope,
-clock, boundary, predecessor and resource limit in FR-004.
+clock, boundary, predecessor and resource limit in FR-004. The association step
+reads a progress view with owner asserted rows, compares the retained canonical
+value byte for byte with the lexical-order encoding, asserts the borrowed getter
+allocates nothing, and checks the value encoder admits its exact byte ceiling and
+refuses one byte over.
 
 ## Expected Results
 
