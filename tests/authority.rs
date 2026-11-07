@@ -788,7 +788,7 @@ fn progress_association_row() -> authority::progress::AssociationRow {
     }
 }
 
-#[trace("TC-004", "FR-004-AC-7")]
+#[trace("TC-004", "FR-004-AC-7", "FR-006-AC-8")]
 #[test]
 fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
     let qualified = qualified();
