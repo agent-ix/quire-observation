@@ -963,4 +963,36 @@ mod tests {
     fn schema_is_closed() {
         common::assert_closed_schema(SCHEMA_BYTES, CONTRACT);
     }
+
+    #[test]
+    fn key_guard_admits_exact_canonical_length_and_refuses_one_under() {
+        let key = NodeKey::new(
+            "Checkout",
+            vec![quire_exact::PathSegment::Text("model".to_owned())],
+            7,
+        )
+        .expect("key");
+        let text = qsl_foundation::node_wire::node_key_to_text(&key).expect("canonical text");
+        let mut limits = Limits::owner_max();
+        limits.max_string_bytes = text.len();
+        NodeIdentity::check_key_size(&key, limits).expect("exact string bound");
+        limits.max_string_bytes = text.len() - 1;
+        assert_eq!(
+            NodeIdentity::check_key_size(&key, limits)
+                .unwrap_err()
+                .code(),
+            ErrorCode::ResourceIncomplete
+        );
+
+        let mut limits = Limits::owner_max();
+        limits.max_output_bytes = text.len();
+        NodeIdentity::check_key_size(&key, limits).expect("exact output bound");
+        limits.max_output_bytes = text.len() - 1;
+        assert_eq!(
+            NodeIdentity::check_key_size(&key, limits)
+                .unwrap_err()
+                .code(),
+            ErrorCode::ResourceIncomplete
+        );
+    }
 }

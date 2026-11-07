@@ -50,3 +50,21 @@ fn key_at_the_exact_limit_is_admitted_and_one_under_is_refused() {
         ErrorCode::ResourceIncomplete
     );
 }
+
+#[test]
+#[trace("TC-004", "FR-004-AC-4")]
+fn key_without_escapes_is_admitted_at_the_exact_output_bound() {
+    let key =
+        NodeKey::new("Checkout", vec![PathSegment::Text("model".to_owned())], 7).expect("key");
+    let text = r#"{"ordinal":7,"package":"Checkout","path":["model"]}"#;
+    let mut limits = Limits::owner_max();
+    limits.max_output_bytes = text.len();
+    let admitted = NodeIdentity::from_key(key.clone(), limits).expect("exact output bound");
+    assert_eq!(admitted.as_str(), text);
+
+    limits.max_output_bytes = text.len() - 1;
+    assert_eq!(
+        NodeIdentity::from_key(key, limits).unwrap_err().code(),
+        ErrorCode::ResourceIncomplete
+    );
+}

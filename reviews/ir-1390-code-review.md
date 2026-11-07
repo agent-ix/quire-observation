@@ -27,3 +27,15 @@ Ticket: IR-1390. Reviewed the Rust codec boundary, typed claim, schema, and auth
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | NodeIdentity::from_key encodes the entire caller-supplied NodeKey before checking max_string_bytes or max_output_bytes. A structurally valid key with a very large package or path retains an over-limit canonical String before returning ResourceIncomplete, contrary to FR-004-AC-4 pre-retention bounds. Bound the encode operation itself. | src/authority/progress.rs:52-60 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | medium | The new pre-retention guard `check_key_size` has no test of its own exact boundary. `key_at_the_exact_limit_is_admitted_and_one_under_is_refused` uses a key whose path text contains `"`, and sets `max_string_bytes` to the JSON-escaped length, which is longer than the raw canonical text. The refusal at one under therefore comes from the existing `check_size`, not from the new guard, and the test also passes on the pre-fix code. Mutating the guard's budget to `min(..) - 3`, so it wrongly refuses valid keys at their exact bound, leaves every test in the crate green. Add a key with no escapes, set `max_string_bytes` to its canonical length (it must be admitted) and to that length minus one (it must be refused with ResourceIncomplete). | tests/node_identity_bound.rs:36-52; src/authority/progress.rs:98-159 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Commit 1c4c459 calls `check_key_size` before `node_key_to_text`. The guard writes the exact canonical layout into a counting writer capped at min(max_string_bytes, max_output_bytes) and refuses with ResourceIncomplete once the cap is passed, so an over-limit key never builds its canonical String. A doubling key of about 2^48 bytes is refused under the new code; under the old code (with `ulimit -v 4000000`) the same test goes red, InvalidSelection versus ResourceIncomplete. |
