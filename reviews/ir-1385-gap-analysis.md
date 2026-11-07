@@ -29,3 +29,9 @@ Ticket: IR-1385. AC-7 is tagged by a real public-API test. The test exercises ti
 ## Coverage
 
 Plan completion: not assessed. The computed matrix tags FR-004-AC-7 to `tc004_progress_association_is_canonical_and_bound_to_admitted_context`; the finding concerns its assertions.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The public API test now strict-reads a dense association, asserts its exact canonical value, and checks one-under and exact output-byte bounds. |
