@@ -91,8 +91,10 @@ validated by this crate's own code, and a test fixture of that shape lives in
 </picture>
 
 quire-observation depends on
-[quire-canonical](https://github.com/agent-ix/quire-canonical) for canonical JSON
-and on no other Quire repository. [quire-mltl](https://github.com/agent-ix/quire-mltl) and quire-protocol (private) depend on this crate.
+[quire-canonical](https://github.com/agent-ix/quire-canonical) for canonical JSON,
+[quire-exact](https://github.com/agent-ix/quire-exact) for structural node identities,
+and QSL foundation's node-wire codec for their canonical spelling.
+[quire-mltl](https://github.com/agent-ix/quire-mltl) and quire-protocol (private) depend on this crate.
 
 
 ## Building and testing

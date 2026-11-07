@@ -58,8 +58,12 @@ only `open` and `closed`. Completeness admits only `complete`, `incomplete`, and
 
 The progress payload MAY include an `association` array. The array is a
 nonempty, strictly ordered set of owner assertions keyed by model, model node,
-claim, and observation source. Node identities use the checked NodeKey's 64
-lowercase hexadecimal digits. A row retains the QSL time source as `dense` or
+claim occurrence, and observation source. Model, clause, operation, unit and
+dimension nodes are real structural QSL NodeKeys with package, path and ordinal.
+Each node is stored as the canonical text of QSL's `node_wire` codec inside a
+JSON string; a digest or arbitrary label does not identify one. The claim is a
+typed clause node with exact occurrence role and canonical decimal ordinal.
+A row retains the QSL time source as `dense` or
 `tick`; a tick retains its operation identity and node and positive canonical
 decimal numerator and denominator. Each row also retains its QSL unit name,
 unit node, time dimension node, and the matching admitted observation source,
@@ -137,7 +141,7 @@ adapter, callback, protocol-result vocabulary or Boolean coercion is admitted.
 | FR-004-AC-4 | Exact and one-over byte/depth/string/population/position/capture/source/work bounds admit or resource-refuse before excess retention. | Test (TC-004) |
 | FR-004-AC-5 | All combinations of independent progress, closure, completeness and availability values remain representable; no combination yields a truth, settlement or Boolean value. | Test (TC-004) |
 | FR-004-AC-6 | Corrections preserve predecessor bytes/direct lineage; late data, restoration and timestamp ordering cannot rewrite authority or manufacture origin/causality. | Test (TC-004) |
-| FR-004-AC-7 | A progress view exposes owner asserted QSL association rows as a canonical value when present. Each row names the checked model, model node, claim, time source kind, tick operation and exact positive period when applicable, unit and dimension nodes, and an observation source and clock/revision admitted in the same progress context. Missing rows refuse with `MissingPremise`; foreign source/clock refuse with `ExpectedMismatch`; malformed or duplicate rows refuse with `InvalidSelection`. Strict reading compares the exact selected rows. The observation owner asserts these links; QSL checks its own semantic selections independently against the rows. | Test (TC-004) |
+| FR-004-AC-7 | A progress view exposes owner asserted QSL association rows as a canonical value when present. Each row names the selected model, structural model node, typed claim clause node and occurrence, time source kind, tick operation and exact positive period when applicable, structural unit and dimension nodes, and an observation source and clock/revision admitted in the same progress context. Missing rows refuse with `MissingPremise`; foreign source/clock refuse with `ExpectedMismatch`; malformed or duplicate rows refuse with `InvalidSelection`, noncanonical structural node text with `NonCanonical`, and one-over node or value bytes with `ResourceIncomplete`. Strict reading compares the exact selected rows. The observation owner asserts these links; QSL checks its own semantic selections independently against the rows. | Test (TC-004) |
 
 ## Dependencies
 
