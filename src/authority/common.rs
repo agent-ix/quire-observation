@@ -805,6 +805,11 @@ pub struct Validated<P> {
 }
 
 impl<P> Validated<P> {
+    /// Lets an owner module attach data derived from the validated payload.
+    pub(crate) fn payload_mut(&mut self) -> &mut P {
+        &mut self.payload
+    }
+
     /// Returns the validated immutable owner-contract label.
     #[must_use]
     pub const fn contract(&self) -> &'static str {

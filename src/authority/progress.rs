@@ -256,16 +256,16 @@ impl ClaimOccurrence {
 #[serde(deny_unknown_fields)]
 struct ClaimOccurrenceWire {
     clause_node: NodeIdentity,
-    role: String,
     ordinal: String,
+    role: String,
 }
 
 impl Serialize for ClaimOccurrence {
     fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
         ClaimOccurrenceWire {
             clause_node: self.clause_node.clone(),
-            role: self.role().to_owned(),
             ordinal: self.ordinal().to_string(),
+            role: self.role().to_owned(),
         }
         .serialize(serializer)
     }
@@ -329,49 +329,55 @@ pub enum TimeSource {
         operation: String,
         /// Resolved tick operation node identity.
         operation_node: NodeIdentity,
-        /// Positive decimal numerator in the selected unit.
-        period_numerator: String,
         /// Positive decimal denominator in the selected unit.
         period_denominator: String,
+        /// Positive decimal numerator in the selected unit.
+        period_numerator: String,
     },
 }
 
 /// One explicit owner asserted mapping from a checked QSL selection to admitted progress.
+///
+/// Fields are declared in lexical order of their wire names so that serializing
+/// the struct emits the RFC 8785 member order directly.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AssociationRow {
+    /// Selected clause node and occurrence for the QSL claim.
+    pub claim: ClaimOccurrence,
     /// Selected QSL model identity.
     pub model: String,
     /// Selected structural QSL model-node identity.
     pub model_node: NodeIdentity,
-    /// Selected clause node and occurrence for the QSL claim.
-    pub claim: ClaimOccurrence,
-    /// Selected QSL time-source shape.
-    pub source: TimeSource,
-    /// Selected QSL unit name.
-    pub unit: String,
-    /// Selected structural QSL unit-node identity.
-    pub unit_node: NodeIdentity,
-    /// Selected structural QSL time-dimension node identity.
-    pub time_dimension: NodeIdentity,
-    /// Matching admitted observation source identity.
-    pub observation_source: String,
     /// Matching admitted observation clock identity.
     pub observation_clock: String,
     /// Matching admitted observation clock revision.
     pub observation_revision: String,
+    /// Matching admitted observation source identity.
+    pub observation_source: String,
+    /// Selected QSL time-source shape.
+    pub source: TimeSource,
+    /// Selected structural QSL time-dimension node identity.
+    pub time_dimension: NodeIdentity,
+    /// Selected QSL unit name.
+    pub unit: String,
+    /// Selected structural QSL unit-node identity.
+    pub unit_node: NodeIdentity,
 }
 
 /// Borrowed canonical association value issued only by a validated progress view.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+///
+/// Fields are declared in lexical order of their wire names so that serializing
+/// the value emits the RFC 8785 member order directly.
 pub struct AssociationRef<'a> {
-    progress_document_identity: &'a str,
-    progress_authority_identity: &'a str,
-    scope_identity: &'a str,
-    population_identity: &'a str,
     clock_identity: &'a str,
     clock_revision: &'a str,
+    population_identity: &'a str,
+    progress_authority_identity: &'a str,
+    progress_document_identity: &'a str,
     rows: &'a [AssociationRow],
+    scope_identity: &'a str,
 }
 
 impl<'a> AssociationRef<'a> {
@@ -434,6 +440,9 @@ pub struct ProgressView {
     restoration_basis_identity: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     association: Option<Vec<AssociationRow>>,
+    /// Canonical association value retained at admission; never on the wire.
+    #[serde(skip)]
+    association_value: Option<Box<[u8]>>,
 }
 
 impl ProgressView {
@@ -503,13 +512,13 @@ impl Validated<ProgressView> {
     pub fn association(&self) -> Result<AssociationRef<'_>> {
         match self.payload().association.as_deref() {
             Some(rows) if !rows.is_empty() => Ok(AssociationRef {
-                progress_document_identity: self.identity().as_str(),
-                progress_authority_identity: self.payload().authority_identity(),
-                scope_identity: self.subject().scope_identity.as_str(),
-                population_identity: self.subject().population_identity.as_str(),
                 clock_identity: self.payload().clock_identity(),
                 clock_revision: self.payload().clock_revision(),
+                population_identity: self.subject().population_identity.as_str(),
+                progress_authority_identity: self.payload().authority_identity(),
+                progress_document_identity: self.identity().as_str(),
                 rows,
+                scope_identity: self.subject().scope_identity.as_str(),
             }),
             _ => Err(Error::new(
                 ErrorCode::MissingPremise,
@@ -519,36 +528,27 @@ impl Validated<ProgressView> {
         }
     }
 
-    /// Returns RFC 8785 bytes of the association value only, bounded by owner limits.
-    /// The value includes progress document, authority, subject, and clock identities,
-    /// plus rows sorted by `(model, model_node, claim, observation_source)`.
-    pub fn association_canonical_bytes(&self, limits: Limits) -> Result<Vec<u8>> {
-        let association = self.association()?;
-        // This closed value domain contains only strings, arrays, and objects.
-        // serde_json::Value sorts the ASCII field names before encoding.
-        let value = serde_json::to_value(association).map_err(|_| {
+    /// Returns the RFC 8785 bytes of the association value only, retained when
+    /// the view was admitted under the owner byte ceiling. The value includes
+    /// progress document, authority, subject, and clock identities, plus rows
+    /// sorted by `(model, model_node, claim, observation_source)`. The slice
+    /// length is the exact byte charge for a copy; the call allocates nothing.
+    pub fn association_canonical_bytes(&self) -> Result<&[u8]> {
+        self.payload().association_value.as_deref().ok_or_else(|| {
             Error::new(
-                ErrorCode::InvalidSelection,
-                "association is not JSON",
+                ErrorCode::MissingPremise,
+                "progress has no QSL association",
                 Usage::default(),
             )
-        })?;
-        let bytes = serde_json::to_vec(&value).map_err(|_| {
-            Error::new(
-                ErrorCode::InvalidSelection,
-                "association is not JSON",
-                Usage::default(),
-            )
-        })?;
-        if bytes.len() > limits.effective().max_output_bytes {
-            return Err(Error::new(
-                ErrorCode::ResourceIncomplete,
-                "association exceeds canonical bounds",
-                Usage::default(),
-            ));
-        }
-        Ok(bytes)
+        })
     }
+}
+
+/// Encodes the association value once, refusing as soon as the running length
+/// passes the owner byte ceiling.
+fn encode_association(value: &AssociationRef<'_>, limits: Limits) -> Result<Box<[u8]>> {
+    let bytes = super::common::to_bounded_json(value, limits.effective().max_output_bytes)?;
+    Ok(bytes.into_boxed_slice())
 }
 
 fn validate_association(
@@ -701,13 +701,13 @@ fn max_association_string(rows: &[AssociationRow]) -> usize {
                 TimeSource::Tick {
                     operation,
                     operation_node,
-                    period_numerator,
                     period_denominator,
+                    period_numerator,
                 } => [
                     operation.as_str(),
                     operation_node.as_str(),
-                    period_numerator.as_str(),
                     period_denominator.as_str(),
+                    period_numerator.as_str(),
                 ],
             };
             [
@@ -849,6 +849,7 @@ pub fn derive(context: Context<'_>, selection: &Selection, limits: Limits) -> Re
         cutoff_identity: cutoff_identity.as_str().to_owned(),
         restoration_basis_identity: selection.restoration_basis_identity.as_str().to_owned(),
         association: selection.association.clone(),
+        association_value: None,
     };
     let usage = Usage {
         depth: 5,
@@ -894,7 +895,12 @@ pub fn read(
     limits: Limits,
 ) -> Result<View> {
     let expected = derive(context, selection, limits)?;
-    read_exact(CONTRACT, bytes, &expected, limits)
+    let mut view: View = read_exact(CONTRACT, bytes, &expected, limits)?;
+    if view.payload().association.is_some() {
+        let value = encode_association(&view.association()?, limits)?;
+        view.payload_mut().association_value = Some(value);
+    }
+    Ok(view)
 }
 
 pub(crate) fn commits_empty_binding(
@@ -958,6 +964,7 @@ fn commits_binding_mode(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ix_trace_rs::trace;
 
     #[test]
     fn schema_is_closed() {
@@ -992,6 +999,91 @@ mod tests {
             NodeIdentity::check_key_size(&key, limits)
                 .unwrap_err()
                 .code(),
+            ErrorCode::ResourceIncomplete
+        );
+    }
+
+    fn node(label: &str) -> NodeIdentity {
+        let key = NodeKey::new(
+            "Checkout",
+            vec![quire_exact::PathSegment::Text(label.to_owned())],
+            0,
+        )
+        .expect("key");
+        NodeIdentity::from_key(key, Limits::owner_max()).expect("node")
+    }
+
+    fn row(source: TimeSource) -> AssociationRow {
+        AssociationRow {
+            claim: ClaimOccurrence::new(
+                node("clause"),
+                &Origin::new(quire_exact::Role::new("claim"), 2),
+            ),
+            model: "model:checkout".to_owned(),
+            model_node: node("model"),
+            observation_clock: "clock:event-time".to_owned(),
+            observation_revision: "1".to_owned(),
+            observation_source: "source:payments".to_owned(),
+            source,
+            time_dimension: node("dimension"),
+            unit: "ms".to_owned(),
+            unit_node: node("unit"),
+        }
+    }
+
+    fn association(rows: &[AssociationRow]) -> AssociationRef<'_> {
+        AssociationRef {
+            clock_identity: "clock:event-time",
+            clock_revision: "1",
+            population_identity: "population:p",
+            progress_authority_identity: "sha256:a",
+            progress_document_identity: "sha256:d",
+            rows,
+            scope_identity: "window:O1",
+        }
+    }
+
+    #[test]
+    #[trace("TC-004", "FR-004-AC-7")]
+    fn encoded_value_equals_sorted_member_encoding_for_every_source_shape() {
+        let rows = [
+            row(TimeSource::Dense),
+            row(TimeSource::Tick {
+                operation: "tick".to_owned(),
+                operation_node: node("tick"),
+                period_denominator: "2".to_owned(),
+                period_numerator: "1".to_owned(),
+            }),
+        ];
+        for row in rows {
+            let rows = [row];
+            let value = association(&rows);
+            let sorted = serde_json::to_vec(&serde_json::to_value(&value).expect("value"))
+                .expect("sorted encoding");
+            let encoded = encode_association(&value, Limits::owner_max()).expect("encoded");
+            assert_eq!(&*encoded, sorted.as_slice());
+        }
+    }
+
+    #[test]
+    #[trace("TC-004", "FR-004-AC-7")]
+    fn encoding_admits_the_exact_ceiling_and_refuses_one_byte_over() {
+        let rows = [row(TimeSource::Dense)];
+        let value = association(&rows);
+        let exact = encode_association(&value, Limits::owner_max())
+            .expect("encoded")
+            .len();
+        let mut limits = Limits::owner_max();
+        limits.max_output_bytes = exact;
+        assert_eq!(
+            encode_association(&value, limits)
+                .expect("exact ceiling")
+                .len(),
+            exact
+        );
+        limits.max_output_bytes = exact - 1;
+        assert_eq!(
+            encode_association(&value, limits).unwrap_err().code(),
             ErrorCode::ResourceIncomplete
         );
     }
