@@ -843,6 +843,51 @@ fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
         std::str::from_utf8(expected_rows).expect("ASCII fixture"),
     );
     assert_eq!(bytes, expected.as_bytes());
+    let mut tight = limits;
+    tight.max_output_bytes = bytes.len() - 1;
+    assert_eq!(
+        view.association_canonical_bytes(tight).unwrap_err().code(),
+        authority::ErrorCode::ResourceIncomplete
+    );
+    tight.max_output_bytes = bytes.len();
+    assert_eq!(
+        view.association_canonical_bytes(tight)
+            .expect("exact association byte bound"),
+        bytes
+    );
+
+    let mut dense_row = progress_association_row();
+    dense_row.source = authority::progress::TimeSource::Dense;
+    let dense_selection = base.clone().with_association(vec![dense_row.clone()]);
+    let dense_document = authority::progress::derive(context, &dense_selection, limits)
+        .expect("dense associated progress");
+    let dense_view =
+        authority::progress::read(dense_document.bytes(), context, &dense_selection, limits)
+            .expect("dense association read");
+    assert_ne!(dense_document.identity(), document.identity());
+    assert_eq!(
+        dense_view.association().expect("dense association").rows(),
+        &[dense_row]
+    );
+    let dense_rows = std::str::from_utf8(expected_rows)
+        .expect("ASCII fixture")
+        .replace(
+            r#""source":{"kind":"tick","operation":"tick","operation_node":"2222222222222222222222222222222222222222222222222222222222222222","period_denominator":"2","period_numerator":"1"}"#,
+            r#""source":{"kind":"dense"}"#,
+        );
+    let dense_expected = format!(
+        r#"{{"clock_identity":"clock:event-time","clock_revision":"1","population_identity":"{}","progress_authority_identity":"{}","progress_document_identity":"{}","rows":{},"scope_identity":"window:O1"}}"#,
+        subject.population_identity.as_str(),
+        dense_view.payload().authority_identity(),
+        dense_document.identity().as_str(),
+        dense_rows,
+    );
+    assert_eq!(
+        dense_view
+            .association_canonical_bytes(limits)
+            .expect("dense canonical association"),
+        dense_expected.as_bytes()
+    );
     assert_eq!(
         authority::progress::read(document.bytes(), context, &base, limits)
             .unwrap_err()
