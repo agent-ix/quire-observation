@@ -29,3 +29,7 @@ Ticket: IR-1385. The Rust change uses qualified progress source and clock contex
 ## Post-review delta
 
 Frozen head `1b7332e` removes the source-byte SHA-256 field, digest catalog, import, and hash assertion from `tests/bounded_work.rs`. The test still includes the live source text, keeps all 44 `ROWS`, and checks their production anchors, dominating bounds, trace tags, and exact/one-over evidence. The removed assertion detected any source text edit, including edits unrelated to bounded work; it did not assert a C00 bound. This delta introduces no finding and preserves the reviewed bounded-work assertions.
+
+## Post-review code delta (b591ec3)
+
+The deleted `tc006_progress_and_closure_v1_schemas_remain_immutable` asserted two fixed schema SHA-256 strings. It checked source bytes against a manually maintained catalog and no progress or closure boundary behavior. The three remaining TC-006 tests still assert exact timestamp, event-position and fixed-sample boundary behavior and typed mismatches. Adding `FR-006-AC-8` traces to the two boundary tests and the association value test matches the corresponding behavioral portions of that criterion. No new code or test finding.

@@ -35,3 +35,7 @@ Plan completion: not assessed. The computed matrix tags FR-004-AC-7 to `tc004_pr
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | The public API test now strict-reads a dense association, asserts its exact canonical value, and checks one-under and exact output-byte bounds. |
+
+## Post-review code delta (b591ec3)
+
+`FR-006-AC-8` now binds to the existing progress association value test and to the timestamp and discrete boundary tests. Those tests assert the association and retained boundary behavior. Removing the schema digest assertion does not remove behavioral evidence for the criterion. The earlier `FR-004-AC-7` finding remains fixed; no new gap finding arises from this code delta.
