@@ -840,9 +840,19 @@ fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
     );
     assert_eq!(association.clock_identity(), "clock:event-time");
     assert_eq!(association.clock_revision(), "1");
-    let bytes = view
-        .association_canonical_bytes(limits)
-        .expect("canonical value");
+    let bytes = view.association_canonical_bytes().expect("canonical value");
+    let getter_allocations = allocation_counter::measure(|| {
+        let lent = view.association_canonical_bytes().expect("retained value");
+        assert_eq!(lent.len(), bytes.len());
+    });
+    assert_eq!(
+        getter_allocations.count_total, 0,
+        "the getter lends the retained bytes without allocating"
+    );
+    assert_eq!(
+        plain_view.association_canonical_bytes().unwrap_err().code(),
+        authority::ErrorCode::MissingPremise
+    );
     let encoded = |label: &str| {
         let structural = format!(r#"{{"ordinal":0,"package":"Checkout","path":["{label}"]}}"#);
         serde_json::to_string(&structural).expect("encode structural fixture")
@@ -926,17 +936,15 @@ fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
         .code(),
         authority::ErrorCode::NonCanonical
     );
+    // The document always carries the value, so this one-under ceiling is
+    // refused by the document bound; the value-encoder bound has its own unit test.
     let mut tight = limits;
     tight.max_output_bytes = bytes.len() - 1;
     assert_eq!(
-        view.association_canonical_bytes(tight).unwrap_err().code(),
+        authority::progress::read(document.bytes(), context, &selected, tight)
+            .unwrap_err()
+            .code(),
         authority::ErrorCode::ResourceIncomplete
-    );
-    tight.max_output_bytes = bytes.len();
-    assert_eq!(
-        view.association_canonical_bytes(tight)
-            .expect("exact association byte bound"),
-        bytes
     );
 
     let mut dense_row = progress_association_row();
@@ -962,7 +970,7 @@ fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
     );
     assert_eq!(
         dense_view
-            .association_canonical_bytes(limits)
+            .association_canonical_bytes()
             .expect("dense canonical association"),
         dense_expected.as_bytes()
     );
