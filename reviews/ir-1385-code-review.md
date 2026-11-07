@@ -25,3 +25,7 @@ Ticket: IR-1385. The Rust change uses qualified progress source and clock contex
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No findings (placeholder) | - |
+
+## Post-review delta
+
+Frozen head `1b7332e` removes the source-byte SHA-256 field, digest catalog, import, and hash assertion from `tests/bounded_work.rs`. The test still includes the live source text, keeps all 44 `ROWS`, and checks their production anchors, dominating bounds, trace tags, and exact/one-over evidence. The removed assertion detected any source text edit, including edits unrelated to bounded work; it did not assert a C00 bound. This delta introduces no finding and preserves the reviewed bounded-work assertions.
