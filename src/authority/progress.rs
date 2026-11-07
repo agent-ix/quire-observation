@@ -51,6 +51,7 @@ pub struct NodeIdentity {
 impl NodeIdentity {
     /// Encodes a real structural node key under owner byte limits.
     pub fn from_key(key: NodeKey, limits: Limits) -> Result<Self> {
+        Self::check_key_size(&key, limits)?;
         let text = qsl_foundation::node_wire::node_key_to_text(&key).map_err(|_| {
             Error::new(
                 ErrorCode::InvalidSelection,
@@ -90,6 +91,71 @@ impl NodeIdentity {
             key,
             text: canonical,
         })
+    }
+
+    /// Measures the canonical text length without building it, refusing as
+    /// soon as the running length passes the owner byte limits.
+    fn check_key_size(key: &NodeKey, limits: Limits) -> Result<()> {
+        use quire_exact::{NodeKeyView, PathSegmentView};
+        use std::io::{self, Write};
+
+        struct Budget(usize);
+        impl Write for Budget {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                self.0 = self
+                    .0
+                    .checked_sub(buf.len())
+                    .ok_or_else(|| io::Error::from(io::ErrorKind::WriteZero))?;
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let effective = limits.effective();
+        let mut budget = Budget(effective.max_string_bytes.min(effective.max_output_bytes));
+        let over = || {
+            Error::new(
+                ErrorCode::ResourceIncomplete,
+                "node identity exceeds owner byte limit",
+                Usage::default(),
+            )
+        };
+        let head = |budget: &mut Budget, view: NodeKeyView<'_>| -> io::Result<()> {
+            write!(budget, "{{\"ordinal\":{},\"package\":", view.ordinal())?;
+            serde_json::to_writer(&mut *budget, view.package())?;
+            budget.write_all(b",\"path\":[")
+        };
+        let walk = |budget: &mut Budget| -> io::Result<()> {
+            let root = key.view();
+            head(budget, root)?;
+            let mut stack = vec![(root.path(), false)];
+            while let Some(top) = stack.last_mut() {
+                match top.0.next() {
+                    Some(segment) => {
+                        if std::mem::replace(&mut top.1, true) {
+                            budget.write_all(b",")?;
+                        }
+                        match segment {
+                            PathSegmentView::Text(text) => {
+                                serde_json::to_writer(&mut *budget, text)?;
+                            }
+                            PathSegmentView::Node(view) => {
+                                head(budget, view)?;
+                                stack.push((view.path(), false));
+                            }
+                        }
+                    }
+                    None => {
+                        budget.write_all(b"]}")?;
+                        stack.pop();
+                    }
+                }
+            }
+            Ok(())
+        };
+        walk(&mut budget).map_err(|_| over())
     }
 
     fn check_size(text: &str, limits: Limits) -> Result<()> {
