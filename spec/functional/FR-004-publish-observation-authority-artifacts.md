@@ -65,8 +65,10 @@ decimal numerator and denominator. Each row also retains its QSL unit name,
 unit node, time dimension node, and the matching admitted observation source,
 clock identity, and revision. The progress reader compares the rows against its
 independent selection and the admitted source and clock context. The public
-association value is the rows alone, encoded as RFC 8785 JSON with ASCII member
-names in lexical order. The full progress document is not the association value.
+association value includes the strict-read progress document identity, progress
+authority identity, selected scope and population, clock identity and revision,
+and the rows. It is encoded as RFC 8785 JSON with ASCII member names in lexical
+order. The full progress document is not the association value.
 
 ## Common envelope and identity
 

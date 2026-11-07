@@ -21,7 +21,7 @@ pub use super::Limits;
 
 /// Immutable owner-contract label.
 pub const CONTRACT: &str = "quire.observation.progress-assertion/v1";
-/// Pinned JSON Schema bytes for [`CONTRACT`].
+/// JSON Schema bytes for [`CONTRACT`].
 pub const SCHEMA_BYTES: &[u8] =
     include_bytes!("../../schemas/observation-progress-assertion-v1.schema.json");
 
@@ -115,6 +115,62 @@ pub struct AssociationRow {
     pub observation_revision: String,
 }
 
+/// Borrowed canonical association value issued only by a validated progress view.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AssociationRef<'a> {
+    progress_document_identity: &'a str,
+    progress_authority_identity: &'a str,
+    scope_identity: &'a str,
+    population_identity: &'a str,
+    clock_identity: &'a str,
+    clock_revision: &'a str,
+    rows: &'a [AssociationRow],
+}
+
+impl<'a> AssociationRef<'a> {
+    /// Returns the exact strict-read progress document identity.
+    #[must_use]
+    pub const fn progress_document_identity(&self) -> &'a str {
+        self.progress_document_identity
+    }
+
+    /// Returns the exact progress authority identity.
+    #[must_use]
+    pub const fn progress_authority_identity(&self) -> &'a str {
+        self.progress_authority_identity
+    }
+
+    /// Returns the selected snapshot or window identity.
+    #[must_use]
+    pub const fn scope_identity(&self) -> &'a str {
+        self.scope_identity
+    }
+
+    /// Returns the selected population identity.
+    #[must_use]
+    pub const fn population_identity(&self) -> &'a str {
+        self.population_identity
+    }
+
+    /// Returns the admitted clock identity.
+    #[must_use]
+    pub const fn clock_identity(&self) -> &'a str {
+        self.clock_identity
+    }
+
+    /// Returns the admitted clock revision.
+    #[must_use]
+    pub const fn clock_revision(&self) -> &'a str {
+        self.clock_revision
+    }
+
+    /// Returns the exact asserted mapping rows.
+    #[must_use]
+    pub const fn rows(&self) -> &'a [AssociationRow] {
+        self.rows
+    }
+}
+
 /// Read-only payload produced only inside a validated progress view.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -197,9 +253,17 @@ impl ProgressView {
 
 impl Validated<ProgressView> {
     /// Returns the owner asserted association value, refusing absent rows.
-    pub fn association(&self) -> Result<&[AssociationRow]> {
+    pub fn association(&self) -> Result<AssociationRef<'_>> {
         match self.payload().association.as_deref() {
-            Some(rows) if !rows.is_empty() => Ok(rows),
+            Some(rows) if !rows.is_empty() => Ok(AssociationRef {
+                progress_document_identity: self.identity().as_str(),
+                progress_authority_identity: self.payload().authority_identity(),
+                scope_identity: self.subject().scope_identity.as_str(),
+                population_identity: self.subject().population_identity.as_str(),
+                clock_identity: self.payload().clock_identity(),
+                clock_revision: self.payload().clock_revision(),
+                rows,
+            }),
             _ => Err(Error::new(
                 ErrorCode::MissingPremise,
                 "progress has no QSL association",
@@ -209,12 +273,13 @@ impl Validated<ProgressView> {
     }
 
     /// Returns RFC 8785 bytes of the association value only, bounded by owner limits.
-    /// The value is an array of rows sorted by `(model, model_node, claim, observation_source)`.
+    /// The value includes progress document, authority, subject, and clock identities,
+    /// plus rows sorted by `(model, model_node, claim, observation_source)`.
     pub fn association_canonical_bytes(&self, limits: Limits) -> Result<Vec<u8>> {
-        let rows = self.association()?;
+        let association = self.association()?;
         // This closed value domain contains only strings, arrays, and objects.
         // serde_json::Value sorts the ASCII field names before encoding.
-        let value = serde_json::to_value(rows).map_err(|_| {
+        let value = serde_json::to_value(association).map_err(|_| {
             Error::new(
                 ErrorCode::InvalidSelection,
                 "association is not JSON",

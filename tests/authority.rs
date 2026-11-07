@@ -811,11 +811,38 @@ fn tc004_progress_association_is_canonical_and_bound_to_admitted_context() {
         authority::progress::derive(context, &selected, limits).expect("associated progress");
     let view = authority::progress::read(document.bytes(), context, &selected, limits)
         .expect("associated read");
-    assert_eq!(view.association().expect("association"), &[row]);
+    let association = view.association().expect("association");
+    assert_eq!(association.rows(), &[row]);
+    assert_eq!(
+        association.progress_document_identity(),
+        document.identity().as_str()
+    );
+    assert_eq!(
+        association.progress_authority_identity(),
+        view.payload().authority_identity()
+    );
+    assert_eq!(
+        association.scope_identity(),
+        subject.scope_identity.as_str()
+    );
+    assert_eq!(
+        association.population_identity(),
+        subject.population_identity.as_str()
+    );
+    assert_eq!(association.clock_identity(), "clock:event-time");
+    assert_eq!(association.clock_revision(), "1");
     let bytes = view
         .association_canonical_bytes(limits)
         .expect("canonical value");
-    assert_eq!(bytes, br#"[{"claim":"claim:deadline","model":"model:checkout","model_node":"1111111111111111111111111111111111111111111111111111111111111111","observation_clock":"clock:event-time","observation_revision":"1","observation_source":"source:payments","source":{"kind":"tick","operation":"tick","operation_node":"2222222222222222222222222222222222222222222222222222222222222222","period_denominator":"2","period_numerator":"1"},"time_dimension":"4444444444444444444444444444444444444444444444444444444444444444","unit":"ms","unit_node":"3333333333333333333333333333333333333333333333333333333333333333"}]"#);
+    let expected_rows = br#"[{"claim":"claim:deadline","model":"model:checkout","model_node":"1111111111111111111111111111111111111111111111111111111111111111","observation_clock":"clock:event-time","observation_revision":"1","observation_source":"source:payments","source":{"kind":"tick","operation":"tick","operation_node":"2222222222222222222222222222222222222222222222222222222222222222","period_denominator":"2","period_numerator":"1"},"time_dimension":"4444444444444444444444444444444444444444444444444444444444444444","unit":"ms","unit_node":"3333333333333333333333333333333333333333333333333333333333333333"}]"#;
+    let expected = format!(
+        r#"{{"clock_identity":"clock:event-time","clock_revision":"1","population_identity":"{}","progress_authority_identity":"{}","progress_document_identity":"{}","rows":{},"scope_identity":"window:O1"}}"#,
+        subject.population_identity.as_str(),
+        view.payload().authority_identity(),
+        document.identity().as_str(),
+        std::str::from_utf8(expected_rows).expect("ASCII fixture"),
+    );
+    assert_eq!(bytes, expected.as_bytes());
     assert_eq!(
         authority::progress::read(document.bytes(), context, &base, limits)
             .unwrap_err()
