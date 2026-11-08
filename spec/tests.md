@@ -25,6 +25,8 @@ relationships:
     type: "covers"
   - target: "ix://agent-ix/quire-observation/FR-011"
     type: "covers"
+  - target: "ix://agent-ix/quire-observation/FR-012"
+    type: "covers"
   - target: "ix://agent-ix/quire-observation/NFR-003"
     type: "covers"
 ---
@@ -45,6 +47,7 @@ relationships:
 | FR-009 | FR-009-AC-1..FR-009-AC-6 | TC-009 | ✅ complete |
 | FR-010 | FR-010-AC-1..FR-010-AC-7 | TC-010 | ✅ complete |
 | FR-011 | FR-011-AC-1..FR-011-AC-7 | TC-011 | ✅ complete |
+| FR-012 | FR-012-AC-1..FR-012-AC-2 | TC-014 | ✅ complete |
 
 ## Non-Functional Requirement Coverage
 
@@ -71,6 +74,7 @@ relationships:
 | TC-011 | Evaluate closed related-workflow populations | Property | P0 | FR-011-AC-1..FR-011-AC-7 | ✅ complete |
 | TC-012 | Bound and reproduce C00 observation work | Property | P0 | NFR-003-AC-2 | ✅ complete |
 | TC-013 | Audit bounded iteration and allocation | Static | P0 | NFR-003-AC-1 | ✅ complete |
+| TC-014 | Export the owned test fixture | Unit | P2 | FR-012-AC-1..FR-012-AC-2 | ✅ complete |
 
 ## Option Permutation Matrix
 

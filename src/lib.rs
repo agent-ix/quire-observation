@@ -16,6 +16,8 @@ use std::collections::{BTreeMap, BTreeSet};
 pub mod authority;
 mod producer;
 mod runtime_reference;
+#[cfg(feature = "test-support")]
+pub mod test_support;
 
 pub use producer::{
     AdmittedBundleKey, AdmittedStaticBundle, ProducerConfiguration, ProducerDigest, Refusal,
