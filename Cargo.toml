@@ -16,6 +16,10 @@ path = "src/lib.rs"
 members = ["."]
 resolver = "2"
 
+[features]
+# Exports owned test fixtures for downstream test code. Never enabled by default.
+test-support = []
+
 [dependencies]
 qsl-foundation = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
 quire-canonical = { version = "=0.3.0", git = "https://github.com/agent-ix/quire-canonical", branch = "main", features = ["serde_json"] }
