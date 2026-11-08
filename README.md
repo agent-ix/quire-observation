@@ -1,6 +1,7 @@
 # quire-observation
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/k8DVhuYBR2)
+[![Quire](https://img.shields.io/badge/Quire-Specification%20Language-1F6FEB)](https://github.com/agent-ix/quire-spec-language)
 
 quire-observation is a Rust library that turns a raw signal from a running
 system into a qualified observation. The result does not depend on how the signal was transported.
@@ -87,14 +88,14 @@ validated by this crate's own code, and a test fixture of that shape lives in
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/ecosystem-dark.svg">
-  <img alt="The Quire repositories. The main chain runs from the standard, quire-specification, to the compiler, quire-spec-language, then quire-contract-ir, quire-contract-codegen and quire-contract-runtime. quire-spec-language also feeds quire-protocol, and quire-contract-ir feeds quire-analyze. quire-observation feeds quire-protocol and quire-mltl. Above the chain, quire-driver runs it, quire-integration tests it and quire-verification plans verification. Below it, shared libraries used throughout: quire-exact, quire-semantic-value, quire-walk, quire-canonical and quire-verification-contracts." src="docs/images/ecosystem-light.svg">
+  <img alt="The Quire repositories. The main chain runs from the standard, quire-specification, to the compiler, quire-spec-language, then quire-contract-ir, quire-contract-codegen and quire-contract-runtime. quire-spec-language also feeds quire-protocol, and quire-contract-ir feeds quire-analyze. quire-observation feeds quire-protocol and quire-mltl. quire-eval is the evaluation core. Above the chain, quire-driver runs it, quire-integration tests it and quire-verification plans verification. Below it, shared libraries used throughout: quire-exact, quire-semantic-value, quire-walk, quire-canonical and quire-verification-contracts." src="docs/images/ecosystem-light.svg">
 </picture>
 
 quire-observation depends on
 [quire-canonical](https://github.com/agent-ix/quire-canonical) for canonical JSON,
 [quire-exact](https://github.com/agent-ix/quire-exact) for structural node identities,
 and QSL foundation's node-wire codec for their canonical spelling.
-[quire-mltl](https://github.com/agent-ix/quire-mltl) and quire-protocol (private) depend on this crate.
+[quire-mltl](https://github.com/agent-ix/quire-mltl) and [quire-protocol](https://github.com/agent-ix/quire-protocol) depend on this crate.
 
 
 ## Building and testing
